@@ -9,9 +9,11 @@
     Public Property CO2Scenario As ICo2Scenario
 
     Public ReadOnly Property History As List(Of SimulationRecord)
+    Public ReadOnly Property Snapshots As List(Of GridSnapshot)
 
     Public Sub New()
         History = New List(Of SimulationRecord)
+        Snapshots = New List(Of GridSnapshot)
     End Sub
 
     '''<summary>
@@ -28,11 +30,12 @@
         Model = New ClimateModel2D(Grid)
         Model.CO2Base = 280.0 'Als Basis das vorindustrielle Niveau
         'Default-Werte, können von außen überschrieben werden
-        Model.RelaxationTimescaleYears = 5
+        Model.RelaxationTimescaleYears = 5.0
         Model.DiffusionCoefficient = 0.1
         Model.ClimateSensitivityLambda = 0.5
 
         History.Clear()
+        Snapshots.Clear()
 
         Dim initialMeanC As Double = Grid.ComputeGlobalMeanTemperatureC()
         Dim co2Now As Double = If(CO2Scenario IsNot Nothing, CO2Scenario.GetCO2ForYear(CurrentYear), 280.0)
@@ -44,6 +47,11 @@
             .GlobalMeanTempC = initialMeanC,
             .CO2ppm = co2Now
                     })
+
+        Dim initialSnap = CreateSnapshotFromGrid()
+        If initialSnap IsNot Nothing Then
+            Snapshots.Add(initialSnap)
+        End If
     End Sub
 
     '''<summary>
@@ -67,5 +75,72 @@
             .GlobalMeanTempC = meanC,
             .CO2ppm = co2Now
                     })
+
+        '--- Snapshot speichern ---
+        Dim snap As GridSnapshot = CreateSnapshotFromGrid()
+        If snap IsNot Nothing Then
+            Snapshots.Add(snap)
+        End If
+
     End Sub
+
+    '''<summary>
+    '''Springt zu einem bestimmten Index in der History
+    ''' </summary>
+    Public Sub JumpToIndex(index As Integer)
+        If Grid Is Nothing OrElse Model Is Nothing Then Return
+        If index < 0 OrElse index >= History.Count Then Return
+        If index < 0 OrElse index >= Snapshots.Count Then Return
+
+        Dim rec As SimulationRecord = History(index)
+        Dim snap As GridSnapshot = Snapshots(index)
+
+        'Zeit & Jahr setzen
+        Me.SimTimeYears = rec.SimTimeYears
+        Me.CurrentYear = rec.Year
+        Me.Model.CO2ppm = rec.CO2ppm
+
+        'Grid-Temperaturen zurückschreiben (nur wenn Größe passt)
+        If snap.Width <> Grid.Width OrElse snap.Height <> Grid.Height Then
+            Return
+        End If
+
+        For lat As Integer = 0 To snap.Height - 1
+            For lon As Integer = 0 To snap.Width - 1
+                Grid.GetCell(lat, lon).TemperatureK = snap.TemperaturesK(lat, lon)
+            Next
+        Next
+    End Sub
+
+    '''<summary>
+    '''Erstellt Snapshots aus dem TemperaturGrid
+    ''' </summary>
+    Private Function CreateSnapshotFromGrid() As GridSnapshot
+        If Grid Is Nothing Then Return Nothing
+
+        Dim w As Integer = Grid.Width
+        Dim h As Integer = Grid.Height
+
+        Dim snap As New GridSnapshot() With {
+            .Width = w,
+            .Height = h
+            }
+
+        ReDim snap.TemperaturesK(h - 1, w - 1)
+
+        For lat As Integer = 0 To h - 1
+            For lon As Integer = 0 To w - 1
+                snap.TemperaturesK(lat, lon) = Grid.GetCell(lat, lon).TemperatureK
+            Next
+        Next
+
+        Return snap
+    End Function
+End Class
+
+Public Class GridSnapshot
+    Public Property Width As Integer
+    Public Property Height As Integer
+    Public TemperaturesK(,) As Double
+
 End Class

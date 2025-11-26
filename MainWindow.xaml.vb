@@ -15,6 +15,14 @@ Class MainWindow
     'Zeitschritt in Jahren für die automatische Simulation (Timer)
     Private _dtYearsPerTick As Double = 1
 
+    Public Sub RefreshFromEngine()
+        If _engine Is Nothing Then Return
+
+        UpdateCO2Display(_engine.Model.CO2ppm)
+        RenderCurrentGrid()
+        UpdateSimTimeDisplay()
+    End Sub
+
     Private Sub MainWindow_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
 
         _engine = New SimulationEngine()
@@ -93,7 +101,7 @@ Class MainWindow
             Return
         End If
 
-        Dim wnd As New HistoryWindow(_engine.History)
+        Dim wnd As New HistoryWindow(_engine)
         wnd.Owner = Me
         wnd.Show()
     End Sub

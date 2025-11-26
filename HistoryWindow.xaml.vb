@@ -6,6 +6,7 @@ Imports System.Windows.Input
 
 Public Class HistoryWindow
 
+    Private ReadOnly _engine As SimulationEngine
     Private ReadOnly _history As List(Of SimulationRecord)
 
     Private _isMouseDown As Boolean = False
@@ -21,11 +22,12 @@ Public Class HistoryWindow
     Private _maxYear As Double
     Private _yearRange As Double
 
-    Public Sub New(history As List(Of SimulationRecord))
+    Public Sub New(engine As SimulationEngine)
         InitializeComponent()
 
         'Kopie der Liste, damit Änderungen im MainWindow nicht direkt während des Zeichnens reinfunken
-        _history = New List(Of SimulationRecord)(history)
+        _engine = engine
+        _history = engine.History
 
         If _history.Count > 1 Then
             SldTime.Minimum = 0
@@ -58,6 +60,18 @@ Public Class HistoryWindow
         idx = Math.Max(0, Math.Min(_history.Count - 1, idx))
         UpdateSelectionDisplay(idx)
         DrawSelectionMarker(idx)
+
+        '>>> Klima-Modell auf diesen Stand setzen <<<
+        If _engine IsNot Nothing Then
+            _engine.JumpToIndex(idx)
+
+            'Hauptfenster aktualisieren
+            If TypeOf Me.Owner Is MainWindow Then
+                Dim main = DirectCast(Me.Owner, MainWindow)
+                main.RefreshFromEngine()
+            End If
+        End If
+
     End Sub
 
     Private Sub CanvasChart_SizeChanged(sender As Object, e As SizeChangedEventArgs)
