@@ -9,7 +9,7 @@ Class MainWindow
     Private _model As ClimateModel2D
 
     'Zeitschritt in Jahren für die automatische Simulation (Timer)
-    Private _dtYearsPerTick As Double = 0.2
+    Private _dtYearsPerTick As Double = 1
 
     'Gesamt-Simulationszeit in Jahren
     Private _simTimeYears As Double = 0.0
@@ -20,6 +20,7 @@ Class MainWindow
     'Zeitsteuerung
     Private _startYear As Integer = 1850
     Private _currentYear As Double = 1850.0
+    Private _endYear As Integer = 2100
 
     'Simulationsaufzeichnung
     Private _history As New List(Of SimulationRecord)
@@ -33,7 +34,7 @@ Class MainWindow
 
         'Timer einrichten
         _timer = New DispatcherTimer()
-        _timer.Interval = TimeSpan.FromMilliseconds(50) 'alle 50ms
+        _timer.Interval = TimeSpan.FromMilliseconds(10) 'alle 50ms
         AddHandler _timer.Tick, AddressOf OnTimerTick
 
         'Beim Start einmal initialisieren
@@ -106,6 +107,21 @@ Class MainWindow
     Private Sub OnTimerTick(sender As Object, e As EventArgs)
         If _model Is Nothing OrElse _grid Is Nothing Then Return
 
+        'Prüfen, ob wir das Endjahr im nächsten Schritt überschreiten würden
+        Dim plannedEndYear = _currentYear + _dtYearsPerTick
+
+        If plannedEndYear >= _endYear Then
+            Dim lastDt As Double = _endYear - _currentYear
+
+            If lastDt > 0.0 Then
+                SimulateOneStep(lastDt)
+            End If
+
+            _timer.Stop()
+            Return
+        End If
+
+        'Normaler Schritt
         SimulateOneStep(_dtYearsPerTick)
     End Sub
 
@@ -124,6 +140,20 @@ Class MainWindow
                 _startYear = 1850 'Standardwert
                 TxtStartYear.Text = _startYear.ToString()
             End Try
+
+            'Endjahr aus Textbox lesen
+            Try
+                _endYear = Integer.Parse(TxtEndYear.Text)
+            Catch ex As Exception
+                _endYear = _startYear + 250 'Standardmäßig 250 Jahre Simulation
+                TxtEndYear.Text = _endYear.ToString()
+            End Try
+
+            'Falls jemand ein kleineres End- als Startjahr eingibt, wieder auf 250 Jahre Simulation setzen
+            If _endYear <= _startYear Then
+                _endYear = _startYear + 250
+                TxtEndYear.Text = _endYear.ToString()
+            End If
 
             _grid = New ClimateGrid(width, height)
             ClimateInitializer.InitializeSimpleLatitudeProfile(_grid)

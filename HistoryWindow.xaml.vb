@@ -24,6 +24,7 @@ Public Class HistoryWindow
 
         AddHandler Loaded, AddressOf HistoryWindow_Loaded
         AddHandler SldTime.ValueChanged, AddressOf SldTime_ValueChanged
+        AddHandler CanvasChart.SizeChanged, AddressOf CanvasChart_SizeChanged
     End Sub
 
     Private Sub HistoryWindow_Loaded(sender As Object, e As RoutedEventArgs)
@@ -38,6 +39,18 @@ Public Class HistoryWindow
         idx = Math.Max(0, Math.Min(_history.Count - 1, idx))
         UpdateSelectionDisplay(idx)
         DrawSelectionMarker(idx)
+    End Sub
+
+    Private Sub CanvasChart_SizeChanged(sender As Object, e As SizeChangedEventArgs)
+        'Bei Größenänderung Diagramm neu zeichnen + Marker aktualisieren
+
+        RedrawChart()
+
+        If _history IsNot Nothing AndAlso _history.Count > 0 Then
+            Dim idx As Integer = CInt(Math.Round(SldTime.Value))
+            idx = Math.Max(0, Math.Min(_history.Count - 1, idx))
+            DrawSelectionMarker(idx)
+        End If
     End Sub
 
     Private Sub RedrawChart()
@@ -110,6 +123,69 @@ Public Class HistoryWindow
         Canvas.SetLeft(co2Label, marginLeft + plotWidth - 40)
         Canvas.SetTop(co2Label, 0)
         CanvasChart.Children.Add(co2Label)
+
+        '---
+        ' X-Achse beschriften (Jahr)
+        Dim xLabel As New TextBlock() With {
+    .Text = "Jahr",
+    .Foreground = Brushes.White
+}
+        ' mittig unter der X-Achse
+        Canvas.SetLeft(xLabel, marginLeft + plotWidth / 2 - 15)
+        Canvas.SetTop(xLabel, marginTop + plotHeight + 5)
+        CanvasChart.Children.Add(xLabel)
+
+        ' Min-/Max-Jahr an den Enden der X-Achse
+        Dim minYearLabel As New TextBlock() With {
+    .Text = $"{minYear:F0}",
+    .Foreground = Brushes.White
+}
+        Canvas.SetLeft(minYearLabel, marginLeft - 5)
+        Canvas.SetTop(minYearLabel, marginTop + plotHeight + 20)
+        CanvasChart.Children.Add(minYearLabel)
+
+        Dim maxYearLabel As New TextBlock() With {
+    .Text = $"{maxYear:F0}",
+    .Foreground = Brushes.White
+}
+        Canvas.SetLeft(maxYearLabel, marginLeft + plotWidth - 20)
+        Canvas.SetTop(maxYearLabel, marginTop + plotHeight + 20)
+        CanvasChart.Children.Add(maxYearLabel)
+
+        ' Y-Achse links: Temp-Skala
+        Dim tempMinLabel As New TextBlock() With {
+    .Text = $"{minTemp:F1} °C",
+    .Foreground = Brushes.White
+}
+        Canvas.SetLeft(tempMinLabel, 0)
+        Canvas.SetTop(tempMinLabel, marginTop + plotHeight - 10)
+        CanvasChart.Children.Add(tempMinLabel)
+
+        Dim tempMaxLabel As New TextBlock() With {
+    .Text = $"{maxTemp:F1} °C",
+    .Foreground = Brushes.White
+}
+        Canvas.SetLeft(tempMaxLabel, 0)
+        Canvas.SetTop(tempMaxLabel, marginTop - 10)
+        CanvasChart.Children.Add(tempMaxLabel)
+
+        ' Y-Achse rechts: CO₂-Skala
+        Dim co2MinLabel As New TextBlock() With {
+    .Text = $"{minCO2:F0} ppm",
+    .Foreground = Brushes.LightGray
+}
+        Canvas.SetLeft(co2MinLabel, marginLeft + plotWidth + 5)
+        Canvas.SetTop(co2MinLabel, marginTop + plotHeight - 10)
+        CanvasChart.Children.Add(co2MinLabel)
+
+        Dim co2MaxLabel As New TextBlock() With {
+    .Text = $"{maxCO2:F0} ppm",
+    .Foreground = Brushes.LightGray
+}
+        Canvas.SetLeft(co2MaxLabel, marginLeft + plotWidth + 5)
+        Canvas.SetTop(co2MaxLabel, marginTop - 10)
+        CanvasChart.Children.Add(co2MaxLabel)
+        '---
 
         'Hilfsfunktionen zum Umrechnen
         Dim yearRange As Double = If(maxYear > minYear, maxYear - minYear, 1)
