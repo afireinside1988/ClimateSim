@@ -316,43 +316,4 @@ Class MainWindow
         Return 700.0
     End Function
 
-    '---DEBUG-Funktion zum Generieren und Rendern eines Temperaturfeldes---
-    Private Sub GenerateAndRenderField()
-        Try
-            Dim width As Integer = Integer.Parse(TxtWidth.Text)
-            Dim height As Integer = Integer.Parse(TxtHeight.Text)
-            Dim tMinC As Double = Double.Parse(TxtTempMin.Text)
-            Dim tMaxC As Double = Double.Parse(TxtTempMax.Text)
-
-            Dim grid As New ClimateGrid(width, height)
-
-            'Erstes einfaches Temperaturprofil initialisieren
-            ClimateInitializer.InitializeSimpleLatitudeProfile(grid)
-
-            ' --- Debug: Min/Max-Temperaturen in °C ausgeben ---
-            Dim minC As Double = Double.MaxValue
-            Dim maxC As Double = Double.MinValue
-
-            For lat As Integer = 0 To grid.Height - 1
-                For lon As Integer = 0 To grid.Width - 1
-                    Dim tempC As Double = grid.GetCell(lat, lon).TemperatureK - 273.15
-                    If tempC < minC Then minC = tempC
-                    If tempC > maxC Then maxC = tempC
-                Next
-            Next
-
-            'Nur zur Kontrolle - später wieder rauswerfen
-            MessageBox.Show($"Temp-Min: {minC:F1} °C" & Environment.NewLine &
-                            $"Temp-Max: {maxC:F1} °C",
-                            "Debug Temperaturbereich", MessageBoxButton.OK, MessageBoxImage.Information)
-
-            'Rendern
-            Dim bmp As WriteableBitmap = TemperatureRenderer.RenderTemperatureField(grid, tMinC, tMaxC)
-            ImgMap.Source = bmp
-
-        Catch ex As Exception
-            MessageBox.Show("Fehler bei der Generierung oder Anzeige des Temperaturfeldes: " & ex.Message,
-                            "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
-        End Try
-    End Sub
 End Class
