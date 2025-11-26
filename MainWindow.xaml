@@ -91,6 +91,9 @@
                 <TextBlock Text="Klimasensitivität λ [K/(W/m²)]:" VerticalAlignment="Center"/>
                 <TextBox x:Name="TxtLambda" Width="60" Margin="5,0,0,0" Text="0.5"/>
             </StackPanel>
+
+            <Button x:Name="BtnShowHistory" Content="Verlauf anzeigen..." Height="30" Margin="0,20,0,0"/>
+            
         </StackPanel> 
     </Grid>
 </Window>

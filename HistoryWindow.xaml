@@ -1,0 +1,35 @@
+﻿<Window x:Class="HistoryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:ClimateSim"
+        mc:Ignorable="d"
+        Title="Verlauf - globale Mitteltemperatur und CO₂" Height="500" Width="900">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Diagrammfläche -->
+        <Border Grid.Row="0" BorderThickness="1" BorderBrush="Gray">
+            <Canvas x:Name="CanvasChart" Background="Black"/>
+        </Border>
+        
+        <!-- Zeitstrahl-Steuerung -->
+        <StackPanel Grid.Row="1" Margin="0,10,0,0">
+            <TextBlock Text="Zeitstrahl" FontWeight="SemiBold"/>
+            <Slider x:Name="SldTime" Minimum="0" Maximum="1" Value="1" Margin="0,5,0,5"/>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Ausgewähltes Jahr:"/>
+                <TextBlock x:Name="TxtSelectedYear" Margin="5,0,10,0" FontFamily="Consolas" Width="60"/>
+                <TextBlock Text="Tglobal:"/>
+                <TextBlock x:Name="TxtSelectedTemp" Margin="5,0,10,0" FontFamily="Consolas" Width="60"/>
+                <TextBlock Text="CO₂:"/>
+                <TextBlock x:Name="TxtSelectedCO2" Margin="5,0,0,0" FontFamily="Consolas" Width="60"/>
+            </StackPanel>
+        </StackPanel>
+        
+    </Grid>
+</Window>

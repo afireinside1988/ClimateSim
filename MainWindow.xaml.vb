@@ -21,11 +21,15 @@ Class MainWindow
     Private _startYear As Integer = 1850
     Private _currentYear As Double = 1850.0
 
+    'Simulationsaufzeichnung
+    Private _history As New List(Of SimulationRecord)
+
     Private Sub MainWindow_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
         AddHandler BtnGenerate.Click, AddressOf BtnGenerate_Click
         AddHandler BtnStep.Click, AddressOf BtnStep_Click
         AddHandler BtnStart.Click, AddressOf BtnStart_Click
         AddHandler BtnStop.Click, AddressOf BtnStop_Click
+        AddHandler BtnShowHistory.Click, AddressOf BtnShowHistory_Click
 
         'Timer einrichten
         _timer = New DispatcherTimer()
@@ -87,6 +91,18 @@ Class MainWindow
         End If
     End Sub
 
+    Private Sub BtnShowHistory_Click(sender As Object, e As RoutedEventArgs)
+        If _history Is Nothing OrElse _history.Count = 0 Then
+            MessageBox.Show("Keine Simulationsdaten vorhanden.", "Hinweis",
+                            MessageBoxButton.OK, MessageBoxImage.Information)
+            Return
+        End If
+
+        Dim wnd As New HistoryWindow(_history)
+        wnd.Owner = Me
+        wnd.Show()
+    End Sub
+
     Private Sub OnTimerTick(sender As Object, e As EventArgs)
         If _model Is Nothing OrElse _grid Is Nothing Then Return
 
@@ -119,14 +135,25 @@ Class MainWindow
             _simTimeYears = 0.0
             _currentYear = _startYear
 
+            'Historie zurücksetzen
+            _history.Clear()
+
+            'ersten Record speichern
+            Dim initialMeanC As Double = _grid.ComputeGlobalMeanTemperatureC()
+            Dim initialCO2 As Double = GetCO2ForYear(_currentYear)
+            _model.CO2ppm = initialCO2
+
             UpdateModelParametersFromUI()
+
+            _history.Add(New SimulationRecord With {
+                         .SimTimeYears = _simTimeYears,
+                         .Year = _currentYear,
+                         .GlobalMeanTempC = initialMeanC,
+                         .CO2ppm = initialCO2
+                         })
+
             UpdateSimTimeDisplay()
-
-            'CO2 aus Szenario berechnen und anzeigen
-            Dim co2Now As Double = GetCO2ForYear(_currentYear)
-            _model.CO2ppm = co2Now
-            UpdateCO2Display(co2Now)
-
+            UpdateCO2Display(initialCO2)
             RenderCurrentGrid()
         Catch ex As Exception
             MessageBox.Show("Fehler bei der Initialisierung des Modells: " & ex.Message,
@@ -176,6 +203,16 @@ Class MainWindow
         Dim co2Now As Double = GetCO2ForYear(_currentYear)
         _model.CO2ppm = co2Now
         UpdateCO2Display(co2Now)
+
+        'Historie erweitern
+        Dim meanC As Double = _grid.ComputeGlobalMeanTemperatureC()
+
+        _history.Add(New SimulationRecord With {
+                     .SimTimeYears = _simTimeYears,
+                     .Year = _currentYear,
+                     .GlobalMeanTempC = meanC,
+                     .CO2ppm = co2Now
+                     })
 
         'Visualisierung aktualisieren
         RenderCurrentGrid()
