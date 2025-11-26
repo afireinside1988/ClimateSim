@@ -5,27 +5,21 @@ Imports System.Globalization
 
 Class MainWindow
 
-    Private _grid As ClimateGrid
-    Private _model As ClimateModel2D
+    'Die Simulations-Engine
+    Private _engine As SimulationEngine
+
+    'Zeitsteuerung
+    Private _endYear As Integer = 2100
+    Private _timer As DispatcherTimer
 
     'Zeitschritt in Jahren für die automatische Simulation (Timer)
     Private _dtYearsPerTick As Double = 1
 
-    'Gesamt-Simulationszeit in Jahren
-    Private _simTimeYears As Double = 0.0
-
-    'Timer für automatische Simulation
-    Private _timer As DispatcherTimer
-
-    'Zeitsteuerung
-    Private _startYear As Integer = 1850
-    Private _currentYear As Double = 1850.0
-    Private _endYear As Integer = 2100
-
-    'Simulationsaufzeichnung
-    Private _history As New List(Of SimulationRecord)
-
     Private Sub MainWindow_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
+
+        _engine = New SimulationEngine()
+        _engine.CO2Scenario = New DefaultCo2Scenario()
+
         AddHandler BtnGenerate.Click, AddressOf BtnGenerate_Click
         AddHandler BtnStep.Click, AddressOf BtnStep_Click
         AddHandler BtnStart.Click, AddressOf BtnStart_Click
@@ -46,7 +40,7 @@ Class MainWindow
     End Sub
 
     Private Sub BtnStep_Click(sender As Object, e As RoutedEventArgs)
-        If _model Is Nothing Then
+        If _engine Is Nothing OrElse _engine.Model Is Nothing Then
             MessageBox.Show("Bitte zuerst initialiseren", "Hinweis",
                             MessageBoxButton.OK, MessageBoxImage.Information)
             Return
@@ -58,7 +52,7 @@ Class MainWindow
     End Sub
 
     Private Sub BtnStart_Click(sender As Object, e As RoutedEventArgs)
-        If _model Is Nothing Then
+        If _engine Is Nothing OrElse _engine.Model Is Nothing Then
             MessageBox.Show("Bitte zuerst initialiseren", "Hinweis",
                             MessageBoxButton.OK, MessageBoxImage.Information)
             Return
@@ -87,31 +81,31 @@ Class MainWindow
         Dim value As Integer = CInt(Math.Round(SldCO2.Value))
         TxtCO2Value.Text = $"{value} ppm"
 
-        If _model IsNot Nothing Then
-            _model.CO2ppm = value
+        If _engine.Model IsNot Nothing Then
+            _engine.Model.CO2ppm = value
         End If
     End Sub
 
     Private Sub BtnShowHistory_Click(sender As Object, e As RoutedEventArgs)
-        If _history Is Nothing OrElse _history.Count = 0 Then
+        If _engine Is Nothing OrElse _engine.History.Count = 0 Then
             MessageBox.Show("Keine Simulationsdaten vorhanden.", "Hinweis",
                             MessageBoxButton.OK, MessageBoxImage.Information)
             Return
         End If
 
-        Dim wnd As New HistoryWindow(_history)
+        Dim wnd As New HistoryWindow(_engine.History)
         wnd.Owner = Me
         wnd.Show()
     End Sub
 
     Private Sub OnTimerTick(sender As Object, e As EventArgs)
-        If _model Is Nothing OrElse _grid Is Nothing Then Return
+        If _engine Is Nothing OrElse _engine.Model Is Nothing OrElse _engine.Grid Is Nothing Then Return
 
         'Prüfen, ob wir das Endjahr im nächsten Schritt überschreiten würden
-        Dim plannedEndYear = _currentYear + _dtYearsPerTick
+        Dim plannedEndYear = _engine.CurrentYear + _dtYearsPerTick
 
         If plannedEndYear >= _endYear Then
-            Dim lastDt As Double = _endYear - _currentYear
+            Dim lastDt As Double = _endYear - _engine.CurrentYear
 
             If lastDt > 0.0 Then
                 SimulateOneStep(lastDt)
@@ -134,57 +128,39 @@ Class MainWindow
             Dim height As Integer = Integer.Parse(TxtHeight.Text)
 
             'Startjahr aus Textbox lesen
+            Dim startYear As Integer
             Try
-                _startYear = Integer.Parse(TxtStartYear.Text)
+                startYear = Integer.Parse(TxtStartYear.Text)
             Catch ex As Exception
-                _startYear = 1850 'Standardwert
-                TxtStartYear.Text = _startYear.ToString()
+                startYear = 1850 'Standardwert
+                TxtStartYear.Text = startYear.ToString()
             End Try
 
             'Endjahr aus Textbox lesen
             Try
                 _endYear = Integer.Parse(TxtEndYear.Text)
             Catch ex As Exception
-                _endYear = _startYear + 250 'Standardmäßig 250 Jahre Simulation
+                _endYear = startYear + 250 'Standardmäßig 250 Jahre Simulation
                 TxtEndYear.Text = _endYear.ToString()
             End Try
 
             'Falls jemand ein kleineres End- als Startjahr eingibt, wieder auf 250 Jahre Simulation setzen
-            If _endYear <= _startYear Then
-                _endYear = _startYear + 250
+            If _endYear <= startYear Then
+                _endYear = startYear + 250
                 TxtEndYear.Text = _endYear.ToString()
             End If
 
-            _grid = New ClimateGrid(width, height)
-            ClimateInitializer.InitializeSimpleLatitudeProfile(_grid)
+            'Simulations-Engine initialisieren
+            _engine.Initialize(width, height, startYear)
 
-            _model = New ClimateModel2D(_grid)
-
-            'Modell-Basiswerte
-            _model.CO2Base = 280.0 'vorindustriell
-            _simTimeYears = 0.0
-            _currentYear = _startYear
-
-            'Historie zurücksetzen
-            _history.Clear()
-
-            'ersten Record speichern
-            Dim initialMeanC As Double = _grid.ComputeGlobalMeanTemperatureC()
-            Dim initialCO2 As Double = GetCO2ForYear(_currentYear)
-            _model.CO2ppm = initialCO2
-
+            'Lambda aus UI holen
             UpdateModelParametersFromUI()
 
-            _history.Add(New SimulationRecord With {
-                         .SimTimeYears = _simTimeYears,
-                         .Year = _currentYear,
-                         .GlobalMeanTempC = initialMeanC,
-                         .CO2ppm = initialCO2
-                         })
-
+            'Anzeige aktualisieren
             UpdateSimTimeDisplay()
-            UpdateCO2Display(initialCO2)
+            UpdateCO2Display(_engine.Model.CO2ppm)
             RenderCurrentGrid()
+
         Catch ex As Exception
             MessageBox.Show("Fehler bei der Initialisierung des Modells: " & ex.Message,
                             "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
@@ -192,7 +168,8 @@ Class MainWindow
     End Sub
 
     Private Sub RenderCurrentGrid()
-        If _grid Is Nothing Then Return
+        If _engine Is Nothing OrElse _engine.Grid Is Nothing Then Return
+
 
         'Farbskala
         'Standardwerte, falls Parsing scheitert
@@ -208,41 +185,23 @@ Class MainWindow
             'Optional MessageBox anzeigen
         End Try
 
-        Dim bmp As WriteableBitmap = TemperatureRenderer.RenderTemperatureField(_grid, tMinC, tMaxC)
+        Dim bmp As WriteableBitmap = TemperatureRenderer.RenderTemperatureField(_engine.Grid, tMinC, tMaxC)
         ImgMap.Source = bmp
 
         'Globalen Mittelwert anzeigen
-        Dim meanC As Double = _grid.ComputeGlobalMeanTemperatureC()
+        Dim meanC As Double = _engine.Grid.ComputeGlobalMeanTemperatureC()
         TxtGlobalMean.Text = $"{meanC:F2} °C"
     End Sub
 
     Private Sub SimulateOneStep(dtYears As Double)
-        If _model Is Nothing OrElse _grid Is Nothing Then Return
+        If _engine Is Nothing OrElse _engine.Model Is Nothing Then Return
 
         'Parameter aus UI übernehmen
         UpdateModelParametersFromUI()
 
-        'Physik-Schritt
-        _model.StepSimulation(dtYears)
-        _simTimeYears += dtYears
+        _engine.StepSimulation(dtYears)
 
-        'Jahr aktualisieren
-        _currentYear = _startYear + _simTimeYears
-
-        'CO2 für das aktuelle Jahr berechnen und setzen
-        Dim co2Now As Double = GetCO2ForYear(_currentYear)
-        _model.CO2ppm = co2Now
-        UpdateCO2Display(co2Now)
-
-        'Historie erweitern
-        Dim meanC As Double = _grid.ComputeGlobalMeanTemperatureC()
-
-        _history.Add(New SimulationRecord With {
-                     .SimTimeYears = _simTimeYears,
-                     .Year = _currentYear,
-                     .GlobalMeanTempC = meanC,
-                     .CO2ppm = co2Now
-                     })
+        UpdateCO2Display(_engine.Model.CO2ppm)
 
         'Visualisierung aktualisieren
         RenderCurrentGrid()
@@ -250,26 +209,22 @@ Class MainWindow
     End Sub
 
     Private Sub UpdateSimTimeDisplay()
-        TxtSimTime.Text = $"{_simTimeYears:F1} Jahre"
-        TxtCurrentYear.Text = $"{_currentYear:F1}"
+        TxtSimTime.Text = $"{_engine.SimTimeYears:F1} Jahre"
+        TxtCurrentYear.Text = $"{_engine.CurrentYear:F1}"
     End Sub
 
     Private Sub UpdateModelParametersFromUI()
-        If _model Is Nothing Then Return
-
-        'CO2Base fix (vorindustriell)
-        _model.CO2Base = 280.0
+        If _engine Is Nothing OrElse _engine.Model Is Nothing Then Return
 
         'Klimasensitivität aus Textbox
-        Dim lambdaVal As Double = 0.5
-
+        Dim lambdaVal As Double = 0.5 'Standard-Wert festlegen
         Try
             lambdaVal = Double.Parse(TxtLambda.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
         Catch ex As Exception
             'Wenn Parsing fehlschlägt, Standardwert verwenden
         End Try
 
-        _model.ClimateSensitivityLambda = lambdaVal
+        _engine.Model.ClimateSensitivityLambda = lambdaVal
     End Sub
 
     Private Sub UpdateCO2Display(co2 As Double)

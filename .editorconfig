@@ -1,0 +1,4 @@
+﻿[*.vb]
+
+# IDE0017: Initialisierung von Objekten vereinfachen
+dotnet_diagnostic.IDE0017.severity = silent
