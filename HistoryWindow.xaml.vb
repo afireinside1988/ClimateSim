@@ -2,10 +2,24 @@
 Imports System.Windows.Media
 Imports System.Windows.Media.Converters
 Imports System.Windows.Shapes
+Imports System.Windows.Input
 
 Public Class HistoryWindow
 
     Private ReadOnly _history As List(Of SimulationRecord)
+
+    Private _isMouseDown As Boolean = False
+
+    'Gemeinsame Layout-Parameter
+    Private _marginLeft As Double = 70 '50
+    Private _marginRight As Double = 70 '70
+    Private _marginTop As Double = 30 '30
+    Private _marginBottom As Double = 50 '50
+
+    'Gemeinsame Achsen-Infos
+    Private _minYear As Double
+    Private _maxYear As Double
+    Private _yearRange As Double
 
     Public Sub New(history As List(Of SimulationRecord))
         InitializeComponent()
@@ -26,6 +40,10 @@ Public Class HistoryWindow
         AddHandler Loaded, AddressOf HistoryWindow_Loaded
         AddHandler SldTime.ValueChanged, AddressOf SldTime_ValueChanged
         AddHandler CanvasChart.SizeChanged, AddressOf CanvasChart_SizeChanged
+        AddHandler CanvasChart.MouseDown, AddressOf CanvasChart_MouseDown
+        AddHandler CanvasChart.MouseMove, AddressOf CanvasChart_MouseMove
+        AddHandler CanvasChart.MouseUp, AddressOf CanvasChart_MouseUp
+        AddHandler CanvasChart.MouseLeave, AddressOf CanvasChart_MouseLeave
     End Sub
 
     Private Sub HistoryWindow_Loaded(sender As Object, e As RoutedEventArgs)
@@ -54,6 +72,35 @@ Public Class HistoryWindow
         End If
     End Sub
 
+    Private Sub CanvasChart_MouseDown(sender As Object, e As MouseButtonEventArgs)
+        If _history Is Nothing OrElse _history.Count < 2 Then Return
+
+        _isMouseDown = True
+        CanvasChart.CaptureMouse()
+
+        Dim pos As Point = e.GetPosition(CanvasChart)
+        UpdateSelectionFromMouseX(pos.X)
+    End Sub
+
+    Private Sub CanvasChart_MouseMove(sender As Object, e As MouseEventArgs)
+        If Not _isMouseDown Then Return
+        If _history Is Nothing OrElse _history.Count < 2 Then Return
+
+        Dim pos As Point = e.GetPosition(CanvasChart)
+        UpdateSelectionFromMouseX(pos.X)
+    End Sub
+
+    Private Sub CanvasChart_MouseUp(sender As Object, e As MouseButtonEventArgs)
+        If Not _isMouseDown Then Return
+        _isMouseDown = False
+        CanvasChart.ReleaseMouseCapture()
+    End Sub
+
+    Private Sub CanvasChart_MouseLeave(sender As Object, e As MouseEventArgs)
+        If Not _isMouseDown Then Return
+        CanvasChart.ReleaseMouseCapture()
+    End Sub
+
     Private Sub RedrawChart()
         CanvasChart.Children.Clear()
         If _history Is Nothing OrElse _history.Count < 2 Then Return
@@ -64,8 +111,8 @@ Public Class HistoryWindow
         If width <= 0 OrElse height <= 0 Then Return
 
         '--- Bereich bestimmen ---
-        Dim minYear As Double = _history.Min(Function(rec) rec.Year)
-        Dim maxYear As Double = _history.Max(Function(rec) rec.Year)
+        _minYear = _history.Min(Function(rec) rec.Year)
+        _maxYear = _history.Max(Function(rec) rec.Year)
 
         Dim minTemp As Double = _history.Min(Function(rec) rec.GlobalMeanTempC)
         Dim maxTemp As Double = _history.Max(Function(rec) rec.GlobalMeanTempC)
@@ -84,12 +131,13 @@ Public Class HistoryWindow
         minCO2 -= co2Padding
         maxCO2 += co2Padding
 
+        _yearRange = If(_maxYear > _minYear, _maxYear - _minYear, 1)
 
         '--- Ränder (etwas größer, damit Platz für Labels ist) ---
-        Dim marginLeft As Double = 50
-        Dim marginRight As Double = 70
-        Dim marginTop As Double = 30
-        Dim marginBottom As Double = 50
+        Dim marginLeft As Double = _marginLeft
+        Dim marginRight As Double = _marginRight
+        Dim marginTop As Double = _marginTop
+        Dim marginBottom As Double = _marginBottom
 
         Dim plotWidth As Double = Math.Max(10, width - marginLeft - marginRight)
         Dim plotHeight As Double = Math.Max(10, height - marginTop - marginBottom)
@@ -127,7 +175,7 @@ Public Class HistoryWindow
             .Foreground = Brushes.White
             }
         Canvas.SetLeft(xTitle, marginLeft + plotWidth / 2 - 15)
-        Canvas.SetTop(xTitle, marginTop + plotHeight + 5)
+        Canvas.SetTop(xTitle, marginTop + plotHeight + 25)
         CanvasChart.Children.Add(xTitle)
 
         'Y-Achse links: Temperatur
@@ -136,7 +184,7 @@ Public Class HistoryWindow
             .Foreground = Brushes.Orange
             }
         Canvas.SetLeft(tempTitle, 5)
-        Canvas.SetTop(tempTitle, marginTop - 20)
+        Canvas.SetTop(tempTitle, marginTop - 25)
         CanvasChart.Children.Add(tempTitle)
 
         'Y-Achse rechts: CO2
@@ -145,11 +193,11 @@ Public Class HistoryWindow
             .Foreground = Brushes.Cyan
             }
         Canvas.SetLeft(co2Title, marginLeft + plotWidth - 25)
-        Canvas.SetTop(co2Title, marginTop - 20)
+        Canvas.SetTop(co2Title, marginTop - 25)
         CanvasChart.Children.Add(co2Title)
 
         '--- Skalenbereiche & Hilfsfunktionen
-        Dim yearRange As Double = If(maxYear > minYear, maxYear - minYear, 1)
+        Dim yearRange As Double = _yearRange
         Dim tempRange As Double = If(maxTemp > minTemp, maxTemp - minTemp, 1)
         Dim co2Range As Double = If(maxCO2 > minCO2, maxCO2 - minCO2, 1)
 
@@ -168,12 +216,12 @@ Public Class HistoryWindow
         '--- Gridlines & Ticks X-Achse
         Dim gridBrush As Brush = Brushes.DimGray
 
-        Dim firstYearTick As Double = Math.Ceiling(minYear / yearTickStep) * yearTickStep
+        Dim firstYearTick As Double = Math.Ceiling(_minYear / yearTickStep) * yearTickStep
         Dim yAxisY As Double = marginTop + plotHeight
 
         Dim yearTick As Double = firstYearTick
-        While yearTick <= maxYear + 0.1
-            Dim tNorm = (yearTick - minYear) / yearRange
+        While yearTick <= _maxYear + 0.1
+            Dim tNorm = (yearTick - _minYear) / yearRange
             Dim x = marginLeft + tNorm * plotWidth
 
             'vertikale Gridline
@@ -290,7 +338,7 @@ Public Class HistoryWindow
         }
 
         For Each r As SimulationRecord In _history
-            Dim tNorm = (r.Year - minYear) / yearRange
+            Dim tNorm = (r.Year - _minYear) / yearRange
             Dim x = marginLeft + tNorm * plotWidth
 
             'Temperatur -> linke Y-Achse
@@ -320,29 +368,73 @@ Public Class HistoryWindow
         TxtSelectedCO2.Text = $"{r.CO2ppm:F0} ppm"
     End Sub
 
-    Private Sub DrawSelectionMarker(index As Integer)
-        CanvasChart.Children.OfType(Of Line).Where(Function(l) l.Tag IsNot Nothing AndAlso l.Tag.Equals("Selection")).ToList().ForEach(Sub(l) CanvasChart.Children.Remove(l))
+    Private Sub UpdateSelectionFromMouseX(mouseX As Double)
+        If _history Is Nothing OrElse _history.Count < 2 Then Return
 
-        If _history.Count < 2 Then Return
-
-        Dim width As Double = CanvasChart.ActualWidth
-        Dim height As Double = CanvasChart.ActualHeight
+        Dim width = CanvasChart.ActualWidth
+        Dim height = CanvasChart.ActualHeight
         If width <= 0 OrElse height <= 0 Then Return
 
-        Dim marginLeft As Double = 50
-        Dim marginRight As Double = 20
-        Dim marginTop As Double = 20
-        Dim marginBottom As Double = 40
+        'dieselben Margins wie in RedrawChart/DrawSelectionMarker
+        Dim marginLeft As Double = _marginLeft
+        Dim marginRight As Double = _marginRight
 
         Dim plotWidth As Double = Math.Max(10, width - marginLeft - marginRight)
-        Dim plotHeight As Double = Math.Max(10, height - marginTop - marginBottom)
+        Dim plotLeft As Double = marginLeft
+        Dim plotRight As Double = marginLeft + plotWidth
 
-        Dim minYear = _history.Min(Function(rec) rec.Year)
-        Dim maxYear = _history.Max(Function(rec) rec.Year)
-        Dim yearRange As Double = If(maxYear > minYear, maxYear - minYear, 1)
+        'Maus-X auf Plotbereich clampen
+        Dim xClamped = Math.Max(plotLeft, Math.Min(plotRight, mouseX))
 
-        Dim r = _history(index)
-        Dim tNorm = (r.Year - minYear) / yearRange
+        '0..1 innerhalb des Plots
+        Dim tNorm = (xClamped - plotLeft) / plotWidth
+        If tNorm < 0 Then tNorm = 0
+        If tNorm > 1 Then tNorm = 1
+
+        'tNorm -> Index im Verlauf (über den Sliderbereich, der ja 0..Count-1 ist)
+        Dim minIndex As Double = SldTime.Minimum
+        Dim maxIndex As Double = SldTime.Maximum
+
+        Dim idxDouble As Double = minIndex + tNorm * (maxIndex - minIndex)
+        Dim idx As Integer = CInt(Math.Round(idxDouble))
+
+        idx = Math.Max(0, Math.Min(_history.Count - 1, idx))
+
+        'Slider setzen - der löst dann automatisch SldTime_ValueChanged aus,
+        'das wiederum UpdateSelectionDisplay + DrawSelectionMarker aufruft
+        SldTime.Value = idx
+    End Sub
+
+    Private Sub DrawSelectionMarker(index As Integer)
+        'Vorherige Selection-Linien entfernen
+        Dim toRemove = CanvasChart.Children.OfType(Of Line)().Where(Function(l) l.Tag IsNot Nothing AndAlso l.Tag.Equals("Selection")).ToList()
+
+        For Each l In toRemove
+            CanvasChart.Children.Remove(l)
+        Next
+
+        If _history Is Nothing OrElse _history.Count < 2 Then Return
+
+        Dim width = CanvasChart.ActualWidth
+        Dim height = CanvasChart.ActualHeight
+        If width <= 0 OrElse height <= 0 Then Return
+
+        ' dieselben Margins wie der Plot (aber aus Feldern)
+        Dim marginLeft As Double = _marginLeft
+        Dim marginRight As Double = _marginRight
+        Dim marginTop As Double = _marginTop
+        Dim marginBottom As Double = _marginBottom
+
+        Dim plotWidth = Math.Max(10, width - marginLeft - marginRight)
+        Dim plotHeight = Math.Max(10, height - marginTop - marginBottom)
+
+        'Achseninfos aus Feldern (von RedrawChart gesetzt)
+        If _yearRange <= 0 Then Return
+
+        If index < 0 OrElse index >= _history.Count Then Return
+        Dim rec As SimulationRecord = _history(index)
+
+        Dim tNorm = (rec.Year - _minYear) / _yearRange
         Dim x As Double = marginLeft + tNorm * plotWidth
 
         Dim marker As New Line() With {
@@ -354,7 +446,7 @@ Public Class HistoryWindow
             .StrokeThickness = 1,
             .StrokeDashArray = New DoubleCollection({2, 2}),
             .Tag = "Selection"
-        }
+            }
 
         CanvasChart.Children.Add(marker)
     End Sub
