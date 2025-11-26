@@ -25,10 +25,7 @@
         
         <!-- Rechts: Steuerungselemente -->
         <StackPanel Grid.Column="1" Margin="10" VerticalAlignment="Stretch">
-            <TextBlock Text="Klimamodell - Schritt 1"
-                       FontSize="20"
-                       FontWeight="Bold"
-                       Margin="0,0,0,10" />
+            <TextBlock Text="Klimamodell - Schritt 1" FontSize="20" FontWeight="Bold" Margin="0,0,0,10" />
             <TextBlock Text="Raster-Auflösung:" FontWeight="SemiBold" />
             <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
                 <TextBlock Text="Breite (Lon):" VerticalAlignment="Center"/>
@@ -44,47 +41,56 @@
                 <TextBlock Text="Max [°C]:" VerticalAlignment="Center"/>
                 <TextBox x:Name="TxtTempMax" Width="60" Margin="5,0,0,0" Text="40"/>
             </StackPanel>
-
-            <Button x:Name="BtnGenerate"
-                    Content="Temperaturfeld initialisieren"
-                    Height="35"
-                    Margin="0,10,0,0"/>
-
-            <Button x:Name="BtnStep"
-                    Content="1 Simulationsschritt (z.B. 0,5 Jahre)"
-                    Height="35"
-                    Margin="0,10,0,0" />
-
-            <TextBlock Text="Automatische Simulation:"
-                      FontWeight="SemiBold"
-                      Margin="0,20,0,5" />
+            
+            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                <TextBlock Text="Startjahr der Simulation:" FontWeight="SemiBold"/>
+                <TextBox x:Name="TxtStartYear" Width="80" Text="1850"/> 
+            </StackPanel>
+            
+            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                <TextBlock Text="Aktuelles Jahr:" FontWeight="SemiBold" Margin="0,0,0,0"/>
+                <TextBlock x:Name="TxtCurrentYear" Text="1850,0" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
+            </StackPanel>
+            
+            <TextBlock Text="Simulationsteuerung:" FontWeight="SemiBold" Margin="0,10,0,0" />
+            <Button x:Name="BtnGenerate" Content="Temperaturfeld initialisieren" Height="35" Margin="0,5,0,0"/>
+            <Button x:Name="BtnStep" Content="1 Simulationsschritt (siehe dt pro Tick)" Height="35" Margin="0,10,0,0" />
+            <TextBlock Text="Automatische Simulation:" FontWeight="SemiBold" Margin="0,20,0,5" />
 
             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                 <TextBlock Text="dt pro Tick [Jahre]:" VerticalAlignment="Center" />
-                <TextBox x:Name="TxtDtYears" Width="60" Margin="5,0,10,0" Text="0.2" />
+                <TextBox x:Name="TxtDtYears" Width="40" Margin="5,0,10,0" Text="0.2" />
                 <TextBlock Text="Intervall [ms]:" VerticalAlignment="Center" />
-                <TextBox x:Name="TxtIntervalMs" Width="60" Margin="5,0,0,0" Text="50" />
+                <TextBox x:Name="TxtIntervalMs" Width="40" Margin="5,0,0,0" Text="50" />
             </StackPanel>
 
             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                <Button x:Name="BtnStart"
-                        Content="Start"
-                        Width="80"
-                        Height="30"
-                        Margin="0,0,10,0" />
-                <Button x:Name="BtnStop"
-                        Content="Stop"
-                        Width="80"
-                        Height="30" />
+                <Button x:Name="BtnStart" Content="Start" Width="80" Height="30" Margin="0,0,10,0" />
+                <Button x:Name="BtnStop" Content="Stop" Width="80" Height="30" />
             </StackPanel>
 
-            <TextBlock Text="Simulationszeit:"
-                       FontWeight="SemiBold"
-                       Margin="0,10,0,0" />
-            <TextBlock x:Name="TxtSimTime"
-                       Text="0,0 Jahre"
-                       Margin="0,2,0,0"
-                       FontFamily="Consolas" />
-        </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                <TextBlock Text="Simulationszeit:" FontWeight="SemiBold" Margin="0,0,0,0" />
+                <TextBlock x:Name="TxtSimTime" Text="0,0 Jahre" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
+            </StackPanel>
+            
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                <TextBlock Text="Globale Mitteltemperatur:" FontWeight="SemiBold" Margin="0,0,0,0" />
+                <TextBlock x:Name="TxtGlobalMean" Text="0,0 °C" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
+            </StackPanel>
+            
+            <TextBlock Text="CO₂-Forcing:" FontWeight="SemiBold" Margin="0,20,0,5"/>
+            <TextBlock Text="CO₂-Konzentration [ppm]:"/>
+
+            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                <Slider x:Name="SldCO2" Minimum="280" Maximum="1000" Value="420" Width="150" TickFrequency="20" IsSnapToTickEnabled="True" IsEnabled="False"/>
+                <TextBlock x:Name="TxtCO2Value" Text="420 ppm" VerticalAlignment="Center" Margin="10,0,0,0" FontFamily="Consolas"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                <TextBlock Text="Klimasensitivität λ [K/(W/m²)]:" VerticalAlignment="Center"/>
+                <TextBox x:Name="TxtLambda" Width="60" Margin="5,0,0,0" Text="0.5"/>
+            </StackPanel>
+        </StackPanel> 
     </Grid>
 </Window>

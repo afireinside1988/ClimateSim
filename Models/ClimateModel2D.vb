@@ -8,6 +8,17 @@
     'Stärke der horizontalen Diffusion (Spielparamter, dimensionslos)
     Public Property DiffusionCoefficient As Double = 0.1
 
+    'CO2-Paramter
+    Public Property CO2ppm As Double = 420.0
+    Public Property CO2Base As Double = 280.0
+
+    'Klimasensitivität λ [K/(W/m²)]
+    Public Property ClimateSensitivityLambda As Double = 0.5
+
+    ''' <summary>
+    ''' Erstellt ein neues 2D-Klimamodell auf dem gegebenen Gitter.
+    ''' </summary>
+
     Public Sub New(grid As ClimateGrid)
         _grid = grid
     End Sub
@@ -21,15 +32,27 @@
 
         Dim newTemps(height - 1, width - 1) As Double
 
+        '--- CO2-Forcing berechnen (global) ---
+        Dim Fco2 As Double = 0.0
+        If CO2ppm > 0 AndAlso CO2Base > 0 Then
+            Fco2 = 5.35 * Math.Log(CO2ppm / CO2Base) 'W/m²
+        End If
+
+        'Effektive zusätzliche Gleichgewichtserwärmung in Kelvin
+        Dim deltaTeqCO2 As Double = ClimateSensitivityLambda * Fco2
+
         For lat As Integer = 0 To height - 1
             For lon As Integer = 0 To width - 1
                 Dim cell = _grid.GetCell(lat, lon)
                 Dim T As Double = cell.TemperatureK
 
-                ' 1) Gleichgewichtstemperatur abhängig von Breitengrad
-                Dim Teq As Double = EquilibriumTemperature(cell.LatitudeDeg)
+                ' 1) Basis-Gleichgewichtstemperatur abhängig von der Breite
+                Dim TeqBase As Double = EquilibriumTemperature(cell.LatitudeDeg)
 
-                ' Relaxation in Richtung Gleichgewichtstemperatur
+                'CO2-bedingte Anpassung der Gleichgewichtstemperatur
+                Dim Teq As Double = TeqBase + deltaTeqCO2
+
+                ' Relaxation in Richtung (TeqBase + CO2-Effekt)
                 Dim relaxTerm As Double = (Teq - T) / RelaxationTimescaleYears
 
                 ' 2) Diffusion mit 4 Nachbarzellen (N,S,E,W)

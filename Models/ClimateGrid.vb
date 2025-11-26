@@ -56,4 +56,20 @@ Public Class ClimateGrid
         Return _cells
     End Function
 
+    Public Function ComputeGlobalMeanTemperatureC() As Double
+        Dim sum As Double = 0.0
+        Dim count As Integer = 0
+
+        For lat As Integer = 0 To Height - 1
+            For lon As Integer = 0 To Width - 1
+                Dim cell As ClimateCell = _cells(lat, lon)
+                sum += (cell.TemperatureK - 273.15) 'Kelvin -> Celsius
+                count += 1
+            Next
+        Next
+
+        If count = 0 Then Return 0.0
+        Return sum / count
+    End Function
+
 End Class
