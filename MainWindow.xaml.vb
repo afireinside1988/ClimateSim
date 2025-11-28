@@ -2,18 +2,18 @@
 Imports System.Windows.Media.Imaging
 Imports System.Windows.Threading
 Imports System.Globalization
+Imports System.Threading
+Imports System.Threading.Tasks
 
 Class MainWindow
 
     'Die Simulations-Engine
     Private _engine As SimulationEngine
 
-    'Zeitsteuerung
-    Private _endYear As Integer = 2100
-    Private _timer As DispatcherTimer
+    Private _simCts As CancellationTokenSource
+    Private _isSimulationRunning As Boolean = False
 
-    'Zeitschritt in Jahren für die automatische Simulation (Timer)
-    Private _dtYearsPerTick As Double = 1
+    Private _endYear As Integer = 2100 'Standardwert, wird aus Textbox gelesen
 
     Public Sub RefreshFromEngine()
         If _engine Is Nothing Then Return
@@ -37,11 +37,6 @@ Class MainWindow
         AddHandler BtnStop.Click, AddressOf BtnStop_Click
         AddHandler BtnShowHistory.Click, AddressOf BtnShowHistory_Click
 
-        'Timer einrichten
-        _timer = New DispatcherTimer()
-        _timer.Interval = TimeSpan.FromMilliseconds(10) 'alle 50ms
-        AddHandler _timer.Tick, AddressOf OnTimerTick
-
         'Beim Start einmal initialisieren
         InitializeModelAndRender()
     End Sub
@@ -51,41 +46,76 @@ Class MainWindow
     End Sub
 
     Private Sub BtnStep_Click(sender As Object, e As RoutedEventArgs)
-        If _engine Is Nothing OrElse _engine.Model Is Nothing Then
-            MessageBox.Show("Bitte zuerst initialiseren", "Hinweis",
+        If _engine Is Nothing OrElse _engine.Model Is Nothing OrElse _isSimulationRunning Then
+            MessageBox.Show("Bitte zuerst initialiseren bzw. laufende Simulation stoppen.", "Hinweis",
                             MessageBoxButton.OK, MessageBoxImage.Information)
             Return
         End If
 
-        Dim dtManual As Double = Double.Parse(TxtDtYears.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
-        SimulateOneStep(dtManual)
+        Dim dtYears As Double
+        If Not Double.TryParse(TxtDtYears.Text, dtYears) OrElse dtYears <= 0 Then
+            MessageBox.Show("Bitte ein gültiges Zeitschritt-Intervall (dt) eingeben.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Warning)
+            Return
+        End If
+
+        SimulateOneStep(dtYears)
 
     End Sub
 
-    Private Sub BtnStart_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub BtnStart_Click(sender As Object, e As RoutedEventArgs)
         If _engine Is Nothing OrElse _engine.Model Is Nothing Then
             MessageBox.Show("Bitte zuerst initialiseren", "Hinweis",
                             MessageBoxButton.OK, MessageBoxImage.Information)
             Return
         End If
 
-        'dt und Intervall aus Textboxen lesen
-        Try
-            _dtYearsPerTick = Double.Parse(TxtDtYears.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
-            Dim intervalMs As Integer = Integer.Parse(TxtIntervalMs.Text)
-            If intervalMs < 10 Then intervalMs = 10 'Mindestintervall
-            _timer.Interval = TimeSpan.FromMilliseconds(intervalMs)
-        Catch ex As Exception
-            MessageBox.Show("Fehler beim Lesen von dt/Intervall: " & ex.Message,
-                            "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+        'dtYears und Enjahr aus den Textboxen lesen
+        Dim dtYears As Double
+        If Not Double.TryParse(TxtDtYears.Text, dtYears) OrElse dtYears <= 0 Then
+            MessageBox.Show("Bitte ein gültiges Zeitschritt-Intervall (dt) eingeben.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Warning)
             Return
-        End Try
+        End If
 
-        _timer.Start()
+        Dim endYear As Double
+        If Not Double.TryParse(TxtEndYear.Text, endYear) Then
+            MessageBox.Show("Bitte ein gültiges Endjahr eingeben.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Warning)
+            Return
+        End If
+
+        'Modellparamter einmalig vor Start aus der UI übernehmen
+        UpdateModelParametersFromUI()
+
+        _isSimulationRunning = True
+        _simCts = New CancellationTokenSource()
+
+        'UI-Buttons sperren/umschalten
+        BtnStart.IsEnabled = False
+        BtnStep.IsEnabled = False
+        BtnGenerate.IsEnabled = False
+        BtnShowHistory.IsEnabled = False
+        BtnStop.IsEnabled = True
+        TxtLambda.IsEnabled = False
+
+        Try
+            'Simulation im Hintergrund-Thread laufen lassen
+            Await Task.Run(Sub() RunSimulationLoop(dtYears, endYear, _simCts.Token))
+        Catch ex As Exception
+            'bewusst abgebrochen -> kein Fehler
+        Finally
+            _isSimulationRunning = False
+            BtnStart.IsEnabled = True
+            BtnStep.IsEnabled = True
+            BtnGenerate.IsEnabled = True
+            BtnStop.IsEnabled = False
+            BtnShowHistory.IsEnabled = True
+            TxtLambda.IsEnabled = True
+        End Try
     End Sub
 
     Private Sub BtnStop_Click(sender As Object, e As RoutedEventArgs)
-        _timer.Stop()
+        If _simCts IsNot Nothing AndAlso Not _simCts.IsCancellationRequested Then
+            _simCts.Cancel()
+        End If
     End Sub
 
     Private Sub SldCO2_ValueChanged(sender As Object, e As RoutedPropertyChangedEventArgs(Of Double))
@@ -109,31 +139,47 @@ Class MainWindow
         wnd.Show()
     End Sub
 
-    Private Sub OnTimerTick(sender As Object, e As EventArgs)
+    Private Sub RunSimulationLoop(dtYears As Double, endYear As Double, token As CancellationToken)
         If _engine Is Nothing OrElse _engine.Model Is Nothing OrElse _engine.Grid Is Nothing Then Return
 
-        'Prüfen, ob wir das Endjahr im nächsten Schritt überschreiten würden
-        Dim plannedEndYear = _engine.CurrentYear + _dtYearsPerTick
+        Dim uiUpdateInterval As Integer = 10 'Aktualisierungsrate der UI
+        Dim stepCounter As Integer = 0
 
-        If plannedEndYear >= _endYear Then
-            Dim lastDt As Double = _endYear - _engine.CurrentYear
+        While _engine.CurrentYear < endYear
+            token.ThrowIfCancellationRequested()
 
-            If lastDt > 0.0 Then
-                SimulateOneStep(lastDt)
+            '1) Modellparamter ggf. aus UI übernehmen (Lambda etc.) -> auf dem UI-Thread
+            Dispatcher.Invoke(
+                Sub()
+                    UpdateModelParametersFromUI()
+                End Sub)
+
+            '2) Simulationsschritt ausführen (im Hintergrundthread, rein nummerisch
+            _engine.StepSimulation(dtYears)
+            stepCounter += 1
+
+            '3) in moderatem Rhythmus die UI aktualisieren
+            If stepCounter Mod uiUpdateInterval = 0 Then
+                Dispatcher.Invoke(
+                    Sub()
+                        UpdateSimTimeDisplay()
+                        UpdateCO2Display(_engine.Model.CO2ppm)
+                        RenderCurrentGrid()
+                    End Sub)
             End If
+        End While
 
-            _timer.Stop()
-            Return
-        End If
-
-        'Normaler Schritt
-        SimulateOneStep(_dtYearsPerTick)
+        'Am Ende final UI refresh
+        Dispatcher.Invoke(
+            Sub()
+                UpdateSimTimeDisplay()
+                UpdateCO2Display(_engine.Model.CO2ppm)
+                RenderCurrentGrid()
+            End Sub)
     End Sub
 
     Private Sub InitializeModelAndRender()
         Try
-
-            _timer?.[Stop]()
 
             Dim width As Integer = Integer.Parse(TxtWidth.Text)
             Dim height As Integer = Integer.Parse(TxtHeight.Text)
@@ -244,42 +290,5 @@ Class MainWindow
         SldCO2.Value = val
         TxtCO2Value.Text = $"{co2:F0} ppm"
     End Sub
-
-    Private Function GetCO2ForYear(year As Double) As Double
-        'Sehr vereinfachtes, grobes Szenario:
-        'Kann später mit realen Daten oder komplexeren Modellen ersetzt werden
-
-        '1. Vorindustriell bis 1850: 280 ppm
-        If year <= 1850 Then
-            Return 280.0
-        End If
-
-        '2. 1850 bis 1950: langsamer Anstieg auf 310 ppm
-        If year <= 1950 Then
-            Dim t As Double = (year - 1850) / (1950.0 - 1850.0)
-            Return 280.0 + t * (310.0 - 280.0)
-        End If
-
-        '3. 1950 bis 2000: schneller Anstieg auf 370 ppm
-        If year <= 2000 Then
-            Dim t As Double = (year - 1950) / (2000.0 - 1950.0)
-            Return 310.0 + t * (370.0 - 310.0)
-        End If
-
-        '4. 2000 bis 2020: Anstieg auf 415 ppm
-        If year <= 2020 Then
-            Dim t As Double = (year - 2000) / (2020.0 - 2000.0)
-            Return 370.0 + t * (415.0 - 370.0)
-        End If
-
-        '5. 2020 bis 2100: Szenario - starker Anstieg auf 700 ppm
-        If year <= 2100 Then
-            Dim t As Double = (year - 2020) / (2100.0 - 2020.0)
-            Return 415.0 + t * (700.0 - 415.0)
-        End If
-
-        'Nach 2100: konstant 700 ppm (kann später abgesenkt werden)
-        Return 700.0
-    End Function
 
 End Class
