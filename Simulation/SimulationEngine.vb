@@ -6,6 +6,7 @@
     Public Property CurrentYear As Double
     Public Property SimTimeYears As Double
 
+    Public Property TemperatureProvider As ITemperatureFieldProvider
     Public Property CO2Scenario As ICo2Scenario
 
     Public ReadOnly Property History As List(Of SimulationRecord)
@@ -17,7 +18,7 @@
     End Sub
 
     '''<summary>
-    '''Initialisiert Gird, Model und Zeit mit einer neuen Auflösung und Startjahr
+    '''Initialisiert Grid, Modell und Zeit mit einer neuen Auflösung und Startjahr
     '''</summary>
     Public Sub Initialize(width As Integer, height As Integer, startYear As Integer)
         Me.StartYear = startYear
@@ -25,11 +26,16 @@
         Me.CurrentYear = startYear
 
         Grid = New ClimateGrid(width, height)
-        ClimateInitializer.InitializeSimpleLatitudeProfile(Grid)
+
+        'Temperatur über Provider abrufen, falls gesetzt
+        If TemperatureProvider IsNot Nothing Then
+            ClimateInitializer.InitializeFromProvider(Grid, TemperatureProvider, startYear)
+        Else
+            ClimateInitializer.InitializeSimpleLatitudeProfile(Grid)
+        End If
 
         Model = New ClimateModel2D(Grid)
-        Model.CO2Base = 280.0 'Als Basis das vorindustrielle Niveau
-        'Default-Werte, können von außen überschrieben werden
+        Model.CO2Base = 280.0 'Basis Co2
         Model.RelaxationTimescaleYears = 5.0
         Model.DiffusionCoefficient = 0.1
         Model.ClimateSensitivityLambda = 0.5
@@ -38,20 +44,22 @@
         Snapshots.Clear()
 
         Dim initialMeanC As Double = Grid.ComputeGlobalMeanTemperatureC()
+
         Dim co2Now As Double = If(CO2Scenario IsNot Nothing, CO2Scenario.GetCO2ForYear(CurrentYear), 280.0)
         Model.CO2ppm = co2Now
 
+        'Verlauf schreiben
         History.Add(New SimulationRecord With {
-            .SimTimeYears = SimTimeYears,
-            .Year = CurrentYear,
-            .GlobalMeanTempC = initialMeanC,
-            .CO2ppm = co2Now
+                    .SimTimeYears = SimTimeYears,
+                    .Year = CurrentYear,
+                    .GlobalMeanTempC = initialMeanC,
+                    .CO2ppm = co2Now
                     })
 
-        Dim initialSnap = CreateSnapshotFromGrid()
-        If initialSnap IsNot Nothing Then
-            Snapshots.Add(initialSnap)
-        End If
+        'Grid-Snapshot schreiben
+        Dim initialSnap As GridSnapshot = CreateSnapshotFromGrid()
+        If initialSnap IsNot Nothing Then Snapshots.Add(initialSnap)
+
     End Sub
 
     '''<summary>

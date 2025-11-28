@@ -26,7 +26,10 @@ Class MainWindow
     Private Sub MainWindow_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
 
         _engine = New SimulationEngine()
+        'CO2-Szenario setzen
         _engine.CO2Scenario = New DefaultCo2Scenario()
+        'Temperatur-Provider setzen
+        _engine.TemperatureProvider = New SimpleLatitudinalClimatology()
 
         AddHandler BtnGenerate.Click, AddressOf BtnGenerate_Click
         AddHandler BtnStep.Click, AddressOf BtnStep_Click

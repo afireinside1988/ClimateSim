@@ -88,8 +88,8 @@
     ''' "Soll"-Temperatur als Funktion der Breite (wie in unserem Initialisierer).
     ''' </summary>
     Private Function EquilibriumTemperature(latitudeDeg As Double) As Double
-        Dim T_equator As Double = 300.0 '27°C
-        Dim T_pole As Double = 240.0 ' -33°C
+        Dim T_equator As Double = 303.0 '27°C
+        Dim T_pole As Double = 258.0 ' -33°C
 
         Dim latRad As Double = latitudeDeg * Math.PI / 180.0
         Dim weight As Double = Math.Pow(Math.Cos(latRad), 2) 'Gewichtungsfaktor basierend auf cos²(lat))

@@ -2,7 +2,6 @@
 
     Implements ICo2Scenario
 
-
     Public Function GetCO2ForYear(year As Double) As Double Implements ICo2Scenario.GetCO2ForYear
         If year <= 1850 Then
             Return 280.0

@@ -1,4 +1,5 @@
 ﻿Imports System.ComponentModel.Design
+Imports Accessibility
 
 Public Class ClimateGrid
     Public ReadOnly Property Width As Integer
@@ -57,19 +58,29 @@ Public Class ClimateGrid
     End Function
 
     Public Function ComputeGlobalMeanTemperatureC() As Double
-        Dim sum As Double = 0.0
-        Dim count As Integer = 0
+        Dim weightedSum As Double = 0.0 'Summe aller gewichteten Temperaturen
+        Dim weightSum As Double = 0.0 'Summe aller Flächengewichtungen
 
         For lat As Integer = 0 To Height - 1
             For lon As Integer = 0 To Width - 1
                 Dim cell As ClimateCell = _cells(lat, lon)
-                sum += (cell.TemperatureK - 273.15) 'Kelvin -> Celsius
-                count += 1
+
+                'Flächengewicht (falls noch 0, minimalen Wert verwenden
+                Dim w As Double = cell.AreaWeight
+                w = Math.Max(w, MinAreaWeight)
+
+                'Umrechnung von Kelvin in Celsius
+                Dim tempC As Double = cell.TemperatureK - 273.15
+
+                weightedSum += tempC * w
+                weightSum += w
             Next
         Next
 
-        If count = 0 Then Return 0.0
-        Return sum / count
+        If weightSum <= 0 Then Return 0.0
+
+        Return weightedSum / weightSum
+
     End Function
 
 End Class

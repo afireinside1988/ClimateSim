@@ -2,6 +2,8 @@
     'Geografische Position (optional für spätere Erweiterungen)
     Public Property LatitudeDeg As Double
     Public Property LongitudeDeg As Double
+    'Neu: Flächengewichtung (proportional zur Zellfläche (cos(Breite)), immer > 0
+    Public Property AreaWeight As Double
 
     'Oberflächentemperatur in Kelvin
     Public Property TemperatureK As Double
