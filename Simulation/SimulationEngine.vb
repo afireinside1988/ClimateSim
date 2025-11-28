@@ -36,9 +36,9 @@
 
         Model = New ClimateModel2D(Grid)
         Model.CO2Base = 280.0 'Basis Co2
-        Model.RelaxationTimescaleYears = 5.0
-        Model.DiffusionCoefficient = 0.1
-        Model.ClimateSensitivityLambda = 0.5
+        Model.RelaxationTimescaleYears = 40.0 'Systemträgheit
+        Model.DiffusionCoefficient = 0.02 'Horizontale Diffusion
+        Model.ClimateSensitivityLambda = 0.5 'Klimasensitivität
 
         History.Clear()
         Snapshots.Clear()
