@@ -1,14 +1,19 @@
 ﻿Public Class SimulationEngine
+    '2D-Komponente
     Public Property Grid As ClimateGrid
     Public Property Model As ClimateModel2D
 
+    'Zeitkomponente
     Public Property StartYear As Integer
     Public Property CurrentYear As Double
     Public Property SimTimeYears As Double
 
+    'Schnittstellen
     Public Property TemperatureProvider As ITemperatureFieldProvider
+    Public Property EarthSurfaceProvider As IEarthSurfaceProvider
     Public Property CO2Scenario As ICo2Scenario
 
+    'Aufzeichnung
     Public ReadOnly Property History As List(Of SimulationRecord)
     Public ReadOnly Property Snapshots As List(Of GridSnapshot)
 
@@ -26,8 +31,12 @@
         Me.CurrentYear = startYear
 
         Grid = New ClimateGrid(width, height)
+        'Zuerst Erdoberfläche intitialiseren, falls Provider gesetzt ist
+        If EarthSurfaceProvider IsNot Nothing Then
+            EarthInitializer.InitializeSurface(Grid, EarthSurfaceProvider)
+        End If
 
-        'Temperatur über Provider abrufen, falls gesetzt
+        'Temperaturfeld über Provider abrufen, falls gesetzt
         If TemperatureProvider IsNot Nothing Then
             ClimateInitializer.InitializeFromProvider(Grid, TemperatureProvider, startYear)
         Else

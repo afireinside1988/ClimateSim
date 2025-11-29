@@ -10,10 +10,14 @@ Class MainWindow
     'Die Simulations-Engine
     Private _engine As SimulationEngine
 
+    'Felder fürs Multi-Threading
     Private _simCts As CancellationTokenSource
     Private _isSimulationRunning As Boolean = False
 
+
+    'Default-Werte
     Private _endYear As Integer = 2100 'Standardwert, wird aus Textbox gelesen
+    Private _currentLayer As MapLayer = MapLayer.Temperature
 
     Public Sub RefreshFromEngine()
         If _engine Is Nothing Then Return
@@ -30,12 +34,16 @@ Class MainWindow
         _engine.CO2Scenario = New DefaultCo2Scenario()
         'Temperatur-Provider setzen
         _engine.TemperatureProvider = New SimpleLatitudinalClimatology()
+        'Erdoberflächenprovider setzen
+        _engine.EarthSurfaceProvider = New ToyEarthSurfaceProvider()
 
+        'UI-Handler
         AddHandler BtnGenerate.Click, AddressOf BtnGenerate_Click
         AddHandler BtnStep.Click, AddressOf BtnStep_Click
         AddHandler BtnStart.Click, AddressOf BtnStart_Click
         AddHandler BtnStop.Click, AddressOf BtnStop_Click
         AddHandler BtnShowHistory.Click, AddressOf BtnShowHistory_Click
+        AddHandler CmbLayer.SelectionChanged, AddressOf CmbLayer_SelectionChanged
 
         'Beim Start einmal initialisieren
         InitializeModelAndRender()
@@ -138,6 +146,16 @@ Class MainWindow
         wnd.Owner = Me
         wnd.Show()
     End Sub
+    Private Sub CmbLayer_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+        Select Case CmbLayer.SelectedIndex
+            Case 0
+                _currentLayer = MapLayer.Temperature
+            Case 1
+                _currentLayer = MapLayer.SurfaceType
+        End Select
+
+        RenderCurrentGrid()
+    End Sub
 
     Private Sub RunSimulationLoop(dtYears As Double, endYear As Double, token As CancellationToken)
         If _engine Is Nothing OrElse _engine.Model Is Nothing OrElse _engine.Grid Is Nothing Then Return
@@ -227,27 +245,40 @@ Class MainWindow
     Private Sub RenderCurrentGrid()
         If _engine Is Nothing OrElse _engine.Grid Is Nothing Then Return
 
+        Select Case _currentLayer
 
-        'Farbskala
-        'Standardwerte, falls Parsing scheitert
-        Dim tMinC As Double = -50.0
-        Dim tMaxC As Double = 40.0
+            '--- Temperatur-Layer ---
+            Case MapLayer.Temperature
 
-        Try
-            'Kommas durch Punkte ersetzen, damit es kulturunabhängig klappt
-            tMinC = Double.Parse(TxtTempMin.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
-            tMaxC = Double.Parse(TxtTempMax.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
-        Catch ex As Exception
-            'Wenn was schiefgeht, einfach die Standardwerte nehmen
-            'Optional MessageBox anzeigen
-        End Try
+                'Farbskala
+                'Standardwerte, falls Parsing scheitert
+                Dim tMinC As Double = -50.0
+                Dim tMaxC As Double = 40.0
 
-        Dim bmp As WriteableBitmap = TemperatureRenderer.RenderTemperatureField(_engine.Grid, tMinC, tMaxC)
-        ImgMap.Source = bmp
+                Try
+                    'Kommas durch Punkte ersetzen, damit es kulturunabhängig klappt
+                    tMinC = Double.Parse(TxtTempMin.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
+                    tMaxC = Double.Parse(TxtTempMax.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
+                Catch ex As Exception
+                    'Wenn was schiefgeht, einfach die Standardwerte nehmen
+                    'Optional MessageBox anzeigen
+                End Try
 
-        'Globalen Mittelwert anzeigen
-        Dim meanC As Double = _engine.Grid.ComputeGlobalMeanTemperatureC()
-        TxtGlobalMean.Text = $"{meanC:F2} °C"
+                Dim bmp As WriteableBitmap = TemperatureRenderer.RenderTemperatureField(_engine.Grid, tMinC, tMaxC)
+                ImgMap.Source = bmp
+
+                'Globalen Mittelwert anzeigen
+                Dim meanC As Double = _engine.Grid.ComputeGlobalMeanTemperatureC()
+                TxtGlobalMean.Text = $"{meanC:F2} °C"
+            '--- Oberflächentyp-Layer ---
+            Case MapLayer.SurfaceType
+
+                Dim bmp As WriteableBitmap = SurfaceTypeRenderer.RenderSurfaceType(_engine.Grid)
+                ImgMap.Source = bmp
+        End Select
+
+
+
     End Sub
 
     Private Sub SimulateOneStep(dtYears As Double)

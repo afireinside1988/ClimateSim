@@ -17,7 +17,8 @@ Public Class TemperatureRenderer
         Dim width As Integer = grid.Width
         Dim height As Integer = grid.Height
 
-        Dim wb As New WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, Nothing)
+        Dim dpi As Double = 96 'Auflösung des Renderings
+        Dim wb As New WriteableBitmap(width, height, dpi, dpi, PixelFormats.Bgra32, Nothing)
         Dim stride As Integer = width * 4 '4 Bytes pro Pixel (BGRA)
         Dim pixels(width * height * 4 - 1) As Byte
 

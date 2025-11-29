@@ -70,7 +70,10 @@
                 Dim diffTerm As Double = DiffusionCoefficient * laplacian
 
                 ' 3) Gesamtänderung
-                Dim dTdt As Double = relaxTerm + diffTerm
+                Dim localC As Double = cell.HeatCapacityFactor
+                If localC <= 0 Then localC = 1.0
+
+                Dim dTdt As Double = (relaxTerm + diffTerm) / localC
 
                 newTemps(lat, lon) = T + dTdt * dtYears
             Next

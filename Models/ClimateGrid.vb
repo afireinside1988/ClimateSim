@@ -36,8 +36,12 @@ Public Class ClimateGrid
                 _cells(latIndex, lonIndex) = New ClimateCell() With {
                     .LatitudeDeg = latDeg,
                     .LongitudeDeg = lonDeg,
-                    .TemperatureK = 0.0, 'wird später ersetzt
-                    .IsOcean = True 'vorerst alles Ozean, später differenzieren
+                    .TemperatureK = 0.0, 'Defaultwerte für neue Zelle setzen: Tiefsee-Ozean
+                    .Surface = SurfaceType.Ocean,
+                    .HeightM = -3000.0,
+                    .HeatCapacityFactor = 6.0,
+                    .Albedo = 0.07,
+                    .AreaWeight = 0.0
                 }
             Next
         Next
