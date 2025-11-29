@@ -46,8 +46,8 @@
                 Dim cell = _grid.GetCell(lat, lon)
                 Dim T As Double = cell.TemperatureK
 
-                ' 1) Basis-Gleichgewichtstemperatur abhängig von der Breite
-                Dim TeqBase As Double = EquilibriumTemperature(cell.LatitudeDeg)
+                ' 1) Basis-Gleichgewichtstemperatur abhängig von der Breite und der Höhe
+                Dim TeqBase As Double = EquilibriumTemperatureForCell(cell)
 
                 'CO2-bedingte Anpassung der Gleichgewichtstemperatur
                 Dim Teq As Double = TeqBase + deltaTeqCO2
@@ -90,7 +90,9 @@
     ''' <summary>
     ''' "Soll"-Temperatur als Funktion der Breite (wie in unserem Initialisierer).
     ''' </summary>
-    Private Function EquilibriumTemperature(latitudeDeg As Double) As Double
+    Private Function EquilibriumTemperatureForCell(cell As ClimateCell) As Double
+        Dim latitudeDeg As Double = cell.LatitudeDeg
+
         Dim T_equator As Double = 303.0 '27°C
         Dim T_pole As Double = 258.0 ' -33°C
 
@@ -99,7 +101,14 @@
 
         If weight < 0 Then weight = 0
 
-        Return T_pole + (T_equator - T_pole) * weight
+        Dim baseTeq As Double = T_pole + (T_equator - T_pole) * weight
+
+        'Höhenkorrektur: nur für positive Höhen (Land), Meer bleibt bei 0m
+        Dim effectiveHeight As Double = Math.Max(0.0, cell.HeightM)
+        Dim deltaT As Double = ElevationLapseRateKPerM * effectiveHeight
+
+        Return baseTeq - deltaT
+
     End Function
 
 End Class

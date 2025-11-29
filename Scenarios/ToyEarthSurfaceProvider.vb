@@ -49,6 +49,29 @@ Public Class ToyEarthSurfaceProvider
             info.HeightM = 200.0
         End If
 
+        '--- Gebirge ---
+
+        'Rocky Mountains (grob)
+        If lat > 30 AndAlso lat < 55 AndAlso
+                lon > -125 AndAlso lon < -105 Then
+            info.Surface = SurfaceType.LandMountain
+            info.HeightM = 2500.0
+        End If
+
+        'Anden (grob)
+        If lat > -55 AndAlso lat < 5 AndAlso
+                lon > -75 AndAlso lon < -65 Then
+            info.Surface = SurfaceType.LandMountain
+            info.HeightM = 3000.0
+        End If
+
+        'Himalaya/Tibet (sehr grob)
+        If lat > 25 AndAlso lat < 40 AndAlso
+                lon > 70 AndAlso lon < 100 Then
+            info.Surface = SurfaceType.LandMountain
+            info.HeightM = 3500.0
+        End If
+
         '--- Polareisschilde ---
 
         'Grönland

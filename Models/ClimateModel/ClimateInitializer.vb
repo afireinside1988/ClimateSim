@@ -71,9 +71,15 @@
                 'Basistemperatur in Kelvin aus dem Provider
                 Dim Tbase As Double = provider.GetInitialTemperatureK(cell.LatitudeDeg, cell.LongitudeDeg, startYear)
 
+                'Höhenkorrektur wie im Modell:
+                Dim effectiveHeight As Double = Math.Max(0.0, cell.HeightM)
+                Dim deltaT As Double = ElevationLapseRateKPerM * effectiveHeight
+
+                Dim Telev As Double = Tbase - deltaT
+
                 'kleines Rauschen (+/- 1K), damit Diffusion "etwas zu tun hat"
                 Dim noise As Double = (_rnd.NextDouble() - 0.5) * 2.0
-                cell.TemperatureK = Tbase + noise
+                cell.TemperatureK = Telev + noise
             Next
         Next
     End Sub
