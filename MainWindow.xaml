@@ -13,20 +13,32 @@
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
         
-        <!-- Links: Temperaturkarte -->
+        <!-- Links: Karte mit Layern -->
         <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="5">
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                <Image x:Name="ImgMap"
-                       Stretch="Uniform"
-                       RenderOptions.BitmapScalingMode="Fant"
-                       RenderOptions.EdgeMode="Aliased" />
+                
+                <!-- Grid als Container für mehrere Layer -->
+                <Grid Background="Black">
+                    <!-- Basiskarte: Oberflächentyp -->
+                    <Image x:Name="ImgSurface" 
+                           Stretch="Uniform"
+                           RenderOptions.BitmapScalingMode="HighQuality"
+                           RenderOptions.EdgeMode="Aliased"/>
+                    
+                    <!-- Overlay: Temperatur -->
+                    <Image x:Name="ImgTemperature"
+                           Stretch="Uniform"
+                           RenderOptions.BitmapScalingMode="HighQuality"
+                           RenderOptions.EdgeMode="Aliased"
+                           Opacity="{Binding ElementName=SldTemperatureOpacity, Path=Value}"/>
+                </Grid>
             </ScrollViewer>
         </Border>
         
         <!-- Rechts: Steuerungselemente -->
         <StackPanel Grid.Column="1" Margin="10" VerticalAlignment="Stretch">
             <TextBlock Text="Klimamodell - Schritt 1" FontSize="20" FontWeight="Bold" Margin="0,0,0,10" />
-            <TextBlock Text="Raster-Auflösung:" FontWeight="SemiBold" />
+            <TextBlock Text="Gitternetz-Auflösung:" FontWeight="SemiBold" />
             <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
                 <TextBlock Text="Breite (Lon):" VerticalAlignment="Center"/>
                 <TextBox x:Name="TxtWidth" Width="60" Margin="5,0,10,0" Text="360"/>
@@ -35,11 +47,24 @@
             </StackPanel>
 
             <StackPanel Orientation="Vertical" Margin="0,5,0,5" HorizontalAlignment="Left">
-                <TextBlock Text="Anzeigemodus:" Margin="0,0,0,2"/>
-                <ComboBox x:Name="CmbLayer" Width="150" SelectedIndex="0">
-                    <ComboBoxItem>Temperatur</ComboBoxItem>
-                    <ComboBoxItem>Oberflächentyp</ComboBoxItem>
-                </ComboBox>
+                <TextBlock Text="Layer:" Margin="0,0,0,2"/>
+                <ListBox Width="270">
+                    <ListBoxItem>
+                        <CheckBox x:Name="ChkBaseLayer" Content="Erdoberfläche" IsChecked="True" IsEnabled="False"/>
+                    </ListBoxItem>
+                    <ListBoxItem>
+                        <Grid Width="250">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                               <CheckBox x:Name="ChkShowTemperature" Grid.Column="0" Content="Temperatur" IsChecked="True" VerticalAlignment="Center"/>
+                               <Slider x:Name="SldTemperatureOpacity" Grid.Column="1" Minimum="0.0" Maximum="1.0" Value="0.9" Width="80"
+                                       TickFrequency="0.1" IsSnapToTickEnabled="False" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                        </Grid>
+                         
+                    </ListBoxItem>
+                </ListBox>
             </StackPanel>
             
             <TextBlock Text="Temperaturbereich (für Farbkodierung):" FontWeight="SemiBold"/>

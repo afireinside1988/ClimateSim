@@ -23,7 +23,7 @@ Class MainWindow
         If _engine Is Nothing Then Return
 
         UpdateCO2Display(_engine.Model.CO2ppm)
-        RenderCurrentGrid()
+        RenderTemperatureLayer()
         UpdateSimTimeDisplay()
     End Sub
 
@@ -43,7 +43,8 @@ Class MainWindow
         AddHandler BtnStart.Click, AddressOf BtnStart_Click
         AddHandler BtnStop.Click, AddressOf BtnStop_Click
         AddHandler BtnShowHistory.Click, AddressOf BtnShowHistory_Click
-        AddHandler CmbLayer.SelectionChanged, AddressOf CmbLayer_SelectionChanged
+        AddHandler ChkShowTemperature.Checked, AddressOf OnLayerCheckboxChanged
+        AddHandler ChkShowTemperature.Unchecked, AddressOf OnLayerCheckboxChanged
 
         'Beim Start einmal initialisieren
         InitializeModelAndRender()
@@ -146,15 +147,13 @@ Class MainWindow
         wnd.Owner = Me
         wnd.Show()
     End Sub
-    Private Sub CmbLayer_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
-        Select Case CmbLayer.SelectedIndex
-            Case 0
-                _currentLayer = MapLayer.Temperature
-            Case 1
-                _currentLayer = MapLayer.SurfaceType
-        End Select
 
-        RenderCurrentGrid()
+    Private Sub OnLayerCheckboxChanged(sender As Object, e As RoutedEventArgs)
+        If ChkShowTemperature.IsChecked = True Then
+            ImgTemperature.Visibility = Visibility.Visible
+        Else
+            ImgTemperature.Visibility = Visibility.Hidden
+        End If
     End Sub
 
     Private Sub RunSimulationLoop(dtYears As Double, endYear As Double, token As CancellationToken)
@@ -182,7 +181,7 @@ Class MainWindow
                     Sub()
                         UpdateSimTimeDisplay()
                         UpdateCO2Display(_engine.Model.CO2ppm)
-                        RenderCurrentGrid()
+                        RenderTemperatureLayer()
                     End Sub)
             End If
         End While
@@ -192,13 +191,14 @@ Class MainWindow
             Sub()
                 UpdateSimTimeDisplay()
                 UpdateCO2Display(_engine.Model.CO2ppm)
-                RenderCurrentGrid()
+                RenderTemperatureLayer()
             End Sub)
     End Sub
 
     Private Sub InitializeModelAndRender()
         Try
 
+            'Gitternetz-Auflösung aus UI holen
             Dim width As Integer = Integer.Parse(TxtWidth.Text)
             Dim height As Integer = Integer.Parse(TxtHeight.Text)
 
@@ -231,10 +231,13 @@ Class MainWindow
             'Lambda aus UI holen
             UpdateModelParametersFromUI()
 
+            'Basis-Layer rendern
+            RenderSurfaceLayer()
+
             'Anzeige aktualisieren
             UpdateSimTimeDisplay()
             UpdateCO2Display(_engine.Model.CO2ppm)
-            RenderCurrentGrid()
+            RenderTemperatureLayer()
 
         Catch ex As Exception
             MessageBox.Show("Fehler bei der Initialisierung des Modells: " & ex.Message,
@@ -242,42 +245,36 @@ Class MainWindow
         End Try
     End Sub
 
-    Private Sub RenderCurrentGrid()
+    Private Sub RenderSurfaceLayer()
         If _engine Is Nothing OrElse _engine.Grid Is Nothing Then Return
 
-        Select Case _currentLayer
+        Dim bmp = SurfaceTypeRenderer.RenderSurfaceType(_engine.Grid)
+        ImgSurface.Source = bmp
+    End Sub
 
-            '--- Temperatur-Layer ---
-            Case MapLayer.Temperature
+    Private Sub RenderTemperatureLayer()
+        If _engine Is Nothing OrElse _engine.Grid Is Nothing Then Return
 
-                'Farbskala
-                'Standardwerte, falls Parsing scheitert
-                Dim tMinC As Double = -50.0
-                Dim tMaxC As Double = 40.0
+        'Farbskala
+        'Standardwerte, falls Parsing scheitert
+        Dim tMinC As Double = -50.0
+        Dim tMaxC As Double = 40.0
 
-                Try
-                    'Kommas durch Punkte ersetzen, damit es kulturunabhängig klappt
-                    tMinC = Double.Parse(TxtTempMin.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
-                    tMaxC = Double.Parse(TxtTempMax.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
-                Catch ex As Exception
-                    'Wenn was schiefgeht, einfach die Standardwerte nehmen
-                    'Optional MessageBox anzeigen
-                End Try
+        Try
+            'Kommas durch Punkte ersetzen, damit es kulturunabhängig klappt
+            tMinC = Double.Parse(TxtTempMin.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
+            tMaxC = Double.Parse(TxtTempMax.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
+        Catch ex As Exception
+            'Wenn was schiefgeht, einfach die Standardwerte nehmen
+            'Optional MessageBox anzeigen
+        End Try
 
-                Dim bmp As WriteableBitmap = TemperatureRenderer.RenderTemperatureField(_engine.Grid, tMinC, tMaxC)
-                ImgMap.Source = bmp
+        Dim bmp As WriteableBitmap = TemperatureRenderer.RenderTemperatureField(_engine.Grid, tMinC, tMaxC)
+        ImgTemperature.Source = bmp
 
-                'Globalen Mittelwert anzeigen
-                Dim meanC As Double = _engine.Grid.ComputeGlobalMeanTemperatureC()
-                TxtGlobalMean.Text = $"{meanC:F2} °C"
-            '--- Oberflächentyp-Layer ---
-            Case MapLayer.SurfaceType
-
-                Dim bmp As WriteableBitmap = SurfaceTypeRenderer.RenderSurfaceType(_engine.Grid)
-                ImgMap.Source = bmp
-        End Select
-
-
+        'Globalen Mittelwert anzeigen
+        Dim meanC As Double = _engine.Grid.ComputeGlobalMeanTemperatureC()
+        TxtGlobalMean.Text = $"{meanC:F2} °C"
 
     End Sub
 
@@ -292,7 +289,7 @@ Class MainWindow
         UpdateCO2Display(_engine.Model.CO2ppm)
 
         'Visualisierung aktualisieren
-        RenderCurrentGrid()
+        RenderTemperatureLayer()
         UpdateSimTimeDisplay()
     End Sub
 
