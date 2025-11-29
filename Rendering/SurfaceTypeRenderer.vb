@@ -41,6 +41,8 @@ Public Class SurfaceTypeRenderer
         Select Case surface
             Case SurfaceType.Ocean
                 Return Colors.MidnightBlue
+            Case SurfaceType.SeaIce
+                Return Colors.LightCyan
             Case SurfaceType.LandPlain
                 Return Colors.OliveDrab
             Case SurfaceType.LandForest

@@ -3,6 +3,8 @@
         Select Case surface
             Case SurfaceType.Ocean
                 Return 0.07
+            Case SurfaceType.SeaIce
+                Return 0.6
             Case SurfaceType.LandPlain
                 Return 0.28
             Case SurfaceType.LandForest
@@ -27,6 +29,8 @@
                 Else
                     Return 4.0
                 End If
+            Case SurfaceType.SeaIce
+                Return 3.0
             Case SurfaceType.LandIce
                 Return 0.5
             Case SurfaceType.LandForest
