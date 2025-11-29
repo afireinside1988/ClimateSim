@@ -30,34 +30,38 @@
         Me.SimTimeYears = 0.0
         Me.CurrentYear = startYear
 
+        'Grid anlegen
         Grid = New ClimateGrid(width, height)
-        'Zuerst Erdoberfläche intitialiseren, falls Provider gesetzt ist
+
+        '1) Erdoberfläche intitialiseren, falls Provider gesetzt ist
         If EarthSurfaceProvider IsNot Nothing Then
             EarthInitializer.InitializeSurface(Grid, EarthSurfaceProvider)
         End If
 
-        'Temperaturfeld über Provider abrufen, falls gesetzt
-        If TemperatureProvider IsNot Nothing Then
-            ClimateInitializer.InitializeFromProvider(Grid, TemperatureProvider, startYear)
-        Else
-            ClimateInitializer.InitializeSimpleLatitudeProfile(Grid)
-        End If
-
+        '2) Modell anlegen, Parameter setzen
         Model = New ClimateModel2D(Grid)
-        Model.CO2Base = 280.0 'Basis Co2
-        Model.RelaxationTimescaleYears = 40.0 'Systemträgheit
-        Model.DiffusionCoefficient = 0.02 'Horizontale Diffusion
+        Model.CO2Base = 280.0 'Basis-Co2
+        Model.RelaxationTimescaleYears = 30.0 'Systemträgheit
+        Model.DiffusionCoefficient = 0.001 'Horizontale Diffusion
         Model.ClimateSensitivityLambda = 0.5 'Klimasensitivität
+        Model.BaseTemperatureOffsetK = 0.0
 
-        History.Clear()
-        Snapshots.Clear()
-
-        Dim initialMeanC As Double = Grid.ComputeGlobalMeanTemperatureC()
-
+        '3) CO2 passend zum Startjahr setzen
         Dim co2Now As Double = If(CO2Scenario IsNot Nothing, CO2Scenario.GetCO2ForYear(CurrentYear), 280.0)
         Model.CO2ppm = co2Now
 
-        'Verlauf schreiben
+        '4) Temperaturfeld NICHT mehr über TemperatureProvider, sondern direkt auf Modell-Gleichgewicht initialisieren (TemperatureProvider für spätere Realdaten aufheben)
+        ClimateInitializer.InitializeFromModelEquilibrium(Grid, Model)
+
+        'Verlauf und Snapshots zurücksetzen
+        History.Clear()
+        Snapshots.Clear()
+
+        '5) Anfangswerte berechnen
+        Dim initialMeanC As Double = Grid.ComputeGlobalMeanTemperatureC()
+
+
+        '6) ersten Verlaufseintrag erzeugen
         History.Add(New SimulationRecord With {
                     .SimTimeYears = SimTimeYears,
                     .Year = CurrentYear,
@@ -65,7 +69,7 @@
                     .CO2ppm = co2Now
                     })
 
-        'Grid-Snapshot schreiben
+        '7) Grid-Snapshot schreiben
         Dim initialSnap As GridSnapshot = CreateSnapshotFromGrid()
         If initialSnap IsNot Nothing Then Snapshots.Add(initialSnap)
 

@@ -3,10 +3,10 @@
     Private ReadOnly _grid As ClimateGrid
 
     'Zeitkonstante, mit der die Temperatur zur Gleichgewichtstemperatur zurückläuft (in Jahren)
-    Public Property RelaxationTimescaleYears As Double = 5.0
+    Public Property RelaxationTimescaleYears As Double = 30.0
 
     'Stärke der horizontalen Diffusion (Spielparamter, dimensionslos)
-    Public Property DiffusionCoefficient As Double = 0.1
+    Public Property DiffusionCoefficient As Double = 0.01
 
     'CO2-Paramter
     Public Property CO2ppm As Double = 420.0
@@ -14,6 +14,13 @@
 
     'Klimasensitivität λ [K/(W/m²)]
     Public Property ClimateSensitivityLambda As Double = 0.5
+
+    'Albedo-Sensitivität
+    Public Shared Property AlbedoReference As Double = 0.3
+    Public Shared Property AlbedoSensitivityKPerUnit As Double = 25.0
+
+    'globaler Temperatur-Offset, um das gesamte Gleichgewichtsniveau zu verschieben
+    Public Property BaseTemperatureOffsetK As Double = 0.0
 
     ''' <summary>
     ''' Erstellt ein neues 2D-Klimamodell auf dem gegebenen Gitter.
@@ -90,24 +97,35 @@
     ''' <summary>
     ''' "Soll"-Temperatur als Funktion der Breite (wie in unserem Initialisierer).
     ''' </summary>
-    Private Function EquilibriumTemperatureForCell(cell As ClimateCell) As Double
+    Public Function EquilibriumTemperatureForCell(cell As ClimateCell) As Double
         Dim latitudeDeg As Double = cell.LatitudeDeg
 
-        Dim T_equator As Double = 303.0 '27°C
-        Dim T_pole As Double = 258.0 ' -33°C
+        Dim T_equator As Double = 298.0 '25°C
+        Dim T_pole As Double = 272.0 ' -1°C
 
         Dim latRad As Double = latitudeDeg * Math.PI / 180.0
-        Dim weight As Double = Math.Pow(Math.Cos(latRad), 2) 'Gewichtungsfaktor basierend auf cos²(lat))
+        Dim weight As Double = Math.Cos(latRad) 'Gewichtungsfaktor basierend auf cos²(lat))
 
         If weight < 0 Then weight = 0
 
+        '1) Breitengradprofil (Meereshöhe, Referenz-Albedo
         Dim baseTeq As Double = T_pole + (T_equator - T_pole) * weight
 
-        'Höhenkorrektur: nur für positive Höhen (Land), Meer bleibt bei 0m
+        '2) Höhenkorrektur: nur für positive Höhen (Land), Meer bleibt bei 0m
         Dim effectiveHeight As Double = Math.Max(0.0, cell.HeightM)
-        Dim deltaT As Double = ElevationLapseRateKPerM * effectiveHeight
+        Dim deltaT_height As Double = ElevationLapseRateKPerM * effectiveHeight
 
-        Return baseTeq - deltaT
+        Dim Teq_noAlbedo As Double = baseTeq - deltaT_height
+
+        '3) Albedo-Effekt
+        Dim alphaCell As Double = cell.Albedo
+
+        Dim deltaT_albedo As Double = AlbedoSensitivityKPerUnit * (AlbedoReference - alphaCell)
+
+        '4) Gesamte Gleichgewichtstemperatur
+        Dim Teq As Double = Teq_noAlbedo + deltaT_albedo + BaseTemperatureOffsetK
+
+        Return Teq
 
     End Function
 
