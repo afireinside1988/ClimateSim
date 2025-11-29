@@ -1,4 +1,5 @@
 ﻿Imports System.Windows
+Imports System.Windows.Input
 Imports System.Windows.Media.Imaging
 Imports System.Windows.Threading
 Imports System.Globalization
@@ -13,7 +14,6 @@ Class MainWindow
     'Felder fürs Multi-Threading
     Private _simCts As CancellationTokenSource
     Private _isSimulationRunning As Boolean = False
-
 
     'Default-Werte
     Private _endYear As Integer = 2100 'Standardwert, wird aus Textbox gelesen
@@ -37,14 +37,22 @@ Class MainWindow
         'Erdoberflächenprovider setzen
         _engine.EarthSurfaceProvider = New ToyEarthSurfaceProvider()
 
-        'UI-Handler
+        '--- UI-Handler ---
+        'Buttons
+
         AddHandler BtnGenerate.Click, AddressOf BtnGenerate_Click
         AddHandler BtnStep.Click, AddressOf BtnStep_Click
         AddHandler BtnStart.Click, AddressOf BtnStart_Click
         AddHandler BtnStop.Click, AddressOf BtnStop_Click
         AddHandler BtnShowHistory.Click, AddressOf BtnShowHistory_Click
+
+        'Layer-Auswahl
         AddHandler ChkShowTemperature.Checked, AddressOf OnLayerCheckboxChanged
         AddHandler ChkShowTemperature.Unchecked, AddressOf OnLayerCheckboxChanged
+
+        'Mouseovers
+        AddHandler ImgTemperature.MouseMove, AddressOf ImgTemperature_MouseMove
+        AddHandler ImgTemperature.MouseLeave, AddressOf ImgTemperature_MouseLeave
 
         'Beim Start einmal initialisieren
         InitializeModelAndRender()
@@ -154,6 +162,68 @@ Class MainWindow
         Else
             ImgTemperature.Visibility = Visibility.Hidden
         End If
+    End Sub
+
+    Private Sub ImgTemperature_MouseMove(sender As Object, e As MouseEventArgs)
+        If _engine Is Nothing OrElse _engine.Grid Is Nothing Then
+            ClearStatusBar()
+            Return
+        End If
+
+        Dim img = DirectCast(sender, Image)
+
+        'Position der Maus relativ zum Image
+        Dim pos = e.GetPosition(img)
+
+        'Falls Maus außerhalb des tatsächlich sichtbaren Bereichs: kein ToolTip
+        If pos.X < 0 OrElse pos.Y < 0 OrElse
+                pos.X > img.ActualWidth OrElse pos.Y > img.ActualHeight Then
+            ClearStatusBar()
+            Return
+        End If
+
+        Dim gridWidth = _engine.Grid.Width
+        Dim gridHeight = _engine.Grid.Height
+
+        If gridWidth <= 0 OrElse gridHeight <= 0 Then
+            ClearStatusBar()
+            Return
+        End If
+
+        'Pixelkoordinate in der Simulation ermitteln
+        Dim lonIndex As Integer = CInt(Math.Floor(pos.X / img.ActualWidth * gridWidth))
+        Dim latIndex As Integer = CInt(Math.Floor(pos.Y / img.ActualHeight * gridHeight))
+
+        'Clamp für Sicherheit
+        lonIndex = Math.Max(0, Math.Min(gridWidth - 1, lonIndex))
+        latIndex = Math.Max(0, Math.Min(gridHeight - 1, latIndex))
+
+        Dim cell As ClimateCell = _engine.Grid.GetCell(latIndex, lonIndex)
+        If cell Is Nothing Then
+            ClearStatusBar()
+            Return
+        End If
+
+        Dim tempC As Double = cell.TemperatureK - 273.5
+        Dim latDeg As Double = cell.LatitudeDeg
+        Dim lonDeg As Double = cell.LongitudeDeg
+        Dim surfaceName As String = cell.Surface.ToString()
+
+        TxtStatusLat.Text = String.Format(CultureInfo.InvariantCulture, "Lat: {0:F1}°", latDeg)
+        TxtStatusLon.Text = String.Format(CultureInfo.InvariantCulture, "Lon: {0:F1}°", lonDeg)
+        TxtStatusTemp.Text = String.Format(CultureInfo.InvariantCulture, "Temp: {0:F2} °C", tempC)
+        TxtStatusSurface.Text = $"Surface: {surfaceName}"
+    End Sub
+
+    Private Sub ImgTemperature_MouseLeave(sender As Object, e As MouseEventArgs)
+        ClearStatusBar()
+    End Sub
+
+    Private Sub ClearStatusBar()
+        TxtStatusLat.Text = "Lat: -"
+        TxtStatusLon.Text = "Lon: -"
+        TxtStatusTemp.Text = "Temp: -"
+        TxtStatusSurface.Text = "Surface: -"
     End Sub
 
     Private Sub RunSimulationLoop(dtYears As Double, endYear As Double, token As CancellationToken)

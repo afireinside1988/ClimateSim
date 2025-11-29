@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:ClimateSim"
         mc:Ignorable="d"
-        Title="ClimateSim - Schritt 1" Height="800" Width="1200"
+        Title="ClimateSim" Height="900" Width="1200"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="10">
         <Grid.ColumnDefinitions>
@@ -15,24 +15,48 @@
         
         <!-- Links: Karte mit Layern -->
         <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="5">
-            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 
-                <!-- Grid als Container für mehrere Layer -->
-                <Grid Background="Black">
-                    <!-- Basiskarte: Oberflächentyp -->
-                    <Image x:Name="ImgSurface" 
-                           Stretch="Uniform"
-                           RenderOptions.BitmapScalingMode="HighQuality"
-                           RenderOptions.EdgeMode="Aliased"/>
-                    
-                    <!-- Overlay: Temperatur -->
-                    <Image x:Name="ImgTemperature"
-                           Stretch="Uniform"
-                           RenderOptions.BitmapScalingMode="HighQuality"
-                           RenderOptions.EdgeMode="Aliased"
-                           Opacity="{Binding ElementName=SldTemperatureOpacity, Path=Value}"/>
-                </Grid>
-            </ScrollViewer>
+                <!-- Karte im ScrollViewer -->
+                <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                
+                    <!-- Grid als Container für mehrere Layer -->
+                    <Grid Background="Black">
+                        <!-- Basiskarte: Oberflächentyp -->
+                        <Image x:Name="ImgSurface" 
+                               Stretch="Uniform"
+                               RenderOptions.BitmapScalingMode="Fant"
+                               RenderOptions.EdgeMode="Aliased"/>
+
+                        <!-- Overlay: Temperatur -->
+                        <Image x:Name="ImgTemperature"
+                               Stretch="Uniform"
+                               RenderOptions.BitmapScalingMode="Fant"
+                               RenderOptions.EdgeMode="Aliased"
+                               Opacity="{Binding ElementName=SldTemperatureOpacity, Path=Value}"/>
+                    </Grid>
+                </ScrollViewer>
+                
+                <!-- Statuszeile -->
+                <StatusBar Grid.Row="1">
+                    <StatusBarItem>
+                        <TextBlock x:Name="TxtStatusLat" Text="Lat: -"/>
+                    </StatusBarItem>
+                    <StatusBarItem>
+                        <TextBlock x:Name="TxtStatusLon" Text="Lon: -"/>
+                    </StatusBarItem>
+                    <StatusBarItem>
+                        <TextBlock x:Name="TxtStatusTemp" Text="Temp: -"/>
+                    </StatusBarItem>
+                    <StatusBarItem>
+                        <TextBlock x:Name="TxtStatusSurface" Text="Surface: -"/>
+                    </StatusBarItem>
+                </StatusBar>
+            </Grid>
         </Border>
         
         <!-- Rechts: Steuerungselemente -->
