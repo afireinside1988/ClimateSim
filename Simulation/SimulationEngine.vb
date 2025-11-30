@@ -41,10 +41,10 @@
         '2) Modell anlegen, Parameter setzen
         Model = New ClimateModel2D(Grid)
         Model.CO2Base = 280.0 'Basis-Co2
-        Model.RelaxationTimescaleYears = 30.0 'Systemträgheit
+        Model.RelaxationTimescaleYears = 40.0 'Systemträgheit
         Model.DiffusionCoefficient = 0.001 'Horizontale Diffusion
         Model.ClimateSensitivityLambda = 0.5 'Klimasensitivität
-        Model.BaseTemperatureOffsetK = 0.0
+        Model.BaseTemperatureOffsetK = 0.0 'Basis-Offset zum Kalibrieren der Start-Temperatur
 
         '3) CO2 passend zum Startjahr setzen
         Dim co2Now As Double = If(CO2Scenario IsNot Nothing, CO2Scenario.GetCO2ForYear(CurrentYear), 280.0)

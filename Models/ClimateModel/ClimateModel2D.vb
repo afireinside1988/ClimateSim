@@ -15,6 +15,11 @@
     'Klimasensitivität λ [K/(W/m²)]
     Public Property ClimateSensitivityLambda As Double = 0.5
 
+    'EBM-Variablen
+    Public Shared Property InsolationShapeS2 As Double = -0.48 'Formfaktor für Breitenverlauf (klassische EBM-Ordnung): Negativ -> Äquator wärmer, Pole kälter
+    Public Shared Property InsolationAmplitudeK As Double = 35.0 'Stärke des latitudinalen Gradienten (K)
+    Public Shared Property BaseTemperatureK As Double = 287.0 'Globale Referenz-Temperatur (etwa 18°C)
+
     'Albedo-Sensitivität
     Public Shared Property AlbedoReference As Double = 0.3
     Public Shared Property AlbedoSensitivityKPerUnit As Double = 25.0
@@ -100,27 +105,23 @@
     Public Function EquilibriumTemperatureForCell(cell As ClimateCell) As Double
         Dim latitudeDeg As Double = cell.LatitudeDeg
 
-        Dim T_equator As Double = 298.0 '25°C
-        Dim T_pole As Double = 272.0 ' -1°C
+        '1) EBM-Breitenprofil über Insolationsfaktor
+        Dim q As Double = ComputeInsolationFactor(latitudeDeg)
 
-        Dim latRad As Double = latitudeDeg * Math.PI / 180.0
-        Dim weight As Double = Math.Cos(latRad) 'Gewichtungsfaktor basierend auf cos²(lat))
-
-        If weight < 0 Then weight = 0
-
-        '1) Breitengradprofil (Meereshöhe, Referenz-Albedo
-        Dim baseTeq As Double = T_pole + (T_equator - T_pole) * weight
+        'q hat globalen Mittelwert 1 -> Temperaturabweichung relativ zu BaseTemperatureK
+        Dim Tzonal As Double = BaseTemperatureK + InsolationAmplitudeK * (q - 1.0)
 
         '2) Höhenkorrektur: nur für positive Höhen (Land), Meer bleibt bei 0m
         Dim effectiveHeight As Double = Math.Max(0.0, cell.HeightM)
-        Dim deltaT_height As Double = ElevationLapseRateKPerM * effectiveHeight
+        Dim deltaT_height As Double = ClimateConstants.ElevationLapseRateKPerM * effectiveHeight
 
-        Dim Teq_noAlbedo As Double = baseTeq - deltaT_height
+        Dim Teq_noAlbedo As Double = Tzonal - deltaT_height
 
         '3) Albedo-Effekt
         Dim alphaCell As Double = cell.Albedo
+        Dim alphaRef As Double = AlbedoReference
 
-        Dim deltaT_albedo As Double = AlbedoSensitivityKPerUnit * (AlbedoReference - alphaCell)
+        Dim deltaT_albedo As Double = AlbedoSensitivityKPerUnit * (alphaRef - alphaCell)
 
         '4) Gesamte Gleichgewichtstemperatur
         Dim Teq As Double = Teq_noAlbedo + deltaT_albedo + BaseTemperatureOffsetK
@@ -129,4 +130,18 @@
 
     End Function
 
+    Private Function ComputeInsolationFactor(latitudeDeg As Double) As Double
+        Dim latRad As Double = latitudeDeg * Math.PI / 180
+        Dim sinPhi As Double = Math.Sin(latRad)
+
+        ' P2(sin φ) = 0.5 * (3 sin²φ - 1)
+        Dim P2 As Double = 0.5 * (3.0 * sinPhi * sinPhi - 1.0)
+
+        Dim s2 As Double = InsolationShapeS2
+
+        ' q(φ) = 1 + s2 * P2(sin φ)
+        Dim q As Double = 1.0 + s2 * P2
+
+        Return q
+    End Function
 End Class

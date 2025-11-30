@@ -91,14 +91,6 @@
                 </ListBox>
             </StackPanel>
             
-            <TextBlock Text="Temperaturbereich (für Farbkodierung):" FontWeight="SemiBold"/>
-            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
-                <TextBlock Text="Min [°C]:" VerticalAlignment="Center"/>
-                <TextBox x:Name="TxtTempMin" Width="60" Margin="5,0,10,0" Text="-50"/>
-                <TextBlock Text="Max [°C]:" VerticalAlignment="Center"/>
-                <TextBox x:Name="TxtTempMax" Width="60" Margin="5,0,0,0" Text="40"/>
-            </StackPanel>
-            
             <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
                 <TextBlock Text="Startjahr der Simulation:" FontWeight="SemiBold"/>
                 <TextBox x:Name="TxtStartYear" Width="80" Text="1850" Margin="5,0,0,0"/> 

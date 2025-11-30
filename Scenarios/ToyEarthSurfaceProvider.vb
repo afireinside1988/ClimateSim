@@ -183,7 +183,7 @@ Public Class ToyEarthSurfaceProvider
         End If
 
         'Antarktis
-        If lat < -60 Then
+        If lat < -70 Then
             info.Surface = SurfaceType.LandIce
             info.HeightM = 2500.0
 

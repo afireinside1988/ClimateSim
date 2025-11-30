@@ -325,19 +325,9 @@ Class MainWindow
     Private Sub RenderTemperatureLayer()
         If _engine Is Nothing OrElse _engine.Grid Is Nothing Then Return
 
-        'Farbskala
-        'Standardwerte, falls Parsing scheitert
+        'Farbskala-Extremwerte
         Dim tMinC As Double = -50.0
         Dim tMaxC As Double = 40.0
-
-        Try
-            'Kommas durch Punkte ersetzen, damit es kulturunabhängig klappt
-            tMinC = Double.Parse(TxtTempMin.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
-            tMaxC = Double.Parse(TxtTempMax.Text.Replace(",", "."), Globalization.CultureInfo.InvariantCulture)
-        Catch ex As Exception
-            'Wenn was schiefgeht, einfach die Standardwerte nehmen
-            'Optional MessageBox anzeigen
-        End Try
 
         Dim bmp As WriteableBitmap = TemperatureRenderer.RenderTemperatureField(_engine.Grid, tMinC, tMaxC)
         ImgTemperature.Source = bmp
