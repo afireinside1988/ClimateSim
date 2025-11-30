@@ -9,9 +9,11 @@
     Public Property SimTimeYears As Double
 
     'Schnittstellen
-    Public Property TemperatureProvider As ITemperatureFieldProvider
     Public Property EarthSurfaceProvider As IEarthSurfaceProvider
     Public Property CO2Scenario As ICo2Scenario
+
+    <Obsolete("Der Temperaturprovider wird aktuell nicht genutzt, brauchen wir aber später für das Laden von Realdaten")>
+    Public Property TemperatureProvider As ITemperatureFieldProvider
 
     'Aufzeichnung
     Public ReadOnly Property History As List(Of SimulationRecord)
@@ -50,7 +52,7 @@
         Dim co2Now As Double = If(CO2Scenario IsNot Nothing, CO2Scenario.GetCO2ForYear(CurrentYear), 280.0)
         Model.CO2ppm = co2Now
 
-        '4) Temperaturfeld NICHT mehr über TemperatureProvider, sondern direkt auf Modell-Gleichgewicht initialisieren (TemperatureProvider für spätere Realdaten aufheben)
+        '4) Temperaturfeld über unser EBM-Modell initialisieren (TemperatureProvider für spätere Realdaten aufheben)
         ClimateInitializer.InitializeFromModelEquilibrium(Grid, Model)
 
         'Verlauf und Snapshots zurücksetzen
@@ -157,11 +159,4 @@
 
         Return snap
     End Function
-End Class
-
-Public Class GridSnapshot
-    Public Property Width As Integer
-    Public Property Height As Integer
-    Public TemperaturesK(,) As Double
-
 End Class

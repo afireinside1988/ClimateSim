@@ -1,5 +1,4 @@
-﻿Imports System.Net.NetworkInformation
-
+﻿
 Public Class ToyEarthSurfaceProvider
     Implements IEarthSurfaceProvider
 

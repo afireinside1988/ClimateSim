@@ -2,35 +2,30 @@
 
     Private ReadOnly _grid As ClimateGrid
 
-    'Zeitkonstante, mit der die Temperatur zur Gleichgewichtstemperatur zurückläuft (in Jahren)
-    Public Property RelaxationTimescaleYears As Double = 30.0
+    '--- Physikalische Modellparameter ---
+    Public Property RelaxationTimescaleYears As Double = 30.0 'Zeitkonstante, mit der die Temperatur zur Gleichgewichtstemperatur zurückläuft (in Jahren)
+    Public Property DiffusionCoefficient As Double = 0.01 'Stärke der horizontalen Diffusion (Spielparamter, dimensionslos)
+    Public Property CO2ppm As Double = 420.0 'aktuelles Atmosphären-CO2
+    Public Property CO2Base As Double = 280.0 'Referenz Atmosphäre-CO2
+    Public Property ClimateSensitivityLambda As Double = 0.5 'Klimasensitivität λ [K/(W/m²)]
 
-    'Stärke der horizontalen Diffusion (Spielparamter, dimensionslos)
-    Public Property DiffusionCoefficient As Double = 0.01
-
-    'CO2-Paramter
-    Public Property CO2ppm As Double = 420.0
-    Public Property CO2Base As Double = 280.0
-
-    'Klimasensitivität λ [K/(W/m²)]
-    Public Property ClimateSensitivityLambda As Double = 0.5
-
-    'EBM-Variablen
+    'EBM-Paramter
     Public Shared Property InsolationShapeS2 As Double = -0.48 'Formfaktor für Breitenverlauf (klassische EBM-Ordnung): Negativ -> Äquator wärmer, Pole kälter
     Public Shared Property InsolationAmplitudeK As Double = 35.0 'Stärke des latitudinalen Gradienten (K)
     Public Shared Property BaseTemperatureK As Double = 287.0 'Globale Referenz-Temperatur (etwa 18°C)
 
-    'Albedo-Sensitivität
-    Public Shared Property AlbedoReference As Double = 0.3
-    Public Shared Property AlbedoSensitivityKPerUnit As Double = 25.0
+    'Albedo-Paramter
+    Public Shared Property AlbedoReference As Double = 0.3 'Albedo-Referenzwert
+    Public Shared Property AlbedoSensitivityKPerUnit As Double = 25.0 'Albedo-Sensitivität (delta K/Albedo-Wert)
 
-    'globaler Temperatur-Offset, um das gesamte Gleichgewichtsniveau zu verschieben
-    Public Property BaseTemperatureOffsetK As Double = 0.0
+
+    Public Property BaseTemperatureOffsetK As Double = 0.0 'globaler Temperatur-Offset, um das gesamte Gleichgewichtsniveau zu verschieben
+
+    '--- Ende physikalische Modellparameter ---
 
     ''' <summary>
     ''' Erstellt ein neues 2D-Klimamodell auf dem gegebenen Gitter.
     ''' </summary>
-
     Public Sub New(grid As ClimateGrid)
         _grid = grid
     End Sub

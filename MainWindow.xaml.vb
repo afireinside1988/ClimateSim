@@ -32,8 +32,6 @@ Class MainWindow
         _engine = New SimulationEngine()
         'CO2-Szenario setzen
         _engine.CO2Scenario = New DefaultCo2Scenario()
-        'Temperatur-Provider setzen
-        _engine.TemperatureProvider = New SimpleLatitudinalClimatology()
         'Erdoberflächenprovider setzen
         _engine.EarthSurfaceProvider = New ToyEarthSurfaceProvider()
 
@@ -86,18 +84,16 @@ Class MainWindow
             Return
         End If
 
-        'dtYears und Enjahr aus den Textboxen lesen
-        Dim dtYears As Double
-        If Not Double.TryParse(TxtDtYears.Text, dtYears) OrElse dtYears <= 0 Then
-            MessageBox.Show("Bitte ein gültiges Zeitschritt-Intervall (dt) eingeben.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Warning)
-            Return
+        Dim startYear As Integer
+        Dim endYear As Integer
+        Dim dtYears As Integer
+
+        If Not TryReadSimulationSettings(startYear, endYear, dtYears, showMessages:=True) Then
+            'Ungültige Werte wurden nicht korrigiert -> Abbrechen
+            Exit Sub
         End If
 
-        Dim endYear As Double
-        If Not Double.TryParse(TxtEndYear.Text, endYear) Then
-            MessageBox.Show("Bitte ein gültiges Endjahr eingeben.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Warning)
-            Return
-        End If
+        _endYear = endYear
 
         'Modellparamter einmalig vor Start aus der UI übernehmen
         UpdateModelParametersFromUI()
@@ -106,26 +102,19 @@ Class MainWindow
         _simCts = New CancellationTokenSource()
 
         'UI-Buttons sperren/umschalten
-        BtnStart.IsEnabled = False
-        BtnStep.IsEnabled = False
-        BtnGenerate.IsEnabled = False
-        BtnShowHistory.IsEnabled = False
-        BtnStop.IsEnabled = True
-        TxtLambda.IsEnabled = False
+        SetSimulationUIState(True)
 
         Try
             'Simulation im Hintergrund-Thread laufen lassen
             Await Task.Run(Sub() RunSimulationLoop(dtYears, endYear, _simCts.Token))
+        Catch ex As OperationCanceledException
+            'Simulation wurde bewusst abgebrochen -> kein Fehler
         Catch ex As Exception
-            'bewusst abgebrochen -> kein Fehler
+            'nur echte Fehler anzeigen
+            MessageBox.Show($"Fehler in der Simulation: {ex.Message}", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
         Finally
             _isSimulationRunning = False
-            BtnStart.IsEnabled = True
-            BtnStep.IsEnabled = True
-            BtnGenerate.IsEnabled = True
-            BtnStop.IsEnabled = False
-            BtnShowHistory.IsEnabled = True
-            TxtLambda.IsEnabled = True
+            SetSimulationUIState(False)
         End Try
     End Sub
 
@@ -269,31 +258,21 @@ Class MainWindow
         Try
 
             'Gitternetz-Auflösung aus UI holen
-            Dim width As Integer = Integer.Parse(TxtWidth.Text)
-            Dim height As Integer = Integer.Parse(TxtHeight.Text)
 
             'Startjahr aus Textbox lesen
             Dim startYear As Integer
-            Try
-                startYear = Integer.Parse(TxtStartYear.Text)
-            Catch ex As Exception
-                startYear = 1850 'Standardwert
-                TxtStartYear.Text = startYear.ToString()
-            End Try
+            Dim endYear As Integer
+            Dim dtYears As Double
 
-            'Endjahr aus Textbox lesen
-            Try
-                _endYear = Integer.Parse(TxtEndYear.Text)
-            Catch ex As Exception
-                _endYear = startYear + 250 'Standardmäßig 250 Jahre Simulation
-                TxtEndYear.Text = _endYear.ToString()
-            End Try
-
-            'Falls jemand ein kleineres End- als Startjahr eingibt, wieder auf 250 Jahre Simulation setzen
-            If _endYear <= startYear Then
-                _endYear = startYear + 250
-                TxtEndYear.Text = _endYear.ToString()
+            If Not TryReadSimulationSettings(startYear, endYear, dtYears, showMessages:=False) Then
+                'Wenn die Werte nicht stimmen, Initialisierung abbrechen
+                Exit Sub
             End If
+
+            _endYear = endYear
+
+            Dim width As Integer = Integer.Parse(TxtWidth.Text)
+            Dim height As Integer = Integer.Parse(TxtHeight.Text)
 
             'Simulations-Engine initialisieren
             _engine.Initialize(width, height, startYear)
@@ -378,5 +357,97 @@ Class MainWindow
         SldCO2.Value = val
         TxtCO2Value.Text = $"{co2:F0} ppm"
     End Sub
+
+    Private Sub SetSimulationUIState(isRunning As Boolean)
+        BtnStart.IsEnabled = Not isRunning
+        BtnStep.IsEnabled = Not isRunning
+        BtnGenerate.IsEnabled = Not isRunning
+        BtnGenerate.IsEnabled = Not isRunning
+        BtnShowHistory.IsEnabled = Not isRunning
+        BtnStop.IsEnabled = isRunning
+
+        TxtLambda.IsEnabled = Not isRunning
+    End Sub
+
+    ''' <summary>
+    ''' Liest Startjahr, Endjahr und dt aus den Textboxen und normiert sie.
+    ''' </summary>
+    ''' <param name="startYear">Startjahr der Simulation</param>
+    ''' <param name="endYear">Endjahr der Simulation</param>
+    ''' <param name="dtYears">Simulations-Ticks in Jahren</param>
+    ''' <param name="showMessages">Legt fest, ob Fehlermeldungen angezeigt werden sollen. Wenn False, werden automatisch Standardwerte festgesetzt.</param>
+    ''' <returns>Gibt True zurück, wenn alle Werte korrekt sind oder korrigiert wurden, sonst False</returns>
+    Private Function TryReadSimulationSettings(ByRef startYear As Integer, ByRef endYear As Integer, ByRef dtYears As Double, Optional showMessages As Boolean = True) As Boolean
+
+        '--- Startjahr ---
+        If Not Integer.TryParse(TxtStartYear.Text, startYear) Then
+            If showMessages Then
+                Dim errMsg As MessageBoxResult
+                errMsg = MessageBox.Show("Ungültiges Startjahr. Soll es auf 1850 gesetzt werden?", "Warnung", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes)
+                If errMsg = MessageBoxResult.Yes Then
+                    startYear = 1850 'Default-Wert setzen
+                    TxtStartYear.Text = startYear.ToString()
+                Else
+                    Return False
+                End If
+            Else
+                startYear = 1850 'Default-Wert setzen
+                TxtStartYear.Text = startYear.ToString()
+            End If
+        End If
+
+        '--- Endjahr ---
+        If Not Integer.TryParse(TxtEndYear.Text, endYear) Then
+            If showMessages Then
+                Dim errMsg As MessageBoxResult
+                errMsg = MessageBox.Show($"Ungültiges Endjahr. Soll es auf {(startYear + 250)} gesetzt werden?", "Warnung", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes)
+                If errMsg = MessageBoxResult.Yes Then
+                    endYear = startYear + 250 'Default-Wert setzen
+                    TxtEndYear.Text = endYear.ToString()
+                Else
+                    Return False
+                End If
+            Else
+                endYear = startYear + 250 'Default-Wert setzen
+                TxtEndYear.Text = endYear.ToString()
+            End If
+        End If
+
+        'Falls Endjahr <= Startjahr
+        If endYear <= startYear Then
+            If showMessages Then
+                Dim errMsg As MessageBoxResult
+                errMsg = MessageBox.Show($"Das Endjahr muss größer als das Startjahr sein. Soll es auf {(startYear + 250)} gesetzt werden?", "Warnung", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes)
+                If errMsg = MessageBoxResult.Yes Then
+                    endYear = startYear + 250
+                    TxtEndYear.Text = endYear.ToString()
+                Else
+                    Return False
+                End If
+            Else
+                endYear = startYear + 250 'Default-Wert setzen
+                TxtEndYear.Text = endYear.ToString()
+            End If
+        End If
+
+        '--- dtYears ---
+        If Not Double.TryParse(TxtDtYears.Text.Replace(",", "."), NumberStyles.Float, CultureInfo.InvariantCulture, dtYears) OrElse dtYears <= 0 Then
+            If showMessages Then
+                Dim errMsg As MessageBoxResult
+                errMsg = MessageBox.Show("Bitte ein gültiges Zeitschritt-Intervall eingeben. Soll es auf 1,0 gesetzt werden?", "Warnung", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes)
+                If errMsg = MessageBoxResult.Yes Then
+                    dtYears = 1.0 'Default-Wert setzen
+                    TxtDtYears.Text = dtYears.ToString()
+                Else
+                    Return False
+                End If
+            Else
+                dtYears = 1.0 'Default-Wert setzen
+                TxtDtYears.Text = dtYears.ToString()
+            End If
+        End If
+
+        Return True
+    End Function
 
 End Class

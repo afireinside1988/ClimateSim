@@ -1,5 +1,7 @@
 ﻿Public Class EarthInitializer
 
+    'Hinweis: Die exakte Form der Kontinente/Biome kommt von IEarthSurfaceProvider.
+    'Der Initialisierer selbst kennt keine "Erde", nur das Grid.
     Public Shared Sub InitializeSurface(grid As ClimateGrid, provider As IEarthSurfaceProvider)
         Dim height As Integer = grid.Height
         Dim width As Integer = grid.Width

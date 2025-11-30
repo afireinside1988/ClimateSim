@@ -1,5 +1,4 @@
-﻿<Obsolete("Das ist die alte Breitengrad-Initialisierung, wurde inzwischen durch EBM-Profil ersetzt")>
-Public Class SimpleLatitudinalClimatology
+﻿Public Class SimpleLatitudinalClimatology
     Implements ITemperatureFieldProvider
 
     'Referenzwerte für vorindustriell (ca. 1850)
