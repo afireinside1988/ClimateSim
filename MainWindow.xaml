@@ -12,7 +12,7 @@
             <ColumnDefinition Width="3*"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
-        
+
         <!-- Links: Karte mit Layern -->
         <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="5">
             <Grid>
@@ -20,10 +20,10 @@
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                
+
                 <!-- Karte im ScrollViewer -->
                 <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                
+
                     <!-- Grid als Container für mehrere Layer -->
                     <Grid Background="Black">
                         <!-- Basiskarte: Oberflächentyp -->
@@ -40,7 +40,7 @@
                                Opacity="{Binding ElementName=SldTemperatureOpacity, Path=Value}"/>
                     </Grid>
                 </ScrollViewer>
-                
+
                 <!-- Statuszeile -->
                 <StatusBar Grid.Row="1">
                     <StatusBarItem>
@@ -53,12 +53,18 @@
                         <TextBlock x:Name="TxtStatusTemp" Text="Temp: -"/>
                     </StatusBarItem>
                     <StatusBarItem>
-                        <TextBlock x:Name="TxtStatusSurface" Text="Surface: -"/>
+                        <TextBlock x:Name="TxtStatusSurface" Text="Surface: -" Margin="0,0,50,0"/>
+                    </StatusBarItem>
+                    <StatusBarItem>
+                        <TextBlock x:Name="TxtStatus" Text="Bereit."/>
+                    </StatusBarItem>
+                    <StatusBarItem HorizontalAlignment="Right">
+                        <TextBlock x:Name="TxtMemoryEstimate" Text="Speicherprognose: n/a"/>
                     </StatusBarItem>
                 </StatusBar>
             </Grid>
         </Border>
-        
+
         <!-- Rechts: Steuerungselemente -->
         <StackPanel Grid.Column="1" Margin="10" VerticalAlignment="Stretch">
             <TextBlock Text="Klimamodell - Schritt 1" FontSize="20" FontWeight="Bold" Margin="0,0,0,10" />
@@ -82,34 +88,34 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                               <CheckBox x:Name="ChkShowTemperature" Grid.Column="0" Content="Temperatur" IsChecked="True" VerticalAlignment="Center"/>
-                               <Slider x:Name="SldTemperatureOpacity" Grid.Column="1" Minimum="0.0" Maximum="1.0" Value="0.9" Width="80"
+                            <CheckBox x:Name="ChkShowTemperature" Grid.Column="0" Content="Temperatur" IsChecked="True" VerticalAlignment="Center"/>
+                            <Slider x:Name="SldTemperatureOpacity" Grid.Column="1" Minimum="0.0" Maximum="1.0" Value="0.9" Width="80"
                                        TickFrequency="0.1" IsSnapToTickEnabled="False" VerticalAlignment="Center" HorizontalAlignment="Right"/>
                         </Grid>
-                         
+
                     </ListBoxItem>
                 </ListBox>
             </StackPanel>
-            
+
             <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
                 <TextBlock Text="Startjahr der Simulation:" FontWeight="SemiBold"/>
-                <TextBox x:Name="TxtStartYear" Width="80" Text="1850" Margin="5,0,0,0"/> 
+                <TextBox x:Name="TxtStartYear" Width="80" Text="1850" Margin="5,0,0,0"/>
             </StackPanel>
-            
+
             <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
                 <TextBlock Text="Endjahr der Simulation:" FontWeight="SemiBold"/>
                 <TextBox x:Name="TxtEndYear" Width="80" Text="2100" Margin="5,0,0,0"/>
             </StackPanel>
-            
+
             <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
                 <TextBlock Text="Aktuelles Jahr:" FontWeight="SemiBold" Margin="0,0,0,0"/>
                 <TextBlock x:Name="TxtCurrentYear" Text="1850,0" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
             </StackPanel>
-            
+
             <TextBlock Text="Simulationsteuerung:" FontWeight="SemiBold" Margin="0,10,0,0" />
-            <Button x:Name="BtnGenerate" Content="Simulation zurücksetzen" Height="35" Margin="0,5,0,0"/>
+            <Button x:Name="BtnSpinUp" Content="Spin-Up und initialisieren" Height="35" Margin="0,5,0,0"/>
             <Button x:Name="BtnStep" Content="1 Simulationsschritt" Height="35" Margin="0,10,0,0" />
-            
+
             <TextBlock Text="Automatische Simulation:" FontWeight="SemiBold" Margin="0,20,0,5" />
             <!-- Zeitschritt-Slider -->
             <StackPanel Margin="5,0,5,5">
@@ -127,12 +133,12 @@
                 <TextBlock Text="Simulationszeit:" FontWeight="SemiBold" Margin="0,0,0,0" />
                 <TextBlock x:Name="TxtSimTime" Text="0,0 Jahre" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
             </StackPanel>
-            
+
             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                 <TextBlock Text="Globale Mitteltemperatur:" FontWeight="SemiBold" Margin="0,0,0,0" />
                 <TextBlock x:Name="TxtGlobalMean" Text="0,0 °C" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
             </StackPanel>
-            
+
             <TextBlock Text="CO₂-Forcing:" FontWeight="SemiBold" Margin="0,20,0,5"/>
             <TextBlock Text="CO₂-Konzentration [ppm]:"/>
 
@@ -141,13 +147,16 @@
                 <TextBlock x:Name="TxtCO2Value" Text="420 ppm" VerticalAlignment="Center" Margin="10,0,0,0" FontFamily="Consolas"/>
             </StackPanel>
 
-            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+            <StackPanel Orientation="Vertical" Margin="0,5,0,10" HorizontalAlignment="Left">
                 <TextBlock Text="Klimasensitivität λ [K/(W/m²)]:" VerticalAlignment="Center"/>
-                <TextBox x:Name="TxtLambda" Width="60" Margin="5,0,0,0" Text="0.5"/>
+                <StackPanel Orientation="Horizontal">
+                    <Slider x:Name="SldLambda" Width="120" Margin="5,5,5,5" Minimum="0.1" Maximum="1.5" Value="0.5" TickFrequency="0.1" IsSnapToTickEnabled="True"/>
+                    <TextBlock x:Name="TxtLambdaValue" Text="{Binding ElementName=SldLambda, Path=Value}" Width="40" VerticalAlignment="Center" TextAlignment="Right" FontFamily="Consolas"/>
+                </StackPanel>
             </StackPanel>
 
             <Button x:Name="BtnShowHistory" Content="Verlauf anzeigen..." Height="30" Margin="0,20,0,0"/>
-            
-        </StackPanel> 
+
+        </StackPanel>
     </Grid>
 </Window>

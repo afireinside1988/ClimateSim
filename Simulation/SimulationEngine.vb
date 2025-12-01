@@ -15,6 +15,10 @@
     <Obsolete("Der Temperaturprovider wird aktuell nicht genutzt, brauchen wir aber später für das Laden von Realdaten")>
     Public Property TemperatureProvider As ITemperatureFieldProvider
 
+    'Spin-Up-Flags
+    Public Property IsSpinUp As Boolean = False
+    Public Property SpinUpCO2ppm As Double = 280.0
+
     'Aufzeichnung
     Public ReadOnly Property History As List(Of SimulationRecord)
     Public ReadOnly Property Snapshots As List(Of GridSnapshot)
@@ -89,7 +93,14 @@
         CurrentYear = StartYear + SimTimeYears
 
         '2) --- aktuelle Co2-Konzentration aus dem CO2-Szenario lesen und ins Modell übertragen
-        Dim co2Now As Double = If(CO2Scenario IsNot Nothing, CO2Scenario.GetCO2ForYear(CurrentYear), Model.CO2ppm)
+        Dim co2Now As Double
+
+        If IsSpinUp Then
+            co2Now = SpinUpCO2ppm
+        Else
+            co2Now = If(CO2Scenario IsNot Nothing, CO2Scenario.GetCO2ForYear(CurrentYear), Model.CO2ppm)
+        End If
+
         Model.CO2ppm = co2Now
 
         '3) --- Jahresphase berechnen und im Modell setzen
@@ -103,23 +114,24 @@
         '4) --- Simulationsschritt ausführen
         Model.StepSimulation(dtYears)
 
-        '5) --- globale Mitteltemperatur errechnen ---
-        Dim meanC As Double = Grid.ComputeGlobalMeanTemperatureC()
+        If Not IsSpinUp Then
+            '5) --- globale Mitteltemperatur errechnen ---
+            Dim meanC As Double = Grid.ComputeGlobalMeanTemperatureC()
 
-        '6) --- Verlauf schreiben ---
-        History.Add(New SimulationRecord With {
-            .SimTimeYears = SimTimeYears,
-            .Year = CurrentYear,
-            .GlobalMeanTempC = meanC,
-            .CO2ppm = co2Now
+            '6) --- Verlauf & Snapshopt schreiben ---
+            History.Add(New SimulationRecord With {
+                    .SimTimeYears = SimTimeYears,
+                    .Year = CurrentYear,
+                    .GlobalMeanTempC = meanC,
+                    .CO2ppm = co2Now
                     })
 
-        '7) --- Snapshot speichern ---
-        Dim snap As GridSnapshot = CreateSnapshotFromGrid()
-        If snap IsNot Nothing Then
-            Snapshots.Add(snap)
-        End If
+            Dim snap As GridSnapshot = CreateSnapshotFromGrid()
+            If snap IsNot Nothing Then
+                Snapshots.Add(snap)
+            End If
 
+        End If
     End Sub
 
     '''<summary>
@@ -153,7 +165,7 @@
     '''<summary>
     '''Erstellt Snapshots aus dem TemperaturGrid
     ''' </summary>
-    Private Function CreateSnapshotFromGrid() As GridSnapshot
+    Public Function CreateSnapshotFromGrid() As GridSnapshot
         If Grid Is Nothing Then Return Nothing
 
         Dim w As Integer = Grid.Width
