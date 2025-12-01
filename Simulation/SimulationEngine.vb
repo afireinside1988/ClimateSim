@@ -4,9 +4,9 @@
     Public Property Model As ClimateModel2D
 
     'Zeitkomponente
-    Public Property StartYear As Integer
-    Public Property CurrentYear As Double
-    Public Property SimTimeYears As Double
+    Public Property StartYear As Integer                'Startjahr der Simulatio
+    Public Property CurrentYear As Double               'aktuelles Jahr der Simulation
+    Public Property SimTimeYears As Double              'Anzahl der zu simulierenden Jahre
 
     'Schnittstellen
     Public Property EarthSurfaceProvider As IEarthSurfaceProvider
@@ -43,10 +43,11 @@
         '2) Modell anlegen, Parameter setzen
         Model = New ClimateModel2D(Grid)
         Model.CO2Base = 280.0 'Basis-Co2
-        Model.RelaxationTimescaleYears = 40.0 'Systemträgheit
-        Model.DiffusionCoefficient = 0.001 'Horizontale Diffusion
-        Model.ClimateSensitivityLambda = 0.5 'Klimasensitivität
-        Model.BaseTemperatureOffsetK = 0.0 'Basis-Offset zum Kalibrieren der Start-Temperatur
+        Model.RelaxationTimescaleYears = 40.0   'Systemträgheit
+        Model.DiffusionCoefficient = 0.001      'Horizontale Diffusion
+        Model.ClimateSensitivityLambda = 0.5    'Klimasensitivität
+        Model.BaseTemperatureOffsetK = 0.0      'Basis-Offset zum Kalibrieren der Start-Temperatur
+        Model.CurrentYearFraction = 0.25         'Start am Jahresanfang
 
         '3) CO2 passend zum Startjahr setzen
         Dim co2Now As Double = If(CO2Scenario IsNot Nothing, CO2Scenario.GetCO2ForYear(CurrentYear), 280.0)
@@ -83,15 +84,29 @@
     Public Sub StepSimulation(dtYears As Double)
         If Grid Is Nothing OrElse Model Is Nothing Then Return
 
-        Model.StepSimulation(dtYears)
+        '1) --- Zeit voranschreiten ---
         SimTimeYears += dtYears
         CurrentYear = StartYear + SimTimeYears
 
+        '2) --- aktuelle Co2-Konzentration aus dem CO2-Szenario lesen und ins Modell übertragen
         Dim co2Now As Double = If(CO2Scenario IsNot Nothing, CO2Scenario.GetCO2ForYear(CurrentYear), Model.CO2ppm)
         Model.CO2ppm = co2Now
 
+        '3) --- Jahresphase berechnen und im Modell setzen
+        Dim yearInt As Integer = CInt(Math.Floor(CurrentYear))
+        Dim frac As Double = CurrentYear - yearInt
+        If frac < 0 Then frac = 0
+        If frac >= 1 Then frac -= Math.Floor(frac)
+
+        Model.CurrentYearFraction = frac
+
+        '4) --- Simulationsschritt ausführen
+        Model.StepSimulation(dtYears)
+
+        '5) --- globale Mitteltemperatur errechnen ---
         Dim meanC As Double = Grid.ComputeGlobalMeanTemperatureC()
 
+        '6) --- Verlauf schreiben ---
         History.Add(New SimulationRecord With {
             .SimTimeYears = SimTimeYears,
             .Year = CurrentYear,
@@ -99,7 +114,7 @@
             .CO2ppm = co2Now
                     })
 
-        '--- Snapshot speichern ---
+        '7) --- Snapshot speichern ---
         Dim snap As GridSnapshot = CreateSnapshotFromGrid()
         If snap IsNot Nothing Then
             Snapshots.Add(snap)

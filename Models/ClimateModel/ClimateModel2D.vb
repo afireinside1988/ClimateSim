@@ -23,6 +23,9 @@
 
     '--- Ende physikalische Modellparameter ---
 
+    '--- Jahreszeitensteuerung ---
+    Public Property CurrentYearFraction As Double = 0.0 'Jahresphase (0..1), 0 = Jahresanfang, 0.25 = Frühling usw.
+
     ''' <summary>
     ''' Erstellt ein neues 2D-Klimamodell auf dem gegebenen Gitter.
     ''' </summary>
@@ -100,11 +103,21 @@
     Public Function EquilibriumTemperatureForCell(cell As ClimateCell) As Double
         Dim latitudeDeg As Double = cell.LatitudeDeg
 
-        '1) EBM-Breitenprofil über Insolationsfaktor
-        Dim q As Double = ComputeInsolationFactor(latitudeDeg)
+        '1) Jahresphase aus dem Modell (0..1)
+        Dim yearFrac As Double = CurrentYearFraction
+        If yearFrac < 0.0 Then yearFrac = 0.0
+        If yearFrac >= 1.0 Then yearFrac -= Math.Floor(yearFrac)
 
-        'q hat globalen Mittelwert 1 -> Temperaturabweichung relativ zu BaseTemperatureK
-        Dim Tzonal As Double = BaseTemperatureK + InsolationAmplitudeK * (q - 1.0)
+        '2) Tagesgemittelte Einstrahlung Q(φ, t)
+        Dim Q As Double = ComputeDailyMeanInsolation(latitudeDeg, yearFrac)
+
+        '3) Normierung auf Referenzwert (globaler Mittelwert ~341.3 W/m²)
+        Const Qref As Double = 341.3
+        Dim qNorm As Double = If(Qref > 0.0, Q / Qref, 1.0)
+        If qNorm < 0.0 Then qNorm = 0.0
+
+        '4) "zonale" EBM-Temperatur aus qNorm
+        Dim Tzonal As Double = BaseTemperatureK + InsolationAmplitudeK * (qNorm - 1.0)
 
         '2) Höhenkorrektur: nur für positive Höhen (Land), Meer bleibt bei 0m
         Dim effectiveHeight As Double = Math.Max(0.0, cell.HeightM)
@@ -125,6 +138,7 @@
 
     End Function
 
+    <Obsolete("Altes EBM")>
     Private Function ComputeInsolationFactor(latitudeDeg As Double) As Double
         Dim latRad As Double = latitudeDeg * Math.PI / 180
         Dim sinPhi As Double = Math.Sin(latRad)
@@ -138,5 +152,66 @@
         Dim q As Double = 1.0 + s2 * P2
 
         Return q
+    End Function
+
+    ''' <summary>
+    ''' Tagesgemittelte solare Einstrahlung am TOA (W/m²) für gegebene Breite und Jahresphase.
+    ''' Vereinfachtes Astronomie-Modell (kreisförmige Bahn, konstante Bahngeschwindigkeit).
+    ''' </summary>
+    ''' <param name="latitudeDeg"></param>
+    ''' <param name="yearFraction"></param>
+    ''' <returns></returns>
+    Private Function ComputeDailyMeanInsolation(latitudeDeg As Double, yearFraction As Double) As Double
+
+        '1) --- Eingaben normieren ---
+        If yearFraction < 0.0 Then
+            yearFraction = 0.0
+        ElseIf yearFraction >= 1.0 Then
+            yearFraction -= Math.Floor(yearFraction)
+        End If
+
+        Dim dayOfYear As Double = yearFraction * ClimateConstants.DaysPerYear
+
+        '2) --- Solare Deklination δ(N) ---
+        ' δ ≈ ε * sin( 2π * (N + 284) / 365 )
+        Dim gamma As Double = 2.0 * Math.PI * (dayOfYear + 284.0) / DaysPerYear
+        Dim decl As Double = ClimateConstants.EarthObliquityRad * Math.Sin(gamma)
+
+        '3) --- Breite in Radiant ---
+        Dim phi As Double = latitudeDeg * Math.PI / 180.0
+
+        '4) --- Tageslänge über Stundenwinkel H0 ---
+        ' cos(H0) = -tanφ * tanδ
+        Dim tanPhi As Double = Math.Tan(phi)
+        Dim tanDecl As Double = Math.Tan(decl)
+        Dim arg As Double = -tanPhi * tanDecl
+
+        Dim H0 As Double
+
+        If arg >= 1.0 Then
+            'Polarnacht: 0 Tageslicht
+            H0 = 0.0
+        ElseIf arg <= -1.0 Then
+            'Polartag: 24h Sonne
+            H0 = Math.PI
+        Else
+            H0 = Math.Acos(arg)
+        End If
+
+        '5) --- Tagesmittel Q(φ,δ) = (S0/π) * [H0 sinφ sinδ + cosφ cosδ sinH0] ---
+        Dim sinPhi As Double = Math.Sin(phi)
+        Dim cosPhi As Double = Math.Cos(phi)
+        Dim sinDecl As Double = Math.Sin(decl)
+        Dim cosDecl As Double = Math.Cos(decl)
+
+        Dim Q As Double = 0.0
+
+        If H0 > 0.0 Then
+            Q = (ClimateConstants.SolarConstantWm2 / Math.PI) * (H0 * sinPhi * sinDecl + cosPhi * cosDecl * Math.Sin(H0))
+
+            If Q < 0.0 Then Q = 0.0
+        End If
+
+        Return Q 'W/m²
     End Function
 End Class
