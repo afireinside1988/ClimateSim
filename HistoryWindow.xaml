@@ -20,14 +20,14 @@
         <!-- Zeitstrahl-Steuerung -->
         <StackPanel Grid.Row="1" Margin="0,10,0,0">
             <TextBlock Text="Zeitstrahl" FontWeight="SemiBold"/>
-            <Slider x:Name="SldTime" Minimum="0" Maximum="1" Value="1" Margin="0,5,0,5"/>
+            <Slider x:Name="SldTime" Minimum="0" Maximum="1" Value="1" Margin="0,5,0,5" IsSnapToTickEnabled="True"/>
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Ausgewähltes Jahr:"/>
-                <TextBlock x:Name="TxtSelectedYear" Margin="5,0,10,0" FontFamily="Consolas" Width="60"/>
+                <TextBlock x:Name="TxtSelectedYear" Margin="5,0,10,0" FontFamily="Consolas" Width="60" VerticalAlignment="Center"/>
                 <TextBlock Text="Tglobal:"/>
-                <TextBlock x:Name="TxtSelectedTemp" Margin="5,0,10,0" FontFamily="Consolas" Width="60"/>
+                <TextBlock x:Name="TxtSelectedTemp" Margin="5,0,10,0" FontFamily="Consolas" Width="60" VerticalAlignment="Center"/>
                 <TextBlock Text="CO₂:"/>
-                <TextBlock x:Name="TxtSelectedCO2" Margin="5,0,0,0" FontFamily="Consolas" Width="60"/>
+                <TextBlock x:Name="TxtSelectedCO2" Margin="5,0,0,0" FontFamily="Consolas" Width="60" VerticalAlignment="Center"/>
             </StackPanel>
         </StackPanel>
         

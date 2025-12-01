@@ -5,6 +5,7 @@ Imports System.Windows.Threading
 Imports System.Globalization
 Imports System.Threading
 Imports System.Threading.Tasks
+Imports System.Windows.Media.Media3D
 
 Class MainWindow
 
@@ -18,6 +19,10 @@ Class MainWindow
     'Default-Werte
     Private _endYear As Integer = 2100 'Standardwert, wird aus Textbox gelesen
     Private _currentLayer As MapLayer = MapLayer.Temperature
+
+    'Zeitsteuerung
+    Private _timeStepMode As TimeStepMode = TimeStepMode.Year 'aktueller TimeStep, Default 1 Jahr
+
 
     Public Sub RefreshFromEngine()
         If _engine Is Nothing Then Return
@@ -37,13 +42,14 @@ Class MainWindow
 
         '--- UI-Handler ---
         'Buttons
-
         AddHandler BtnGenerate.Click, AddressOf BtnGenerate_Click
         AddHandler BtnStep.Click, AddressOf BtnStep_Click
         AddHandler BtnStart.Click, AddressOf BtnStart_Click
         AddHandler BtnStop.Click, AddressOf BtnStop_Click
         AddHandler BtnShowHistory.Click, AddressOf BtnShowHistory_Click
 
+        'Simulationsschritt- Slider
+        AddHandler SldDtMode.ValueChanged, AddressOf SldDtMode_ValueChanged
         'Layer-Auswahl
         AddHandler ChkShowTemperature.Checked, AddressOf OnLayerCheckboxChanged
         AddHandler ChkShowTemperature.Unchecked, AddressOf OnLayerCheckboxChanged
@@ -67,11 +73,7 @@ Class MainWindow
             Return
         End If
 
-        Dim dtYears As Double
-        If Not Double.TryParse(TxtDtYears.Text, dtYears) OrElse dtYears <= 0 Then
-            MessageBox.Show("Bitte ein gültiges Zeitschritt-Intervall (dt) eingeben.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Warning)
-            Return
-        End If
+        Dim dtYears As Double = GetDtYearsFromMode()
 
         SimulateOneStep(dtYears)
 
@@ -86,7 +88,7 @@ Class MainWindow
 
         Dim startYear As Integer
         Dim endYear As Integer
-        Dim dtYears As Integer
+        Dim dtYears As Double
 
         If Not TryReadSimulationSettings(startYear, endYear, dtYears, showMessages:=True) Then
             'Ungültige Werte wurden nicht korrigiert -> Abbrechen
@@ -107,8 +109,6 @@ Class MainWindow
         Try
             'Simulation im Hintergrund-Thread laufen lassen
             Await Task.Run(Sub() RunSimulationLoop(dtYears, endYear, _simCts.Token))
-        Catch ex As OperationCanceledException
-            'Simulation wurde bewusst abgebrochen -> kein Fehler
         Catch ex As Exception
             'nur echte Fehler anzeigen
             MessageBox.Show($"Fehler in der Simulation: {ex.Message}", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
@@ -140,7 +140,7 @@ Class MainWindow
             Return
         End If
 
-        Dim wnd As New HistoryWindow(_engine)
+        Dim wnd As New HistoryWindow(_engine, _timeStepMode)
         wnd.Owner = Me
         wnd.Show()
     End Sub
@@ -208,6 +208,25 @@ Class MainWindow
         ClearStatusBar()
     End Sub
 
+    Private Sub SldDtMode_ValueChanged(sender As Object, e As RoutedPropertyChangedEventArgs(Of Double))
+        Dim modeIndex As Integer = CInt(Math.Round(SldDtMode.Value))
+
+        Select Case modeIndex
+            Case 0
+                _timeStepMode = TimeStepMode.Month
+                TxtDtModeLabel.Text = "1 Monat"
+            Case 1
+                _timeStepMode = TimeStepMode.Quarter
+                TxtDtModeLabel.Text = "1 Quartal"
+            Case 2
+                _timeStepMode = TimeStepMode.Year
+                TxtDtModeLabel.Text = "1 Jahr"
+            Case 3
+                _timeStepMode = TimeStepMode.Decade
+                TxtDtModeLabel.Text = "10 Jahre"
+        End Select
+    End Sub
+
     Private Sub ClearStatusBar()
         TxtStatusLat.Text = "Lat: -"
         TxtStatusLon.Text = "Lon: -"
@@ -221,8 +240,7 @@ Class MainWindow
         Dim uiUpdateInterval As Integer = 10 'Aktualisierungsrate der UI
         Dim stepCounter As Integer = 0
 
-        While _engine.CurrentYear < endYear
-            token.ThrowIfCancellationRequested()
+        While _engine.CurrentYear < endYear AndAlso Not token.IsCancellationRequested
 
             '1) Modellparamter ggf. aus UI übernehmen (Lambda etc.) -> auf dem UI-Thread
             Dispatcher.Invoke(
@@ -334,7 +352,7 @@ Class MainWindow
 
     Private Sub UpdateSimTimeDisplay()
         TxtSimTime.Text = $"{_engine.SimTimeYears:F1} Jahre"
-        TxtCurrentYear.Text = $"{_engine.CurrentYear:F1}"
+        TxtCurrentYear.Text = FormatYearWithStepMode(_engine.CurrentYear, _timeStepMode)
     End Sub
 
     Private Sub UpdateModelParametersFromUI()
@@ -431,23 +449,24 @@ Class MainWindow
         End If
 
         '--- dtYears ---
-        If Not Double.TryParse(TxtDtYears.Text.Replace(",", "."), NumberStyles.Float, CultureInfo.InvariantCulture, dtYears) OrElse dtYears <= 0 Then
-            If showMessages Then
-                Dim errMsg As MessageBoxResult
-                errMsg = MessageBox.Show("Bitte ein gültiges Zeitschritt-Intervall eingeben. Soll es auf 1,0 gesetzt werden?", "Warnung", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes)
-                If errMsg = MessageBoxResult.Yes Then
-                    dtYears = 1.0 'Default-Wert setzen
-                    TxtDtYears.Text = dtYears.ToString()
-                Else
-                    Return False
-                End If
-            Else
-                dtYears = 1.0 'Default-Wert setzen
-                TxtDtYears.Text = dtYears.ToString()
-            End If
-        End If
+        dtYears = GetDtYearsFromMode()
 
         Return True
+    End Function
+
+    Private Function GetDtYearsFromMode() As Double
+        Select Case _timeStepMode
+            Case TimeStepMode.Month
+                Return (1.0 / 12.0)
+            Case TimeStepMode.Quarter
+                Return 0.25
+            Case TimeStepMode.Year
+                Return 1
+            Case TimeStepMode.Decade
+                Return 10
+            Case Else
+                Return 1
+        End Select
     End Function
 
 End Class

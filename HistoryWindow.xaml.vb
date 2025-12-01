@@ -3,11 +3,15 @@ Imports System.Windows.Media
 Imports System.Windows.Media.Converters
 Imports System.Windows.Shapes
 Imports System.Windows.Input
+Imports System.Windows.Media.Media3D
+Imports System.Security.Cryptography.Xml
 
 Public Class HistoryWindow
 
     Private ReadOnly _engine As SimulationEngine
     Private ReadOnly _history As List(Of SimulationRecord)
+
+    Private _timeStepMode As TimeStepMode = TimeStepMode.Year
 
     Private _isMouseDown As Boolean = False
 
@@ -22,12 +26,14 @@ Public Class HistoryWindow
     Private _maxYear As Double
     Private _yearRange As Double
 
-    Public Sub New(engine As SimulationEngine)
+    Public Sub New(engine As SimulationEngine, timeStepMode As TimeStepMode)
         InitializeComponent()
 
         'Kopie der Liste, damit Änderungen im MainWindow nicht direkt während des Zeichnens reinfunken
         _engine = engine
         _history = engine.History
+
+        _timeStepMode = timeStepMode
 
         If _history.Count > 1 Then
             SldTime.Minimum = 0
@@ -157,7 +163,7 @@ Public Class HistoryWindow
         Dim plotHeight As Double = Math.Max(10, height - marginTop - marginBottom)
 
         'Achsen zeichnen
-        Dim axisPen As New SolidColorBrush(Colors.Gray)
+        Dim axisPen As New SolidColorBrush(Colors.White)
 
         'X-Achse
         Dim xAxis As New Line With {
@@ -210,16 +216,13 @@ Public Class HistoryWindow
         Canvas.SetTop(co2Title, marginTop - 25)
         CanvasChart.Children.Add(co2Title)
 
-        '--- Skalenbereiche & Hilfsfunktionen
+        '--- Skalenbereiche & Hilfsfunktionen ---
         Dim yearRange As Double = _yearRange
         Dim tempRange As Double = If(maxTemp > minTemp, maxTemp - minTemp, 1)
         Dim co2Range As Double = If(maxCO2 > minCO2, maxCO2 - minCO2, 1)
 
         'Hilfsfunktionen für "schöne" Schrittweiten
-        Dim yearTickStep As Double = 20
-        If yearRange < 40 Then
-            yearTickStep = yearRange / 4.0
-        End If
+        Dim yearTickStep As Integer = ComputeYearTickStep(_minYear, _maxYear, plotWidth)
 
         Dim tempTickCount As Integer = 5 'Anzahl der Temperatur-Ticks
         Dim tempTickStep As Double = tempRange / tempTickCount
@@ -227,16 +230,17 @@ Public Class HistoryWindow
         Dim co2TickCount As Integer = 5 'Anzahl der CO2-Ticks
         Dim co2TickStep As Double = co2Range / co2TickCount
 
-        '--- Gridlines & Ticks X-Achse
+        '--- Gridlines & Haupt-Ticks X-Achse ---
         Dim gridBrush As Brush = Brushes.DimGray
-
-        Dim firstYearTick As Double = Math.Ceiling(_minYear / yearTickStep) * yearTickStep
         Dim yAxisY As Double = marginTop + plotHeight
 
-        Dim yearTick As Double = firstYearTick
-        While yearTick <= _maxYear + 0.1
-            Dim tNorm = (yearTick - _minYear) / yearRange
-            Dim x = marginLeft + tNorm * plotWidth
+        'Ersten Tick auf ein Vielfaches von yearTickStep runden
+        Dim firstYearTick As Integer = CInt(Math.Ceiling(_minYear / yearTickStep)) * yearTickStep
+        Dim lastYearTick As Integer = CInt(Math.Floor(_maxYear / yearTickStep)) * yearTickStep
+
+        For yearTick As Integer = firstYearTick To lastYearTick Step yearTickStep
+            Dim tNorm As Double = (yearTick - _minYear) / yearRange
+            Dim x As Double = marginLeft + tNorm * plotWidth
 
             'vertikale Gridline
             Dim vLine As New Line() With {
@@ -247,7 +251,7 @@ Public Class HistoryWindow
                 .Stroke = gridBrush,
                 .StrokeThickness = 0.5,
                 .StrokeDashArray = New DoubleCollection({2, 2})
-                }
+            }
             CanvasChart.Children.Add(vLine)
 
             'Tick auf X-Achse
@@ -258,22 +262,22 @@ Public Class HistoryWindow
                 .Y2 = yAxisY + 5,
                 .Stroke = Brushes.White,
                 .StrokeThickness = 1
-                }
+            }
             CanvasChart.Children.Add(tick)
 
             'Jahr-Label
             Dim yearLabel As New TextBlock() With {
                 .Text = $"{yearTick:F0}",
-                .Foreground = Brushes.White
+                .Foreground = Brushes.White,
+                .FontSize = 10
                 }
-            Canvas.SetLeft(yearLabel, x - 12)
+            'grob zentrieren; ActualWidth ist hier oft noch 0, daher fixe Verschiebung
+            Canvas.SetLeft(yearLabel, x - 15)
             Canvas.SetTop(yearLabel, yAxisY + 5)
             CanvasChart.Children.Add(yearLabel)
+        Next
 
-            yearTick += yearTickStep
-        End While
-
-        '--- Gridlines & Ticks Y-Achse links (Temperatur)
+        '--- Gridlines & Ticks Y-Achse links (Temperatur) ---
         For i As Integer = 0 To tempTickCount
             Dim tempVal As Double = minTemp + i * tempTickStep
             Dim tempNorm As Double = (tempVal - minTemp) / tempRange
@@ -377,7 +381,7 @@ Public Class HistoryWindow
         If index < 0 OrElse index >= _history.Count Then Return
 
         Dim r = _history(index)
-        TxtSelectedYear.Text = $"{r.Year:F1}"
+        TxtSelectedYear.Text = TimeFormatting.FormatYearWithStepMode(r.Year, _timeStepMode)
         TxtSelectedTemp.Text = $"{r.GlobalMeanTempC:F2} °C"
         TxtSelectedCO2.Text = $"{r.CO2ppm:F0} ppm"
     End Sub
@@ -464,5 +468,28 @@ Public Class HistoryWindow
 
         CanvasChart.Children.Add(marker)
     End Sub
+
+    Private Function ComputeYearTickStep(minYear As Double, maxYear As Double, plotWidth As Double) As Integer
+        Dim yearRange As Double = maxYear - minYear
+        If yearRange <= 0 OrElse plotWidth <= 0 Then
+            Return 10
+        End If
+
+        'grob 60px Platz pro Label
+        Dim approxLabelWidthPx As Double = 60.0
+        Dim maxLabels As Double = Math.Max(2.0, plotWidth / approxLabelWidthPx)
+
+        Dim roughStep As Double = yearRange / maxLabels
+
+        Dim candidates() As Integer = {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000}
+
+        For Each c As Integer In candidates
+            If c >= roughStep Then
+                Return c
+            End If
+        Next
+
+        Return candidates(candidates.Length - 1)
+    End Function
 
 End Class
