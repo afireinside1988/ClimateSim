@@ -1,4 +1,9 @@
-﻿Imports System.ComponentModel
+﻿Imports System.CodeDom
+Imports System.ComponentModel
+Imports System.Windows.Input
+Imports System.Threading.Tasks
+Imports System.Windows.Media
+Imports System.Windows.Media.Imaging
 
 Public Class MainViewModel
     Implements INotifyPropertyChanged
@@ -11,8 +16,17 @@ Public Class MainViewModel
     Private _gridHeight As Integer = 180
 
     Private _timeStepMode As TimeStepMode = TimeStepMode.Year
+    Private _timeStepIndex As Integer = 2                   '0=Monat, 1=Quartal, 2=Jahr, 3=Dekade
+    Private _dtModeText As String = "1 Jahr"
+
+    Private _co2Value As Double = 420.0
 
     Private _statusText As String = "Bitte Spin-Up starten."
+    Private _statusLatText As String = "Lat: -"
+    Private _statusLonText As String = "Lon: -"
+    Private _statusTempText As String = "Temp: -"
+    Private _statusSurfaceText As String = "Surface: -"
+
     Private _globalMeanText As String = "0,00 °C"
     Private _currentYearText As String = "1850"
     Private _simTimeText As String = "0,0 Jahre"
@@ -20,14 +34,94 @@ Public Class MainViewModel
     Private _memoryEstimateBrush As Brush = Brushes.Black
 
     Private _lambda As Double = 0.5
-    ' --- SimulationEngine bleibt erstmal hier drin, damit MainWindow weniger Felder hat ---
 
+    Private _surfaceImage As ImageSource
+    Private _temperatureImage As ImageSource
+    Private _isTemperatureLayerVisible As Boolean
+    Private _temperatureOpacity As Double = 1.0
+
+
+    ' --- Events, die die View abonnieren kann ---
+    Public Event StartSimulationRequested As EventHandler
+    Public Event StopSimulationRequested As EventHandler
+    Public Event SpinUpRequested As EventHandler
+    Public Event StepRequested As EventHandler
+    Public Event ShowHistoryRequested As EventHandler
+
+    ' --- Commands ---
+    Public ReadOnly Property StartCommand As ICommand
+    Public ReadOnly Property StopCommand As ICommand
+    Public ReadOnly Property SpinUpCommand As ICommand
+    Public ReadOnly Property StepCommand As ICommand
+    Public ReadOnly Property ShowHistoryCommand As ICommand
+
+
+    ' --- SimulationEngine bleibt erstmal hier drin, damit MainWindow weniger Felder hat ---
     Public Property Engine As SimulationEngine
+
+    ' --- Statusflags, damit Commands später CanExecute nutzen können
+    Private _isInitialized As Boolean
+    Private _isSimulationRunning As Boolean
 
     Public Sub New()
         Engine = New SimulationEngine()
         Engine.CO2Scenario = New DefaultCo2Scenario()
         Engine.EarthSurfaceProvider = New ToyEarthSurfaceProvider()
+
+        '--- Commands initialisieren ---
+
+        'Start: async Command
+        StartCommand = New AsyncRelayCommand(Of Object)(
+            Async Function(o As Object) As Task
+                'Code-Behind reagiert dann im Event-Handler (async Sub)
+                RaiseEvent StartSimulationRequested(Me, EventArgs.Empty)
+                Await Task.CompletedTask
+            End Function,
+            Function(o As Object) As Boolean
+                'Start nur möglich, wenn initialisiert und nicht gerade eine Simulation läuft
+                Return IsInitialized AndAlso Not IsSimulationRunning
+            End Function)
+
+        'Stop: synchron
+        StopCommand = New RelayCommand(Of Object)(
+            Sub(o As Object)
+                RaiseEvent StopSimulationRequested(Me, EventArgs.Empty)
+            End Sub,
+            Function(o As Object) As Boolean
+                'Stop nur sinnvoll, wenn gerade etwas läuft
+                Return IsSimulationRunning
+            End Function)
+
+        'Spin-Up: async Command
+        SpinUpCommand = New AsyncRelayCommand(Of Object)(
+            Async Function(o As Object) As Task
+                RaiseEvent SpinUpRequested(Me, EventArgs.Empty)
+                Await Task.CompletedTask
+            End Function,
+            Function(o As Object) As Boolean
+                'Spin-Up starten, wenn aktuell nichts läuft
+                Return Not IsSimulationRunning
+            End Function)
+
+        'Step: synchron
+        StepCommand = New RelayCommand(Of Object)(
+            Sub(o As Object)
+                RaiseEvent StepRequested(Me, EventArgs.Empty)
+            End Sub,
+            Function(o As Object) As Boolean
+                'Einzelschritt nur, wenn initialisiert wurde und nichts läuft
+                Return IsInitialized AndAlso Not IsSimulationRunning
+            End Function)
+
+        'Verlauf aufrufen: synchron
+        ShowHistoryCommand = New RelayCommand(Of Object)(
+            Sub(o As Object)
+                RaiseEvent ShowHistoryRequested(Me, EventArgs.Empty)
+            End Sub,
+            Function(o As Object) As Boolean
+                'Verlauf nur, wenn initialisiert ist und es Daten gibt
+                Return IsInitialized AndAlso Engine IsNot Nothing AndAlso Engine.History IsNot Nothing AndAlso Engine.History.Count > 0
+            End Function)
     End Sub
 
     ' --- Properties für Bindings ---
@@ -91,6 +185,58 @@ Public Class MainViewModel
         End Set
     End Property
 
+    Public Property TimeStepIndex As Integer
+        Get
+            Return _timeStepIndex
+        End Get
+        Set(value As Integer)
+            If _timeStepIndex <> value Then
+                _timeStepIndex = value
+                OnPropertyChanged(NameOf(TimeStepIndex))
+
+                'Mapping Index -> Mode
+                Select Case value
+                    Case 0
+                        TimeStepMode = TimeStepMode.Month
+                        DtModeText = "1 Monat"
+                    Case 1
+                        TimeStepMode = TimeStepMode.Quarter
+                        DtModeText = "1 Quartal"
+                    Case 2
+                        TimeStepMode = TimeStepMode.Year
+                        DtModeText = "1 Jahr"
+                    Case 3
+                        TimeStepMode = TimeStepMode.Decade
+                        DtModeText = "10 Jahre"
+                End Select
+            End If
+        End Set
+    End Property
+
+    Public Property DtModeText As String
+        Get
+            Return _dtModeText
+        End Get
+        Set(value As String)
+            If _dtModeText <> value Then
+                _dtModeText = value
+                OnPropertyChanged(NameOf(DtModeText))
+            End If
+        End Set
+    End Property
+
+    Public Property CO2Value As Double
+        Get
+            Return _co2Value
+        End Get
+        Set(value As Double)
+            If Math.Abs(_co2Value - value) > 0.0001 Then
+                _co2Value = value
+                OnPropertyChanged(NameOf(CO2Value))
+            End If
+        End Set
+    End Property
+
     Public Property StatusText As String
         Get
             Return _statusText
@@ -99,6 +245,54 @@ Public Class MainViewModel
             If _statusText <> value Then
                 _statusText = value
                 OnPropertyChanged(NameOf(StatusText))
+            End If
+        End Set
+    End Property
+
+    Public Property StatusLatText As String
+        Get
+            Return _statusLatText
+        End Get
+        Set(value As String)
+            If _statusLatText <> value Then
+                _statusLatText = value
+                OnPropertyChanged(NameOf(StatusLatText))
+            End If
+        End Set
+    End Property
+
+    Public Property StatusLonText As String
+        Get
+            Return _statusLonText
+        End Get
+        Set(value As String)
+            If _statusLonText <> value Then
+                _statusLonText = value
+                OnPropertyChanged(NameOf(StatusLonText))
+            End If
+        End Set
+    End Property
+
+    Public Property StatusTempText As String
+        Get
+            Return _statusTempText
+        End Get
+        Set(value As String)
+            If _statusTempText <> value Then
+                _statusTempText = value
+                OnPropertyChanged(NameOf(StatusTempText))
+            End If
+        End Set
+    End Property
+
+    Public Property StatusSurfaceText As String
+        Get
+            Return _statusSurfaceText
+        End Get
+        Set(value As String)
+            If _statusSurfaceText <> value Then
+                _statusSurfaceText = value
+                OnPropertyChanged(NameOf(StatusSurfaceText))
             End If
         End Set
     End Property
@@ -174,6 +368,94 @@ Public Class MainViewModel
             End If
         End Set
     End Property
+
+    Public Property SurfaceImage As ImageSource
+        Get
+            Return _surfaceImage
+        End Get
+        Set(value As ImageSource)
+            If Not Equals(_surfaceImage, value) Then
+                _surfaceImage = value
+                OnPropertyChanged(NameOf(SurfaceImage))
+            End If
+        End Set
+    End Property
+
+    Public Property TemperatureImage As ImageSource
+        Get
+            Return _temperatureImage
+        End Get
+        Set(value As ImageSource)
+            If Not Equals(_temperatureImage, value) Then
+                _temperatureImage = value
+                OnPropertyChanged(NameOf(TemperatureImage))
+            End If
+        End Set
+    End Property
+
+    Public Property IsTemperatureLayerVisible As Boolean
+        Get
+            Return _isTemperatureLayerVisible
+        End Get
+        Set(value As Boolean)
+            If _isTemperatureLayerVisible <> value Then
+                _isTemperatureLayerVisible = value
+                OnPropertyChanged(NameOf(IsTemperatureLayerVisible))
+            End If
+        End Set
+    End Property
+
+    Public ReadOnly Property AreLayerControlsEnabled As Boolean
+        Get
+            'Entspricht dem bisherigen Verhalten:
+            '- vor Spin-Up: False
+            '- während Spin-Up: False (IsInitialized = False)
+            '- nach Spin-Up: True (IsInitialized = True), egal ob Simulation läuft oder nicht
+            Return IsInitialized AndAlso Not IsSimulationRunning
+        End Get
+    End Property
+
+    Public Property TemperatureOpacity As Double
+        Get
+            Return _temperatureOpacity
+        End Get
+        Set(value As Double)
+            If Math.Abs(_temperatureOpacity - value) > 0.0001 Then
+                _temperatureOpacity = value
+                OnPropertyChanged(NameOf(TemperatureOpacity))
+            End If
+        End Set
+    End Property
+
+    Public Property IsInitialized As Boolean
+        Get
+            Return _isInitialized
+        End Get
+        Set(value As Boolean)
+            If _isInitialized <> value Then
+                _isInitialized = value
+                OnPropertyChanged(NameOf(IsInitialized))
+                OnPropertyChanged(NameOf(AreLayerControlsEnabled))
+                CommandManager.InvalidateRequerySuggested()
+            End If
+        End Set
+    End Property
+
+    Public Property IsSimulationRunning As Boolean
+        Get
+            Return _isSimulationRunning
+        End Get
+        Set(value As Boolean)
+            If _isSimulationRunning <> value Then
+                _isSimulationRunning = value
+                OnPropertyChanged(NameOf(IsSimulationRunning))
+                OnPropertyChanged(NameOf(AreLayerControlsEnabled))
+                CommandManager.InvalidateRequerySuggested()
+            End If
+        End Set
+    End Property
+
+
 
     ' --- INotifyPropertyChanged-Implementierung ---
     Public Event PropertyChanged As PropertyChangedEventHandler Implements INotifyPropertyChanged.PropertyChanged
