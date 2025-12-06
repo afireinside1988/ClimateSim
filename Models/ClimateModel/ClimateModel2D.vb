@@ -24,6 +24,7 @@
     '--- Ende physikalische Modellparameter ---
 
     '--- Jahreszeitensteuerung ---
+    Public Property UseSeasonCycle As Boolean = False   'Aufwenidges Jahreszeiten-EBM oder simples Budyko/Sellers-EBM nutzen
     Public Property CurrentYearFraction As Double = 0.0 'Jahresphase (0..1), 0 = Jahresanfang, 0.25 = Frühling usw.
 
     ''' <summary>
@@ -103,18 +104,30 @@
     Public Function EquilibriumTemperatureForCell(cell As ClimateCell) As Double
         Dim latitudeDeg As Double = cell.LatitudeDeg
 
-        '1) Jahresphase aus dem Modell (0..1)
-        Dim yearFrac As Double = CurrentYearFraction
-        If yearFrac < 0.0 Then yearFrac = 0.0
-        If yearFrac >= 1.0 Then yearFrac -= Math.Floor(yearFrac)
+        '--------------------------
+        '1) Insolationsfaktor qNorm
+        '--------------------------
 
-        '2) Tagesgemittelte Einstrahlung Q(φ, t)
-        Dim Q As Double = ComputeDailyMeanInsolation(latitudeDeg, yearFrac)
+        Dim qNorm As Double
+        If UseSeasonCycle Then
+            '--- Saisonaler Modus mit Jahreszeiten  
+            '1) Jahresphase aus dem Modell (0..1)
+            Dim yearFrac As Double = CurrentYearFraction
+            If yearFrac < 0.0 Then yearFrac = 0.0
+            If yearFrac >= 1.0 Then yearFrac -= Math.Floor(yearFrac)
 
-        '3) Normierung auf Referenzwert (globaler Mittelwert ~341.3 W/m²)
-        Const Qref As Double = 341.3
-        Dim qNorm As Double = If(Qref > 0.0, Q / Qref, 1.0)
-        If qNorm < 0.0 Then qNorm = 0.0
+            '2) Tagesgemittelte Einstrahlung Q(φ, t)
+            Dim Q As Double = ComputeDailyMeanInsolation(latitudeDeg, yearFrac)
+
+            '3) Normierung auf Referenzwert (globaler Mittelwert ~341.3 W/m²)
+            Const Qref As Double = 341.3
+            qNorm = If(Qref > 0.0, Q / Qref, 1.0)
+            If qNorm < 0.0 Then qNorm = 0.0
+        Else
+            Dim qSimple As Double = ComputeSimpleInsolationFactor(latitudeDeg)
+            qNorm = Math.Max(0.0, qSimple)
+        End If
+
 
         '4) "zonale" EBM-Temperatur aus qNorm
         Dim Tzonal As Double = BaseTemperatureK + InsolationAmplitudeK * (qNorm - 1.0)
@@ -138,8 +151,12 @@
 
     End Function
 
-    <Obsolete("Altes EBM")>
-    Private Function ComputeInsolationFactor(latitudeDeg As Double) As Double
+    ''' <summary>
+    ''' Budyko/Sellers-EBM
+    ''' </summary>
+    ''' <param name="latitudeDeg"></param>
+    ''' <returns></returns>
+    Private Function ComputeSimpleInsolationFactor(latitudeDeg As Double) As Double
         Dim latRad As Double = latitudeDeg * Math.PI / 180
         Dim sinPhi As Double = Math.Sin(latRad)
 
@@ -161,7 +178,7 @@
     ''' <param name="latitudeDeg"></param>
     ''' <param name="yearFraction"></param>
     ''' <returns></returns>
-    Private Function ComputeDailyMeanInsolation(latitudeDeg As Double, yearFraction As Double) As Double
+    Private Shared Function ComputeDailyMeanInsolation(latitudeDeg As Double, yearFraction As Double) As Double
 
         '1) --- Eingaben normieren ---
         If yearFraction < 0.0 Then

@@ -1,15 +1,7 @@
-﻿Imports System.Windows
-Imports System.Windows.Input
-Imports System.Windows.Media.Imaging
-Imports System.Windows.Threading
+﻿Imports System.Windows.Threading
 Imports System.Globalization
 Imports System.Threading
-Imports System.Threading.Tasks
-Imports System.Windows.Media.Media3D
 Imports System.Runtime.InteropServices
-
-
-
 
 Class MainWindow
 
@@ -47,6 +39,8 @@ Class MainWindow
     'Zeitsteuerung
     Private _timeStepMode As TimeStepMode = TimeStepMode.Year 'aktueller TimeStep, Default 1 Jahr
 
+    'MVVM-Implementierung
+    Private _viewModel As MainViewModel
 
     Public Sub RefreshFromEngine()
         If _engine Is Nothing Then Return
@@ -58,11 +52,10 @@ Class MainWindow
 
     Private Sub MainWindow_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
 
-        _engine = New SimulationEngine()
-        'CO2-Szenario setzen
-        _engine.CO2Scenario = New DefaultCo2Scenario()
-        'Erdoberflächenprovider setzen
-        _engine.EarthSurfaceProvider = New ToyEarthSurfaceProvider()
+        _viewModel = New MainViewModel()
+        Me.DataContext = _viewModel
+
+        _engine = _viewModel.Engine
 
         '--- UI-Handler ---
         'Buttons
@@ -80,7 +73,7 @@ Class MainWindow
 
         'Slider
         AddHandler SldDtMode.ValueChanged, AddressOf SldDtMode_ValueChanged
-        AddHandler SldLambda.ValueChanged, AddressOf SldLambda_ValueChanged
+
         'Layer-Auswahl
         AddHandler ChkShowTemperature.Checked, AddressOf OnLayerCheckboxChanged
         AddHandler ChkShowTemperature.Unchecked, AddressOf OnLayerCheckboxChanged
@@ -97,8 +90,14 @@ Class MainWindow
         ChkShowTemperature.IsEnabled = False
         SldTemperatureOpacity.IsEnabled = False
 
+        'Erdoberfläche initialisieren
+        Dim width As Integer = Integer.Parse(TxtWidth.Text)
+        Dim height As Integer = Integer.Parse(TxtHeight.Text)
+        _engine.Initialize(360, 180, 1850)
+        RenderSurfaceLayer()
+
         'Status setzen
-        TxtStatus.Text = "Bitte Spin-Up starten."
+        _viewModel.StatusText = "Bitte Spin-Up starten."
         UpdateMemoryEstimate()
 
     End Sub
@@ -119,9 +118,20 @@ Class MainWindow
             Return
         End If
 
-        '3) Spin-Up-Parameter
-        Dim spinUpYears As Integer = 100
-        Dim spinUpDtYears As Double = 0.25 'Quartals-Schritte zur Nutzung des Jahreszeiten-EBM
+        '3) Spin-Up-Konfiguration anhängig vom TimeStepMode
+        Dim spinUpYears As Integer = 200
+        Dim spinUpDtYears As Double
+        Dim spinUpUseSeasonal As Boolean
+
+        Select Case _timeStepMode
+            Case TimeStepMode.Month, TimeStepMode.Quarter   'Feiner Modus -> saisonales EBM
+                spinUpDtYears = 0.25                        'Quartalsschritte zur Beschleunigung des Spin-Ups
+                spinUpUseSeasonal = True
+            Case TimeStepMode.Year, TimeStepMode.Decade     'Grober Modus -> Budyko/Sellers-EBM
+                spinUpDtYears = 1.0                         'Jahresschritte
+                spinUpUseSeasonal = False
+        End Select
+
         Dim spinUpStartYear As Integer = startYear - spinUpYears
 
         '4) CO2-Wert zum eigentlichen Startjahr als Fixwert für den Spin-Up
@@ -130,10 +140,19 @@ Class MainWindow
         '5) Engine initialisieren mit spinUpStartYear
         _engine.Initialize(width, height, spinUpStartYear)
 
-        'Jahresphase auf Frühling / Jahresmittel nah dran
-        _engine.Model.CurrentYearFraction = 0.25
+        'Basis-Layer rendern
+        RenderSurfaceLayer()
 
-        '6) Spin-Up-Modus einschalten
+        '6) EBM-Modus für den Spin-Up setzen
+        _engine.Model.UseSeasonCycle = spinUpUseSeasonal
+
+        If spinUpUseSeasonal Then
+            _engine.Model.CurrentYearFraction = 0.25        'Bei saisonalem EBM mit Frühling starten (Nähe des Jahresmittels)
+        Else
+            _engine.Model.CurrentYearFraction = 0.0         'Bei Budyko/Sellers-EBM mit Jahresbeginn, Jahresphase spielt keine Rolle
+        End If
+
+        '7) Spin-Up-Modus einschalten
         _engine.IsSpinUp = True
         _engine.SpinUpCO2ppm = co2AtStart
 
@@ -143,11 +162,23 @@ Class MainWindow
         Dim cts As New CancellationTokenSource()
         _simCts = cts
 
+        '8) Spin-Up im Hintergrund laufen lassen
         Try
-            '7) Spin-Up im Hintergrund laufen lassen
             Await Task.Run(Sub() RunSpinUpLoop(spinUpStartYear, startYear, spinUpDtYears, cts.Token))
 
-            '8) Nach dem Spin-Up: Startjahr zurücksetzen
+            'Wenn Spin-Up abgebrochen wurde, darauf reagieren
+            If _simCts IsNot Nothing AndAlso _simCts.IsCancellationRequested Then
+                Dispatcher.Invoke(Sub()
+                                      _viewModel.StatusText = "Spin-Up abgebrochen."
+                                      'UI teilweise wieder freigeben, aber NICHT als "initialized" markieren
+                                      BtnSpinUp.IsEnabled = True
+                                  End Sub)
+
+                Return '<<< da Spin-Up abgebrochen wurde, nicht weiter initialisieren
+
+            End If
+
+            '9) Nach dem Spin-Up: Startjahr zurücksetzen
             _engine.IsSpinUp = False
             _engine.StartYear = startYear
             _engine.SimTimeYears = 0.0
@@ -157,7 +188,7 @@ Class MainWindow
             _engine.History.Clear()
             _engine.Snapshots.Clear()
 
-            '9) Initial-History-Eintrag mit "realem" CO2-Szenario
+            '10) Initial-History-Eintrag mit "echtem" CO2-Szenario
             Dim co2Now As Double = If(_engine.CO2Scenario IsNot Nothing, _engine.CO2Scenario.GetCO2ForYear(startYear), co2AtStart)
             _engine.Model.CO2ppm = co2Now
 
@@ -175,7 +206,10 @@ Class MainWindow
                 _engine.Snapshots.Add(snap)
             End If
 
-            '10) UI aktualisieren & freigeben
+            '11) EBM-Modus jetzt wieder an den TimeStepMode der "eigentlichen" Simulation anpassen
+            ApplyTimeStepModeToModel()
+
+            '12) UI aktualisieren & freigeben
             _isInitialized = True
             Dispatcher.Invoke(
                 Sub()
@@ -184,10 +218,10 @@ Class MainWindow
                     UpdateCO2Display(co2Now)
 
                     EnableUIAfterSpinUp()
-                    TxtStatus.Text = "Spin-Up angeschlossen. Modell bereit."
+                    _viewModel.StatusText = "Spin-Up angeschlossen. Modell bereit."
                 End Sub)
-        Catch ex As OperationCanceledException
-            MessageBox.Show("Spin-Up abgebrochen", "Hinweis", MessageBoxButton.OK, MessageBoxImage.Information)
+        Catch ex As Exception
+            MessageBox.Show($"Fehler beim Spin-Up: {ex.Message}", "Hinweis", MessageBoxButton.OK, MessageBoxImage.Error)
         Finally
             _engine.IsSpinUp = False
             Dispatcher.Invoke(Sub()
@@ -227,14 +261,14 @@ Class MainWindow
 
         _endYear = endYear
 
-        'Modellparamter einmalig vor Start aus der UI übernehmen
-        UpdateModelParametersFromUI()
+        UpdateModelParametersFromUI()   'Modellparamter einmalig vor Start aus der UI übernehmen
+        ApplyTimeStepModeToModel()      'Gewählten TimeStep an Modell übergeben
 
         _isSimulationRunning = True
         _simCts = New CancellationTokenSource()
 
-        'UI-Buttons sperren/umschalten
-        SetSimulationUIState(True)
+
+        SetSimulationUIState(True)      'UI-Buttons sperren/umschalten
 
         Try
             'Simulation im Hintergrund-Thread laufen lassen
@@ -359,10 +393,6 @@ Class MainWindow
         UpdateMemoryEstimate()
     End Sub
 
-    Private Sub SldLambda_ValueChanged(sender As Object, e As RoutedPropertyChangedEventArgs(Of Double))
-        TxtLambdaValue.Text = SldLambda.Value.ToString("0.0", CultureInfo.InvariantCulture)
-    End Sub
-
     Private Sub TxtWidth_TextChanged(sender As Object, e As RoutedEventArgs)
         UpdateMemoryEstimate()
     End Sub
@@ -381,7 +411,6 @@ Class MainWindow
 
         For stepIndex As Integer = 1 To totalSteps
             If token.IsCancellationRequested Then
-                MessageBox.Show("Spin-Up abgebrochen.", "Hinweis", MessageBoxButton.OK, MessageBoxImage.Information)
                 Exit For
             End If
 
@@ -392,8 +421,8 @@ Class MainWindow
             'Status im UI aktualisieren
             Dispatcher.Invoke(
                 Sub()
-                    TxtStatus.Text = $"Spin-Up: {progress * 100.0:F1} %"
-                End Sub, DispatcherPriority.Background, token)
+                    _viewModel.StatusText = $"Spin-Up: {progress * 100.0:F1} %"
+                End Sub, DispatcherPriority.Background, CancellationToken.None)
         Next
 
     End Sub
@@ -496,7 +525,7 @@ Class MainWindow
 
         'Globalen Mittelwert anzeigen
         Dim meanC As Double = _engine.Grid.ComputeGlobalMeanTemperatureC()
-        TxtGlobalMean.Text = $"{meanC:F2} °C"
+        _viewModel.GlobalMeanText = $"{meanC:F2} °C"
 
     End Sub
 
@@ -516,8 +545,8 @@ Class MainWindow
     End Sub
 
     Private Sub UpdateSimTimeDisplay()
-        TxtSimTime.Text = $"{_engine.SimTimeYears:F1} Jahre"
-        TxtCurrentYear.Text = FormatYearWithStepMode(_engine.CurrentYear, _timeStepMode)
+        _viewModel.SimTimeText = $"{_engine.SimTimeYears:F1} Jahre"
+        _viewModel.CurrentYearText = FormatYearWithStepMode(_engine.CurrentYear, _timeStepMode)
     End Sub
 
     Private Sub UpdateModelParametersFromUI()
@@ -702,14 +731,22 @@ Class MainWindow
         Dim estGiB As Double = estimatedBytes / (1024 ^ 3)
         Dim availGiB As Double = availableBytes / (1024 ^ 3)
 
-        TxtMemoryEstimate.Text = $"Speicherprognose: ~{estGiB:F2} GiB (frei: {availGiB:F2} GiB)"
+        _viewModel.MemoryEstimateText = $"Speicherprognose: ~{estGiB:F2} GiB (frei: {availGiB:F2} GiB)"
 
         If estimatedBytes > availableBytes Then
-            TxtMemoryEstimate.Foreground = Brushes.Red
+            _viewModel.MemoryEstimateBrush = Brushes.Red
             _memoryEstimateOk = False
         Else
-            TxtMemoryEstimate.Foreground = Brushes.Black
+            _viewModel.MemoryEstimateBrush = Brushes.Black
             _memoryEstimateOk = True
         End If
+    End Sub
+
+    Private Sub ApplyTimeStepModeToModel()
+        If _engine Is Nothing OrElse _engine.Model Is Nothing Then Return
+
+        Dim useSeasonal As Boolean = (_timeStepMode = TimeStepMode.Month OrElse _timeStepMode = TimeStepMode.Quarter)
+
+        _engine.Model.UseSeasonCycle = useSeasonal
     End Sub
 End Class

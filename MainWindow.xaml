@@ -3,7 +3,6 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:ClimateSim"
         mc:Ignorable="d"
         Title="ClimateSim" Height="900" Width="1200"
         WindowStartupLocation="CenterScreen">
@@ -56,10 +55,10 @@
                         <TextBlock x:Name="TxtStatusSurface" Text="Surface: -" Margin="0,0,50,0"/>
                     </StatusBarItem>
                     <StatusBarItem>
-                        <TextBlock x:Name="TxtStatus" Text="Bereit."/>
+                        <TextBlock Text="{Binding StatusText}"/>
                     </StatusBarItem>
                     <StatusBarItem HorizontalAlignment="Right">
-                        <TextBlock x:Name="TxtMemoryEstimate" Text="Speicherprognose: n/a"/>
+                        <TextBlock Text="{Binding MemoryEstimateText}" Foreground="{Binding MemoryEstimateBrush}"/>
                     </StatusBarItem>
                 </StatusBar>
             </Grid>
@@ -109,7 +108,7 @@
 
             <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
                 <TextBlock Text="Aktuelles Jahr:" FontWeight="SemiBold" Margin="0,0,0,0"/>
-                <TextBlock x:Name="TxtCurrentYear" Text="1850,0" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
+                <TextBlock Text="{Binding CurrentYearText}" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
             </StackPanel>
 
             <TextBlock Text="Simulationsteuerung:" FontWeight="SemiBold" Margin="0,10,0,0" />
@@ -131,12 +130,12 @@
 
             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                 <TextBlock Text="Simulationszeit:" FontWeight="SemiBold" Margin="0,0,0,0" />
-                <TextBlock x:Name="TxtSimTime" Text="0,0 Jahre" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
+                <TextBlock Text="{Binding SimTimeText}" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
             </StackPanel>
 
             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                 <TextBlock Text="Globale Mitteltemperatur:" FontWeight="SemiBold" Margin="0,0,0,0" />
-                <TextBlock x:Name="TxtGlobalMean" Text="0,0 °C" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
+                <TextBlock Text="{Binding GlobalMeanText}" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
             </StackPanel>
 
             <TextBlock Text="CO₂-Forcing:" FontWeight="SemiBold" Margin="0,20,0,5"/>
@@ -150,8 +149,8 @@
             <StackPanel Orientation="Vertical" Margin="0,5,0,10" HorizontalAlignment="Left">
                 <TextBlock Text="Klimasensitivität λ [K/(W/m²)]:" VerticalAlignment="Center"/>
                 <StackPanel Orientation="Horizontal">
-                    <Slider x:Name="SldLambda" Width="120" Margin="5,5,5,5" Minimum="0.1" Maximum="1.5" Value="0.5" TickFrequency="0.1" IsSnapToTickEnabled="True"/>
-                    <TextBlock x:Name="TxtLambdaValue" Text="{Binding ElementName=SldLambda, Path=Value}" Width="40" VerticalAlignment="Center" TextAlignment="Right" FontFamily="Consolas"/>
+                    <Slider x:Name="SldLambda" Width="120" Margin="5,5,5,5" Minimum="0.1" Maximum="1.5" Value="{Binding Lambda, Mode=TwoWay}" TickFrequency="0.1" IsSnapToTickEnabled="True"/>
+                    <TextBlock Text="{Binding Lambda, StringFormat=0.0}" Width="40" VerticalAlignment="Center" TextAlignment="Right" FontFamily="Consolas"/>
                 </StackPanel>
             </StackPanel>
 
