@@ -2,6 +2,7 @@
 Imports System.Globalization
 Imports System.Threading
 Imports System.Runtime.InteropServices
+Imports System.ComponentModel
 
 Class MainWindow
 
@@ -24,20 +25,15 @@ Class MainWindow
 
     'Simulations-Engine
     Private _engine As SimulationEngine
-    Private _isInitialized As Boolean = False
 
     'Felder fürs Multi-Threading
     Private _simCts As CancellationTokenSource
-    Private _isSimulationRunning As Boolean = False
 
     Private _memoryEstimateOk As Boolean = True
 
     'Default-Werte
     Private _endYear As Integer = 2100 'Standardwert, wird aus Textbox gelesen
     Private _currentLayer As MapLayer = MapLayer.Temperature
-
-    'Zeitsteuerung
-    Private _timeStepMode As TimeStepMode = TimeStepMode.Year 'aktueller TimeStep, Default 1 Jahr
 
     'MVVM-Implementierung
     Private _viewModel As MainViewModel
@@ -58,21 +54,15 @@ Class MainWindow
         _engine = _viewModel.Engine
 
         '--- UI-Handler ---
-        'Buttons
-        AddHandler BtnSpinUp.Click, AddressOf BtnSpinUp_Click
-        AddHandler BtnStep.Click, AddressOf BtnStep_Click
-        AddHandler BtnStart.Click, AddressOf BtnStart_Click
-        AddHandler BtnStop.Click, AddressOf BtnStop_Click
-        AddHandler BtnShowHistory.Click, AddressOf BtnShowHistory_Click
+        'Auf Änderungen im ViewModel reagieren
+        AddHandler _viewModel.PropertyChanged, AddressOf ViewModel_PropertyChanged
 
-        'Textboxen
-        AddHandler TxtWidth.TextChanged, AddressOf TxtWidth_TextChanged
-        AddHandler TxtHeight.TextChanged, AddressOf TxtWidth_TextChanged
-        AddHandler TxtStartYear.TextChanged, AddressOf TxtWidth_TextChanged
-        AddHandler TxtEndYear.TextChanged, AddressOf TxtWidth_TextChanged
-
-        'Slider
-        AddHandler SldDtMode.ValueChanged, AddressOf SldDtMode_ValueChanged
+        'Auf Command-Events reagieren
+        AddHandler _viewModel.StartSimulationRequested, AddressOf OnStartSimulationRequested
+        AddHandler _viewModel.StopSimulationRequested, AddressOf OnStopSimulationRequested
+        AddHandler _viewModel.SpinUpRequested, AddressOf OnSpinUpRequested
+        AddHandler _viewModel.StepRequested, AddressOf OnStepRequested
+        AddHandler _viewModel.ShowHistoryRequested, AddressOf OnShowHistoryRequested
 
         'Layer-Auswahl
         AddHandler ChkShowTemperature.Checked, AddressOf OnLayerCheckboxChanged
@@ -83,17 +73,13 @@ Class MainWindow
         AddHandler ImgTemperature.MouseLeave, AddressOf ImgTemperature_MouseLeave
 
         '--- Buttons & Layer initial sperren ---
-        BtnStart.IsEnabled = False
-        BtnStep.IsEnabled = False
-        BtnShowHistory.IsEnabled = False
         ChkShowTemperature.IsChecked = False
         ChkShowTemperature.IsEnabled = False
         SldTemperatureOpacity.IsEnabled = False
 
         'Erdoberfläche initialisieren
-        Dim width As Integer = Integer.Parse(TxtWidth.Text)
-        Dim height As Integer = Integer.Parse(TxtHeight.Text)
         _engine.Initialize(360, 180, 1850)
+        ApplyViewModelToModel()
         RenderSurfaceLayer()
 
         'Status setzen
@@ -102,7 +88,7 @@ Class MainWindow
 
     End Sub
 
-    Private Async Sub BtnSpinUp_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub OnSpinUpRequested(sender As Object, e As EventArgs)
 
         '1) Simulations-Settings lesen
         Dim startYear As Integer, endYear As Integer
@@ -113,17 +99,19 @@ Class MainWindow
 
         '2) Gitterauflösung lesen
         Dim width As Integer, height As Integer
-        If Not Integer.TryParse(TxtWidth.Text, width) OrElse Not Integer.TryParse(TxtHeight.Text, height) Then
+        If Not Integer.TryParse(_viewModel.GridWidth, width) OrElse Not Integer.TryParse(_viewModel.GridHeigth, height) Then
             MessageBox.Show("Bitte gültige Rasterauflösung angeben.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
             Return
         End If
+
+
 
         '3) Spin-Up-Konfiguration anhängig vom TimeStepMode
         Dim spinUpYears As Integer = 200
         Dim spinUpDtYears As Double
         Dim spinUpUseSeasonal As Boolean
 
-        Select Case _timeStepMode
+        Select Case _viewModel.TimeStepMode
             Case TimeStepMode.Month, TimeStepMode.Quarter   'Feiner Modus -> saisonales EBM
                 spinUpDtYears = 0.25                        'Quartalsschritte zur Beschleunigung des Spin-Ups
                 spinUpUseSeasonal = True
@@ -139,6 +127,9 @@ Class MainWindow
 
         '5) Engine initialisieren mit spinUpStartYear
         _engine.Initialize(width, height, spinUpStartYear)
+
+        'Lambda aus dem ViewModel ins Modell übernehmen
+        ApplyViewModelToModel()
 
         'Basis-Layer rendern
         RenderSurfaceLayer()
@@ -157,6 +148,7 @@ Class MainWindow
         _engine.SpinUpCO2ppm = co2AtStart
 
         'UI sperren
+        _viewModel.IsSimulationRunning = True
         SetUIDuringSpinUp(isRunning:=True)
 
         Dim cts As New CancellationTokenSource()
@@ -210,13 +202,14 @@ Class MainWindow
             ApplyTimeStepModeToModel()
 
             '12) UI aktualisieren & freigeben
-            _isInitialized = True
+
             Dispatcher.Invoke(
                 Sub()
                     RenderTemperatureLayer()
                     UpdateSimTimeDisplay()
                     UpdateCO2Display(co2Now)
 
+                    _viewModel.IsInitialized = True
                     EnableUIAfterSpinUp()
                     _viewModel.StatusText = "Spin-Up angeschlossen. Modell bereit."
                 End Sub)
@@ -225,13 +218,13 @@ Class MainWindow
         Finally
             _engine.IsSpinUp = False
             Dispatcher.Invoke(Sub()
-                                  BtnSpinUp.IsEnabled = True
+                                  _viewModel.IsSimulationRunning = False
                               End Sub)
         End Try
     End Sub
 
-    Private Sub BtnStep_Click(sender As Object, e As RoutedEventArgs)
-        If _engine Is Nothing OrElse _engine.Model Is Nothing OrElse _isSimulationRunning Then
+    Private Sub OnStepRequested(sender As Object, e As EventArgs)
+        If _engine Is Nothing OrElse _engine.Model Is Nothing OrElse _viewModel.IsSimulationRunning Then
             MessageBox.Show("Bitte zuerst initialiseren bzw. laufende Simulation stoppen.", "Hinweis",
                             MessageBoxButton.OK, MessageBoxImage.Information)
             Return
@@ -243,7 +236,7 @@ Class MainWindow
 
     End Sub
 
-    Private Async Sub BtnStart_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub OnStartSimulationRequested(sender As Object, e As EventArgs)
         If _engine Is Nothing OrElse _engine.Model Is Nothing Then
             MessageBox.Show("Bitte zuerst initialiseren", "Hinweis",
                             MessageBoxButton.OK, MessageBoxImage.Information)
@@ -261,10 +254,10 @@ Class MainWindow
 
         _endYear = endYear
 
-        UpdateModelParametersFromUI()   'Modellparamter einmalig vor Start aus der UI übernehmen
+        ApplyViewModelToModel()   'Modellparamter einmalig vor Start aus der UI übernehmen
         ApplyTimeStepModeToModel()      'Gewählten TimeStep an Modell übergeben
 
-        _isSimulationRunning = True
+        _viewModel.IsSimulationRunning = True
         _simCts = New CancellationTokenSource()
 
 
@@ -277,34 +270,25 @@ Class MainWindow
             'nur echte Fehler anzeigen
             MessageBox.Show($"Fehler in der Simulation: {ex.Message}", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
         Finally
-            _isSimulationRunning = False
+            _viewModel.IsSimulationRunning = False
             SetSimulationUIState(False)
         End Try
     End Sub
 
-    Private Sub BtnStop_Click(sender As Object, e As RoutedEventArgs)
+    Private Sub OnStopSimulationRequested(sender As Object, e As EventArgs)
         If _simCts IsNot Nothing AndAlso Not _simCts.IsCancellationRequested Then
             _simCts.Cancel()
         End If
     End Sub
 
-    Private Sub SldCO2_ValueChanged(sender As Object, e As RoutedPropertyChangedEventArgs(Of Double))
-        Dim value As Integer = CInt(Math.Round(SldCO2.Value))
-        TxtCO2Value.Text = $"{value} ppm"
-
-        If _engine.Model IsNot Nothing Then
-            _engine.Model.CO2ppm = value
-        End If
-    End Sub
-
-    Private Sub BtnShowHistory_Click(sender As Object, e As RoutedEventArgs)
+    Private Sub OnShowHistoryRequested(sender As Object, e As EventArgs)
         If _engine Is Nothing OrElse _engine.History.Count = 0 Then
             MessageBox.Show("Keine Simulationsdaten vorhanden.", "Hinweis",
                             MessageBoxButton.OK, MessageBoxImage.Information)
             Return
         End If
 
-        Dim wnd As New HistoryWindow(_engine, _timeStepMode)
+        Dim wnd As New HistoryWindow(_engine, _viewModel.TimeStepMode)
         wnd.Owner = Me
         wnd.Show()
     End Sub
@@ -362,46 +346,45 @@ Class MainWindow
         Dim lonDeg As Double = cell.LongitudeDeg
         Dim surfaceName As String = cell.Surface.ToString()
 
-        TxtStatusLat.Text = String.Format(CultureInfo.InvariantCulture, "Lat: {0:F1}°", latDeg)
-        TxtStatusLon.Text = String.Format(CultureInfo.InvariantCulture, "Lon: {0:F1}°", lonDeg)
-        TxtStatusTemp.Text = String.Format(CultureInfo.InvariantCulture, "Temp: {0:F2} °C", tempC)
-        TxtStatusSurface.Text = $"Surface: {surfaceName}"
+        _viewModel.StatusLatText = String.Format(CultureInfo.InvariantCulture, "Lat: {0:F1}°", latDeg)
+        _viewModel.StatusLonText = String.Format(CultureInfo.InvariantCulture, "Lon: {0:F1}°", lonDeg)
+        _viewModel.StatusTempText = String.Format(CultureInfo.InvariantCulture, "Temp: {0:F2} °C", tempC)
+        _viewModel.StatusSurfaceText = $"Surface: {surfaceName}"
     End Sub
 
     Private Sub ImgTemperature_MouseLeave(sender As Object, e As MouseEventArgs)
         ClearStatusBar()
     End Sub
 
-    Private Sub SldDtMode_ValueChanged(sender As Object, e As RoutedPropertyChangedEventArgs(Of Double))
-        Dim modeIndex As Integer = CInt(Math.Round(SldDtMode.Value))
 
-        Select Case modeIndex
-            Case 0
-                _timeStepMode = TimeStepMode.Month
-                TxtDtModeLabel.Text = "1 Monat"
-            Case 1
-                _timeStepMode = TimeStepMode.Quarter
-                TxtDtModeLabel.Text = "1 Quartal"
-            Case 2
-                _timeStepMode = TimeStepMode.Year
-                TxtDtModeLabel.Text = "1 Jahr"
-            Case 3
-                _timeStepMode = TimeStepMode.Decade
-                TxtDtModeLabel.Text = "10 Jahre"
+
+    Private Sub ViewModel_PropertyChanged(sender As Object, e As PropertyChangedEventArgs)
+        Select Case e.PropertyName
+            Case NameOf(MainViewModel.GridWidth),
+                 NameOf(MainViewModel.GridHeigth),
+                 NameOf(MainViewModel.StartYear),
+                 NameOf(MainViewModel.EndYear),
+                 NameOf(MainViewModel.TimeStepMode)
+                UpdateMemoryEstimate()
+
+            Case NameOf(MainViewModel.CO2Value)
+                'CO2 aus dem ViewModel ins Modell übertragen
+                If _engine IsNot Nothing AndAlso _engine.Model IsNot Nothing Then
+                    _engine.Model.CO2ppm = _viewModel.CO2Value
+                End If
+            Case NameOf(MainViewModel.Lambda)
+                'Klimasensitivität ins Modell durchreichen
+                ApplyViewModelToModel()
         End Select
-
-        UpdateMemoryEstimate()
-    End Sub
-
-    Private Sub TxtWidth_TextChanged(sender As Object, e As RoutedEventArgs)
-        UpdateMemoryEstimate()
     End Sub
 
     Private Sub ClearStatusBar()
-        TxtStatusLat.Text = "Lat: -"
-        TxtStatusLon.Text = "Lon: -"
-        TxtStatusTemp.Text = "Temp: -"
-        TxtStatusSurface.Text = "Surface: -"
+        If _viewModel Is Nothing Then Return
+
+        _viewModel.StatusLatText = "Lat: -"
+        _viewModel.StatusLonText = "Lon: -"
+        _viewModel.StatusTempText = "Temp: -"
+        _viewModel.StatusSurfaceText = "Surface: -"
     End Sub
 
     Private Sub RunSpinUpLoop(spinUpStartYear As Integer, targetStartYear As Integer, dtYears As Double, token As CancellationToken)
@@ -435,17 +418,11 @@ Class MainWindow
 
         While _engine.CurrentYear < endYear AndAlso Not token.IsCancellationRequested
 
-            '1) Modellparamter ggf. aus UI übernehmen (Lambda etc.) -> auf dem UI-Thread
-            Dispatcher.Invoke(
-                Sub()
-                    UpdateModelParametersFromUI()
-                End Sub)
-
-            '2) Simulationsschritt ausführen (im Hintergrundthread, rein nummerisch
+            '1) Simulationsschritt ausführen (im Hintergrundthread, rein nummerisch
             _engine.StepSimulation(dtYears)
             stepCounter += 1
 
-            '3) in moderatem Rhythmus die UI aktualisieren
+            '2) in moderatem Rhythmus die UI aktualisieren
             If stepCounter Mod uiUpdateInterval = 0 Then
                 Dispatcher.Invoke(
                     Sub()
@@ -484,13 +461,13 @@ Class MainWindow
             _endYear = endYear
 
             Dim width As Integer = Integer.Parse(TxtWidth.Text)
-            Dim height As Integer = Integer.Parse(TxtHeight.Text)
+            Dim height As Integer = Integer.Parse(TxtHeigth.Text)
 
             'Simulations-Engine initialisieren
             _engine.Initialize(width, height, startYear)
 
             'Lambda aus UI holen
-            UpdateModelParametersFromUI()
+            ApplyViewModelToModel()
 
             'Basis-Layer rendern
             RenderSurfaceLayer()
@@ -532,9 +509,6 @@ Class MainWindow
     Private Sub SimulateOneStep(dtYears As Double)
         If _engine Is Nothing OrElse _engine.Model Is Nothing Then Return
 
-        'Parameter aus UI übernehmen
-        UpdateModelParametersFromUI()
-
         _engine.StepSimulation(dtYears)
 
         UpdateCO2Display(_engine.Model.CO2ppm)
@@ -546,51 +520,36 @@ Class MainWindow
 
     Private Sub UpdateSimTimeDisplay()
         _viewModel.SimTimeText = $"{_engine.SimTimeYears:F1} Jahre"
-        _viewModel.CurrentYearText = FormatYearWithStepMode(_engine.CurrentYear, _timeStepMode)
-    End Sub
-
-    Private Sub UpdateModelParametersFromUI()
-        If _engine Is Nothing OrElse _engine.Model Is Nothing Then Return
-
-        'Klimasensitivität aus Textbox
-        _engine.Model.ClimateSensitivityLambda = SldLambda.Value
+        _viewModel.CurrentYearText = FormatYearWithStepMode(_engine.CurrentYear, _viewModel.TimeStepMode)
     End Sub
 
     Private Sub UpdateCO2Display(co2 As Double)
-        'Slider innerhalb seiner Grenzen halten
-        Dim val = Math.Max(SldCO2.Minimum, Math.Min(SldCO2.Maximum, co2))
-        SldCO2.Value = val
-        TxtCO2Value.Text = $"{co2:F0} ppm"
+        If _viewModel Is Nothing Then Return
+
+        'Clamp in den Sliderbereich (damit ViewModel + Slider konsistent bleiben)
+        Dim clamped As Double = Math.Max(280.0, Math.Min(1000.0, co2))
+        _viewModel.CO2Value = clamped
     End Sub
 
     Private Sub SetSimulationUIState(isRunning As Boolean)
-        BtnStart.IsEnabled = Not isRunning
-        BtnStep.IsEnabled = Not isRunning
-        BtnSpinUp.IsEnabled = Not isRunning
-        BtnSpinUp.IsEnabled = Not isRunning
-        BtnShowHistory.IsEnabled = Not isRunning
-        BtnStop.IsEnabled = isRunning
+        'Buttons werden jetzt über Commands/CanExecute gesteuert.
+        'Bei Bedarf noch andere UI-Elemente steuern oder später als Obsolete rausschmeißen
     End Sub
 
     Private Sub SetUIDuringSpinUp(isRunning As Boolean)
         If isRunning Then
-            BtnSpinUp.IsEnabled = False
-            BtnStart.IsEnabled = False
-            BtnStep.IsEnabled = False
-            BtnShowHistory.IsEnabled = False
-            BtnStop.IsEnabled = True
+            'BtnStop.IsEnabled = True 'Stop während SpinUp explizit erlaubt
             ChkShowTemperature.IsEnabled = False
             SldTemperatureOpacity.IsEnabled = False
         Else
-            BtnSpinUp.IsEnabled = True
+            ChkShowTemperature.IsEnabled = True
+            SldTemperatureOpacity.IsEnabled = True
         End If
 
     End Sub
 
     Private Sub EnableUIAfterSpinUp()
-        BtnStart.IsEnabled = True
-        BtnStep.IsEnabled = True
-        BtnShowHistory.IsEnabled = True
+        'Buttons durch Commands/CanExecute geregelt
         ChkShowTemperature.IsEnabled = True
         ChkShowTemperature.IsChecked = True
         SldTemperatureOpacity.IsEnabled = True
@@ -606,65 +565,48 @@ Class MainWindow
     ''' <returns>Gibt True zurück, wenn alle Werte korrekt sind oder korrigiert wurden, sonst False</returns>
     Private Function TryReadSimulationSettings(ByRef startYear As Integer, ByRef endYear As Integer, ByRef dtYears As Double, Optional showMessages As Boolean = True) As Boolean
 
-        '--- Startjahr ---
-        If Not Integer.TryParse(TxtStartYear.Text, startYear) Then
-            If showMessages Then
-                Dim errMsg As MessageBoxResult
-                errMsg = MessageBox.Show("Ungültiges Startjahr. Soll es auf 1850 gesetzt werden?", "Warnung", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes)
-                If errMsg = MessageBoxResult.Yes Then
-                    startYear = 1850 'Default-Wert setzen
-                    TxtStartYear.Text = startYear.ToString()
-                Else
-                    Return False
-                End If
-            Else
-                startYear = 1850 'Default-Wert setzen
-                TxtStartYear.Text = startYear.ToString()
-            End If
-        End If
+        If _viewModel Is Nothing Then Return False
 
-        '--- Endjahr ---
-        If Not Integer.TryParse(TxtEndYear.Text, endYear) Then
-            If showMessages Then
-                Dim errMsg As MessageBoxResult
-                errMsg = MessageBox.Show($"Ungültiges Endjahr. Soll es auf {(startYear + 250)} gesetzt werden?", "Warnung", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes)
-                If errMsg = MessageBoxResult.Yes Then
-                    endYear = startYear + 250 'Default-Wert setzen
-                    TxtEndYear.Text = endYear.ToString()
-                Else
-                    Return False
-                End If
-            Else
-                endYear = startYear + 250 'Default-Wert setzen
-                TxtEndYear.Text = endYear.ToString()
-            End If
-        End If
+        '--- Start- und Endjahr direkt aus dem ViewModel  ---
+        startYear = _viewModel.StartYear
+        endYear = _viewModel.EndYear
 
-        'Falls Endjahr <= Startjahr
+        '--- Endjahr > Startjahr erzwingen
         If endYear <= startYear Then
+            Dim suggestedEnd As Integer = startYear + 250
+
             If showMessages Then
-                Dim errMsg As MessageBoxResult
-                errMsg = MessageBox.Show($"Das Endjahr muss größer als das Startjahr sein. Soll es auf {(startYear + 250)} gesetzt werden?", "Warnung", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes)
+                Dim errMsg As MessageBoxResult =
+                    MessageBox.Show($"Das Endjahr muss größer als das Startjahr sein. " &
+                                    $"Soll es auf {suggestedEnd} gesetzt werden?",
+                                    MessageBoxButton.YesNo,
+                                    MessageBoxImage.Warning,
+                                    MessageBoxResult.Yes)
+
                 If errMsg = MessageBoxResult.Yes Then
-                    endYear = startYear + 250
-                    TxtEndYear.Text = endYear.ToString()
+                    endYear = suggestedEnd
+                    _viewModel.EndYear = suggestedEnd 'ViewModel (und damit TextBox) aktualisieren
                 Else
                     Return False
                 End If
             Else
-                endYear = startYear + 250 'Default-Wert setzen
-                TxtEndYear.Text = endYear.ToString()
+                endYear = suggestedEnd
+                _viewModel.EndYear = suggestedEnd
             End If
         End If
 
-        '--- dtYears ---
+        '--- dtYears kommt jetzt ausschließlich aus dem TimeStepMode---
         dtYears = GetDtYearsFromMode()
 
         Return True
     End Function
 
     Private Function GetDtYearsFromMode() As Double
-        Select Case _timeStepMode
+
+        Dim mode As TimeStepMode = If(_viewModel IsNot Nothing, _viewModel.TimeStepMode, TimeStepMode.Year)
+
+
+        Select Case mode
             Case TimeStepMode.Month
                 Return (1.0 / 12.0)
             Case TimeStepMode.Quarter
@@ -715,15 +657,22 @@ Class MainWindow
     End Function
 
     Private Sub UpdateMemoryEstimate()
-        Dim width As Integer, height As Integer
-        Dim startYear As Integer, endYear As Integer
-        Dim dtYears As Double
+        If _viewModel Is Nothing Then Return
 
-        If Not Integer.TryParse(TxtWidth.Text, width) Then Return
-        If Not Integer.TryParse(TxtHeight.Text, height) Then Return
+        Dim width As Integer = _viewModel.GridWidth
+        Dim height As Integer = _viewModel.GridHeigth
+        Dim startYear As Integer = _viewModel.StartYear
+        Dim endYear As Integer = _viewModel.EndYear
 
-        Dim okSettings = TryReadSimulationSettings(startYear, endYear, dtYears, showMessages:=False)
-        If Not okSettings Then Return
+        Dim dtYears As Double = GetDtYearsFromMode()
+
+        Dim totalYears As Double = Math.Max(0.0, endYear - startYear)
+        If width <= 0 OrElse height <= 0 OrElse totalYears <= 0 OrElse dtYears <= 0 Then
+            _viewModel.MemoryEstimateText = "Speicherprognose: n/a"
+            _viewModel.MemoryEstimateBrush = Brushes.Gray
+            _memoryEstimateOk = False
+            Return
+        End If
 
         Dim estimatedBytes As Long = EstimateMemoryUsageBytes(width, height, startYear, endYear, dtYears)
         Dim availableBytes As Long = GetAvailablePhysicalMemoryBytes()
@@ -745,8 +694,18 @@ Class MainWindow
     Private Sub ApplyTimeStepModeToModel()
         If _engine Is Nothing OrElse _engine.Model Is Nothing Then Return
 
-        Dim useSeasonal As Boolean = (_timeStepMode = TimeStepMode.Month OrElse _timeStepMode = TimeStepMode.Quarter)
+        Dim useSeasonal As Boolean = (_viewModel.TimeStepMode = TimeStepMode.Month OrElse _viewModel.TimeStepMode = TimeStepMode.Quarter)
 
         _engine.Model.UseSeasonCycle = useSeasonal
     End Sub
+
+    ''' <summary>
+    ''' Übernimmt Parameter aus dem ViewModel ins Klimamodell (aktuell nur Lambda).
+    ''' </summary>
+    Private Sub ApplyViewModelToModel()
+        If _engine Is Nothing OrElse _engine.Model Is Nothing OrElse _viewModel Is Nothing Then Return
+
+        _engine.Model.ClimateSensitivityLambda = _viewModel.Lambda
+    End Sub
+
 End Class
