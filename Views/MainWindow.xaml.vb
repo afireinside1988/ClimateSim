@@ -70,7 +70,6 @@ Class MainWindow
 
         '--- Buttons & Layer initial sperren ---
         _viewModel.IsTemperatureLayerVisible = False
-        ChkShowTemperature.IsChecked = False
 
         'Erdoberfläche initialisieren
         _engine.Initialize(360, 180, 1850)
@@ -254,9 +253,6 @@ Class MainWindow
         _viewModel.IsSimulationRunning = True
         _simCts = New CancellationTokenSource()
 
-
-        SetSimulationUIState(True)      'UI-Buttons sperren/umschalten
-
         Try
             'Simulation im Hintergrund-Thread laufen lassen
             Await Task.Run(Sub() RunSimulationLoop(dtYears, endYear, _simCts.Token))
@@ -265,7 +261,6 @@ Class MainWindow
             MessageBox.Show($"Fehler in der Simulation: {ex.Message}", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
         Finally
             _viewModel.IsSimulationRunning = False
-            SetSimulationUIState(False)
         End Try
     End Sub
 
@@ -428,47 +423,6 @@ Class MainWindow
             End Sub)
     End Sub
 
-    <Obsolete("Wird durch Spin-Up-Routine nicht mehr benötigt")>
-    Private Sub InitializeModelAndRender()
-        Try
-
-            'Gitternetz-Auflösung aus UI holen
-
-            'Startjahr aus Textbox lesen
-            Dim startYear As Integer
-            Dim endYear As Integer
-            Dim dtYears As Double
-
-            If Not TryReadSimulationSettings(startYear, endYear, dtYears, showMessages:=False) Then
-                'Wenn die Werte nicht stimmen, Initialisierung abbrechen
-                Exit Sub
-            End If
-
-            _endYear = endYear
-
-            Dim width As Integer = Integer.Parse(TxtWidth.Text)
-            Dim height As Integer = Integer.Parse(TxtHeigth.Text)
-
-            'Simulations-Engine initialisieren
-            _engine.Initialize(width, height, startYear)
-
-            'Lambda aus UI holen
-            ApplyViewModelToModel()
-
-            'Basis-Layer rendern
-            RenderSurfaceLayer()
-
-            'Anzeige aktualisieren
-            UpdateSimTimeDisplay()
-            UpdateCO2Display(_engine.Model.CO2ppm)
-            RenderTemperatureLayer()
-
-        Catch ex As Exception
-            MessageBox.Show("Fehler bei der Initialisierung des Modells: " & ex.Message,
-                            "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
-        End Try
-    End Sub
-
     Private Sub RenderSurfaceLayer()
         If _viewModel Is Nothing OrElse _engine Is Nothing OrElse _engine.Grid Is Nothing Then Return
 
@@ -517,29 +471,8 @@ Class MainWindow
         _viewModel.CO2Value = clamped
     End Sub
 
-    Private Sub SetSimulationUIState(isRunning As Boolean)
-        'Buttons werden jetzt über Commands/CanExecute gesteuert.
-        'Bei Bedarf noch andere UI-Elemente steuern oder später als Obsolete rausschmeißen
-    End Sub
-
-    <Obsolete("Brauchen wir durch MVVM nicht mehr")>
-    Private Sub SetUIDuringSpinUp(isRunning As Boolean)
-        If isRunning Then
-            'BtnStop.IsEnabled = True 'Stop während SpinUp explizit erlaubt
-            ChkShowTemperature.IsEnabled = False
-            SldTemperatureOpacity.IsEnabled = False
-        Else
-            ChkShowTemperature.IsEnabled = True
-            SldTemperatureOpacity.IsEnabled = True
-        End If
-
-    End Sub
-
     Private Sub EnableUIAfterSpinUp()
-        'Buttons durch Commands/CanExecute geregelt
-        ChkShowTemperature.IsEnabled = True
         _viewModel.IsTemperatureLayerVisible = True
-        SldTemperatureOpacity.IsEnabled = True
     End Sub
 
     ''' <summary>
