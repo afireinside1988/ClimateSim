@@ -1,14 +1,14 @@
-﻿Imports System.CodeDom
-Imports System.ComponentModel
+﻿Imports System.ComponentModel
 Imports System.Windows.Input
 Imports System.Threading.Tasks
 Imports System.Windows.Media
 Imports System.Windows.Media.Imaging
+Imports System.Runtime.InteropServices
 
 Public Class MainViewModel
     Implements INotifyPropertyChanged
 
-    ' --- Simulations- / UI-Parameter, die aktuell in TextBoxen / Labels liegen ---
+#Region "--- Simulations- / UI-Parameter, die aktuell in TextBoxen / Labels liegen ---"
 
     Private _startYear As Integer = 1850
     Private _endYear As Integer = 2100
@@ -37,31 +37,39 @@ Public Class MainViewModel
 
     Private _surfaceImage As ImageSource
     Private _temperatureImage As ImageSource
-    Private _isTemperatureLayerVisible As Boolean
     Private _temperatureOpacity As Double = 1.0
+#End Region
 
+#Region "--- Events, die die View abonnieren kann ---"
 
-    ' --- Events, die die View abonnieren kann ---
     Public Event StartSimulationRequested As EventHandler
     Public Event StopSimulationRequested As EventHandler
     Public Event SpinUpRequested As EventHandler
     Public Event StepRequested As EventHandler
     Public Event ShowHistoryRequested As EventHandler
 
-    ' --- Commands ---
+#End Region
+
+#Region "--- Commands ---"
+
     Public ReadOnly Property StartCommand As ICommand
     Public ReadOnly Property StopCommand As ICommand
     Public ReadOnly Property SpinUpCommand As ICommand
     Public ReadOnly Property StepCommand As ICommand
     Public ReadOnly Property ShowHistoryCommand As ICommand
 
+#End Region
 
     ' --- SimulationEngine bleibt erstmal hier drin, damit MainWindow weniger Felder hat ---
     Public Property Engine As SimulationEngine
 
-    ' --- Statusflags, damit Commands später CanExecute nutzen können
+#Region "--- Statusflags, damit Commands CanExecute nutzen können ---"
+
     Private _isInitialized As Boolean
     Private _isSimulationRunning As Boolean
+    Private _isTemperatureLayerVisible As Boolean
+
+#End Region
 
     Public Sub New()
         Engine = New SimulationEngine()
@@ -122,9 +130,13 @@ Public Class MainViewModel
                 'Verlauf nur, wenn initialisiert ist und es Daten gibt
                 Return IsInitialized AndAlso Engine IsNot Nothing AndAlso Engine.History IsNot Nothing AndAlso Engine.History.Count > 0
             End Function)
+
+        '--- Speicherprognose aktualisieren
+        UpdateMemoryEstimate()
     End Sub
 
-    ' --- Properties für Bindings ---
+#Region "--- Properties für Bindings ---"
+
     Public Property StartYear As Integer
         Get
             Return _startYear
@@ -133,6 +145,7 @@ Public Class MainViewModel
             If _startYear <> value Then
                 _startYear = value
                 OnPropertyChanged(NameOf(StartYear))
+                UpdateMemoryEstimate()
             End If
         End Set
     End Property
@@ -145,6 +158,7 @@ Public Class MainViewModel
             If _endYear <> value Then
                 _endYear = value
                 OnPropertyChanged(NameOf(EndYear))
+                UpdateMemoryEstimate()
             End If
         End Set
     End Property
@@ -157,6 +171,7 @@ Public Class MainViewModel
             If _gridWidth <> value Then
                 _gridWidth = value
                 OnPropertyChanged(NameOf(GridWidth))
+                UpdateMemoryEstimate()
             End If
         End Set
     End Property
@@ -169,6 +184,7 @@ Public Class MainViewModel
             If _gridHeight <> value Then
                 _gridHeight = value
                 OnPropertyChanged(NameOf(GridHeigth))
+                UpdateMemoryEstimate()
             End If
         End Set
     End Property
@@ -181,6 +197,7 @@ Public Class MainViewModel
             If _timeStepMode <> value Then
                 _timeStepMode = value
                 OnPropertyChanged(NameOf(TimeStepMode))
+                UpdateMemoryEstimate()
             End If
         End Set
     End Property
@@ -455,13 +472,119 @@ Public Class MainViewModel
         End Set
     End Property
 
+#End Region
 
+#Region "--- Memory-Helfer ---"
 
-    ' --- INotifyPropertyChanged-Implementierung ---
+    <StructLayout(LayoutKind.Sequential, CharSet:=CharSet.Auto)>
+    Private Structure MEMORYSTATUSEX
+        Public dwLength As UInteger
+        Public dwMemoryLoad As UInteger
+        Public ullTotalPhys As ULong
+        Public ullAvailPhys As ULong
+        Public ullTotalPageFile As ULong
+        Public ullAvailPageFile As ULong
+        Public ullTotalVirtual As ULong
+        Public ullAvailVirtual As ULong
+        Public ullAvailExtendedVirtual As ULong
+    End Structure
+
+    <DllImport("kernel32.dll", CharSet:=CharSet.Auto, SetLastError:=True)>
+    Private Shared Function GlobalMemoryStatusEx(ByRef lpBuffer As MEMORYSTATUSEX) As Boolean
+    End Function
+
+    Private Shared Function GetAvailablePhysicalMemoryBytes() As Long
+        Dim mem As New MEMORYSTATUSEX()
+        mem.dwLength = CUInt(Marshal.SizeOf(Of MEMORYSTATUSEX)())
+
+        If Not GlobalMemoryStatusEx(mem) Then
+            Return 0
+        End If
+
+        If mem.ullAvailPhys > Long.MaxValue Then
+            Return Long.MaxValue
+        End If
+
+        Return CLng(mem.ullAvailPhys)
+    End Function
+
+    Private Shared Function EstimateMemoryUsageBytes(width As Integer, height As Integer, startYear As Integer, endYear As Integer, dtYears As Double) As Long
+        Dim totalYears As Double = Math.Max(0.0, endYear - startYear)
+        If dtYears <= 0.0 OrElse totalYears <= 0.0 Then Return 0
+
+        Dim steps As Long = CLng(Math.Ceiling(totalYears / dtYears))
+        Dim cells As Long = CLng(width) * CLng(height)
+
+        ' Double pro Zelle
+        Dim bytesPerSnapshot As Double = cells * 8.0
+
+        ' Overhead-Faktor
+        Dim overheadFactor As Double = 1.3 '30% Overhead
+
+        Dim totalBytes As Double = steps * bytesPerSnapshot * overheadFactor
+        If totalBytes > Long.MaxValue Then
+            Return Long.MaxValue
+        End If
+
+        Return CLng(totalBytes)
+    End Function
+
+    Public Sub UpdateMemoryEstimate()
+        Dim width As Integer = _gridWidth
+        Dim height As Integer = _gridHeight
+        Dim startYear As Integer = _startYear
+        Dim endYear As Integer = _endYear
+
+        Dim dtYears As Double = GetDtYearsFromMode()
+
+        Dim totalYears As Double = Math.Max(0.0, endYear - startYear)
+        If width <= 0 OrElse height <= 0 OrElse totalYears <= 0 OrElse dtYears <= 0 Then
+            MemoryEstimateText = "Speicherprognose: n/a"
+            MemoryEstimateBrush = Brushes.Gray
+            Return
+        End If
+
+        Dim estimatedBytes As Long = EstimateMemoryUsageBytes(width, height, startYear, endYear, dtYears)
+        Dim availableBytes As Long = GetAvailablePhysicalMemoryBytes()
+
+        Dim estGiB As Double = estimatedBytes / (1024 ^ 3)
+        Dim availGiB As Double = availableBytes / (1024 ^ 3)
+
+        MemoryEstimateText = $"Speicherprognose: ~{estGiB:F2} GiB (frei: {availGiB:F2} GiB)"
+
+        If estimatedBytes > availableBytes Then
+            MemoryEstimateBrush = Brushes.Red
+        Else
+            MemoryEstimateBrush = Brushes.Black
+        End If
+    End Sub
+
+#End Region
+
+#Region "--- DtYears-Helfer ---"
+    Public Function GetDtYearsFromMode() As Double
+        Select Case _timeStepMode
+            Case TimeStepMode.Month
+                Return (1.0 / 12.0)
+            Case TimeStepMode.Quarter
+                Return 0.25
+            Case TimeStepMode.Year
+                Return 1
+            Case TimeStepMode.Decade
+                Return 10
+            Case Else
+                Return 1
+        End Select
+    End Function
+
+#End Region
+
+#Region "--- INotifyPropertyChanged-Implementierung ---"
+    ' 
     Public Event PropertyChanged As PropertyChangedEventHandler Implements INotifyPropertyChanged.PropertyChanged
 
     Protected Sub OnPropertyChanged(propName As String)
         RaiseEvent PropertyChanged(Me, New PropertyChangedEventArgs(propName))
     End Sub
-
+#End Region
 End Class

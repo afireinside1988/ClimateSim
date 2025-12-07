@@ -6,23 +6,6 @@ Imports System.ComponentModel
 
 Class MainWindow
 
-    <StructLayout(LayoutKind.Sequential, CharSet:=CharSet.Auto)>
-    Private Structure MEMORYSTATUSEX
-        Public dwLength As UInteger
-        Public dwMemoryLoad As UInteger
-        Public ullTotalPhys As ULong
-        Public ullAvailPhys As ULong
-        Public ullTotalPageFile As ULong
-        Public ullAvailPageFile As ULong
-        Public ullTotalVirtual As ULong
-        Public ullAvailVirtual As ULong
-        Public ullAvailExtendedVirtual As ULong
-    End Structure
-
-    <DllImport("kernel32.dll", CharSet:=CharSet.Auto, SetLastError:=True)>
-    Private Shared Function GlobalMemoryStatusEx(ByRef lpBuffer As MEMORYSTATUSEX) As Boolean
-    End Function
-
     'Simulations-Engine
     Private _engine As SimulationEngine
 
@@ -78,7 +61,7 @@ Class MainWindow
 
         'Status setzen
         _viewModel.StatusText = "Bitte Spin-Up starten."
-        UpdateMemoryEstimate()
+        _viewModel.UpdateMemoryEstimate()
 
     End Sub
 
@@ -223,7 +206,7 @@ Class MainWindow
             Return
         End If
 
-        Dim dtYears As Double = GetDtYearsFromMode()
+        Dim dtYears As Double = _viewModel.GetDtYearsFromMode()
 
         SimulateOneStep(dtYears)
 
@@ -337,22 +320,14 @@ Class MainWindow
         ClearStatusBar()
     End Sub
 
-
-
     Private Sub ViewModel_PropertyChanged(sender As Object, e As PropertyChangedEventArgs)
         Select Case e.PropertyName
-            Case NameOf(MainViewModel.GridWidth),
-                 NameOf(MainViewModel.GridHeigth),
-                 NameOf(MainViewModel.StartYear),
-                 NameOf(MainViewModel.EndYear),
-                 NameOf(MainViewModel.TimeStepMode)
-                UpdateMemoryEstimate()
-
             Case NameOf(MainViewModel.CO2Value)
                 'CO2 aus dem ViewModel ins Modell übertragen
                 If _engine IsNot Nothing AndAlso _engine.Model IsNot Nothing Then
                     _engine.Model.CO2ppm = _viewModel.CO2Value
                 End If
+
             Case NameOf(MainViewModel.Lambda)
                 'Klimasensitivität ins Modell durchreichen
                 ApplyViewModelToModel()
@@ -516,100 +491,10 @@ Class MainWindow
         End If
 
         '--- dtYears kommt jetzt ausschließlich aus dem TimeStepMode---
-        dtYears = GetDtYearsFromMode()
+        dtYears = _viewModel.GetDtYearsFromMode()
 
         Return True
     End Function
-
-    Private Function GetDtYearsFromMode() As Double
-
-        Dim mode As TimeStepMode = If(_viewModel IsNot Nothing, _viewModel.TimeStepMode, TimeStepMode.Year)
-
-
-        Select Case mode
-            Case TimeStepMode.Month
-                Return (1.0 / 12.0)
-            Case TimeStepMode.Quarter
-                Return 0.25
-            Case TimeStepMode.Year
-                Return 1
-            Case TimeStepMode.Decade
-                Return 10
-            Case Else
-                Return 1
-        End Select
-    End Function
-
-    Private Function EstimateMemoryUsageBytes(width As Integer, height As Integer, startYear As Integer, endYear As Integer, dtYears As Double) As Long
-        Dim totalYears As Double = Math.Max(0.0, endYear - startYear)
-        If dtYears <= 0.0 OrElse totalYears <= 0.0 Then Return 0
-
-        Dim steps As Long = CLng(Math.Ceiling(totalYears / dtYears))
-        Dim cells As Long = CLng(width) * CLng(height)
-
-        'Double pro Zelle
-        Dim bytesPerSnapshot As Double = cells * 8.0
-
-        'Overhead-Faktor
-        Dim overheadFactor As Double = 1.3 '30% Overhead
-
-        Dim totalBytes As Double = steps * bytesPerSnapshot * overheadFactor
-        If totalBytes > Long.MaxValue Then
-            Return Long.MaxValue
-        End If
-
-        Return CLng(totalBytes)
-    End Function
-
-    Private Function GetAvailablePhysicalMemoryBytes() As Long
-        Dim mem As New MEMORYSTATUSEX()
-        mem.dwLength = CUInt(Marshal.SizeOf(Of MEMORYSTATUSEX)())
-
-        If Not GlobalMemoryStatusEx(mem) Then
-            Return 0
-        End If
-
-        If mem.ullAvailPhys > Long.MaxValue Then
-            Return Long.MaxValue
-        End If
-
-        Return CLng(mem.ullAvailPhys)
-    End Function
-
-    Private Sub UpdateMemoryEstimate()
-        If _viewModel Is Nothing Then Return
-
-        Dim width As Integer = _viewModel.GridWidth
-        Dim height As Integer = _viewModel.GridHeigth
-        Dim startYear As Integer = _viewModel.StartYear
-        Dim endYear As Integer = _viewModel.EndYear
-
-        Dim dtYears As Double = GetDtYearsFromMode()
-
-        Dim totalYears As Double = Math.Max(0.0, endYear - startYear)
-        If width <= 0 OrElse height <= 0 OrElse totalYears <= 0 OrElse dtYears <= 0 Then
-            _viewModel.MemoryEstimateText = "Speicherprognose: n/a"
-            _viewModel.MemoryEstimateBrush = Brushes.Gray
-            _memoryEstimateOk = False
-            Return
-        End If
-
-        Dim estimatedBytes As Long = EstimateMemoryUsageBytes(width, height, startYear, endYear, dtYears)
-        Dim availableBytes As Long = GetAvailablePhysicalMemoryBytes()
-
-        Dim estGiB As Double = estimatedBytes / (1024 ^ 3)
-        Dim availGiB As Double = availableBytes / (1024 ^ 3)
-
-        _viewModel.MemoryEstimateText = $"Speicherprognose: ~{estGiB:F2} GiB (frei: {availGiB:F2} GiB)"
-
-        If estimatedBytes > availableBytes Then
-            _viewModel.MemoryEstimateBrush = Brushes.Red
-            _memoryEstimateOk = False
-        Else
-            _viewModel.MemoryEstimateBrush = Brushes.Black
-            _memoryEstimateOk = True
-        End If
-    End Sub
 
     Private Sub ApplyTimeStepModeToModel()
         If _engine Is Nothing OrElse _engine.Model Is Nothing Then Return
