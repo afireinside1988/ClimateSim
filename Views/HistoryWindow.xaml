@@ -20,14 +20,14 @@
         <!-- Zeitstrahl-Steuerung -->
         <StackPanel Grid.Row="1" Margin="0,10,0,0">
             <TextBlock Text="Zeitstrahl" FontWeight="SemiBold"/>
-            <Slider x:Name="SldTime" Minimum="0" Maximum="1" Value="1" Margin="0,5,0,5" IsSnapToTickEnabled="True"/>
+            <Slider x:Name="SldTime" Minimum="0" Margin="0,5,0,5" IsSnapToTickEnabled="True" Maximum="{Binding Records.Count}" Value="{Binding SelectedIndex, Mode=TwoWay}"/>
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Ausgewähltes Jahr:"/>
-                <TextBlock x:Name="TxtSelectedYear" Margin="5,0,10,0" FontFamily="Consolas" Width="60" VerticalAlignment="Center"/>
+                <TextBlock Margin="5,0,10,0" FontFamily="Consolas" Width="60" VerticalAlignment="Center" Text="{Binding SelectedYearText}"/>
                 <TextBlock Text="Tglobal:"/>
-                <TextBlock x:Name="TxtSelectedTemp" Margin="5,0,10,0" FontFamily="Consolas" Width="60" VerticalAlignment="Center"/>
+                <TextBlock Margin="5,0,10,0" FontFamily="Consolas" Width="60" VerticalAlignment="Center" Text="{Binding SelectedTempText}"/>
                 <TextBlock Text="CO₂:"/>
-                <TextBlock x:Name="TxtSelectedCO2" Margin="5,0,0,0" FontFamily="Consolas" Width="60" VerticalAlignment="Center"/>
+                <TextBlock Margin="5,0,0,0" FontFamily="Consolas" Width="60" VerticalAlignment="Center" Text="{Binding SelectedCO2Text}"/>
             </StackPanel>
         </StackPanel>
         

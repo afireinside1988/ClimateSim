@@ -1,4 +1,5 @@
-﻿Public Class ClimateModel2D
+﻿
+Public Class ClimateModel2D
 
     Private ReadOnly _grid As ClimateGrid
 

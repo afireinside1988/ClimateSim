@@ -7,7 +7,7 @@
         xmlns:conv="clr-namespace:ClimateSim"
         d:DataContext="{d:DesignInstance Type=climatesim:MainViewModel}"
         mc:Ignorable="d"
-        Title="ClimateSim" Height="900" Width="1200"
+        Title="{Binding AppTitle}" Height="900" Width="1200"
         WindowStartupLocation="CenterScreen">
 
     <Window.Resources>
@@ -78,7 +78,7 @@
 
         <!-- Rechts: Steuerungselemente -->
         <StackPanel Grid.Column="1" Margin="10" VerticalAlignment="Stretch">
-            <TextBlock Text="Klimamodell - Schritt 1" FontSize="20" FontWeight="Bold" Margin="0,0,0,10" />
+            <TextBlock FontSize="20" FontWeight="Bold" Margin="0,0,0,10" HorizontalAlignment="Center" Text="{Binding ProductName}"/>
             <TextBlock Text="Gitternetz-Auflösung:" FontWeight="SemiBold" />
             <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
                 <TextBlock Text="Breite (Lon):" VerticalAlignment="Center"/>

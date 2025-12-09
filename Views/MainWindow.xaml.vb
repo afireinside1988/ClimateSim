@@ -21,6 +21,11 @@ Class MainWindow
     'MVVM-Implementierung
     Private _viewModel As MainViewModel
 
+    '--- NEU: Spin-Up-Progress für entkoppelte UI-Anzeige ---
+    Private _spinUpProgressRaw As Double = 0.0         '0.0 .. 1.0
+    Private _spinUpUiTimer As DispatcherTimer          'UI-Update-Timer
+    Private _isSpinUpActive As Boolean = False         'Guard gegen späte Updates
+
     Public Sub RefreshFromEngine()
         If _engine Is Nothing Then Return
 
@@ -51,6 +56,11 @@ Class MainWindow
         AddHandler ImgTemperature.MouseMove, AddressOf ImgTemperature_MouseMove
         AddHandler ImgTemperature.MouseLeave, AddressOf ImgTemperature_MouseLeave
 
+        '--- NEU: Spin-Up UI-Timer einrichten ---
+        _spinUpUiTimer = New DispatcherTimer()
+        _spinUpUiTimer.Interval = TimeSpan.FromMilliseconds(50)   '20 FPS Fortschrittsanzeige
+        AddHandler _spinUpUiTimer.Tick, AddressOf SpinUpUiTimer_Tick
+
         '--- Buttons & Layer initial sperren ---
         _viewModel.IsTemperatureLayerVisible = False
 
@@ -75,13 +85,12 @@ Class MainWindow
         End If
 
         '2) Gitterauflösung lesen
-        Dim width As Integer, height As Integer
-        If Not Integer.TryParse(_viewModel.GridWidth, width) OrElse Not Integer.TryParse(_viewModel.GridHeigth, height) Then
+        If _viewModel.GridWidth <= 0 OrElse _viewModel.GridHeigth <= 0 Then
             MessageBox.Show("Bitte gültige Rasterauflösung angeben.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
             Return
         End If
-
-
+        Dim width As Integer = _viewModel.GridWidth
+        Dim height As Integer = _viewModel.GridHeigth
 
         '3) Spin-Up-Konfiguration anhängig vom TimeStepMode
         Dim spinUpYears As Integer = 200
@@ -130,12 +139,21 @@ Class MainWindow
         Dim cts As New CancellationTokenSource()
         _simCts = cts
 
+        '--- NEU: Spin-Up-Progress initialisieren und UI-Timer starten ---
+        _spinUpProgressRaw = 0.0
+        _isSpinUpActive = True
+        _spinUpUiTimer.Start()
+
         '8) Spin-Up im Hintergrund laufen lassen
         Try
             Await Task.Run(Sub() RunSpinUpLoop(spinUpStartYear, startYear, spinUpDtYears, cts.Token))
 
             'Wenn Spin-Up abgebrochen wurde, darauf reagieren
             If _simCts IsNot Nothing AndAlso _simCts.IsCancellationRequested Then
+                'Spin-Up-UI sofort stoppen
+                _isSpinUpActive = False
+                _spinUpUiTimer.Stop()
+
                 Dispatcher.Invoke(Sub()
                                       _viewModel.StatusText = "Spin-Up abgebrochen."
                                       'UI teilweise wieder freigeben, aber NICHT als "initialized" markieren
@@ -177,7 +195,13 @@ Class MainWindow
             '11) EBM-Modus jetzt wieder an den TimeStepMode der "eigentlichen" Simulation anpassen
             ApplyTimeStepModeToModel()
 
+
+
             '12) UI aktualisieren & freigeben
+
+            'Vor UI-Update: Spin-Up-UI-Anzeige stoppen
+            _isSpinUpActive = False
+            _spinUpUiTimer.Stop()
 
             Dispatcher.Invoke(
                 Sub()
@@ -195,6 +219,7 @@ Class MainWindow
             _engine.IsSpinUp = False
             Dispatcher.Invoke(Sub()
                                   _viewModel.IsSimulationRunning = False
+                                  _isSpinUpActive = False
                               End Sub)
         End Try
     End Sub
@@ -355,13 +380,10 @@ Class MainWindow
 
             _engine.StepSimulation(dtYears)
 
+            '--- NEU: Nur Roh-Progress aktualisieren, kein Dispatcher im Loop ---
             Dim progress As Double = stepIndex / CDbl(totalSteps)
+            _spinUpProgressRaw = progress
 
-            'Status im UI aktualisieren
-            Dispatcher.Invoke(
-                Sub()
-                    _viewModel.StatusText = $"Spin-Up: {progress * 100.0:F1} %"
-                End Sub, DispatcherPriority.Background, CancellationToken.None)
         Next
 
     End Sub
@@ -474,6 +496,7 @@ Class MainWindow
                 Dim errMsg As MessageBoxResult =
                     MessageBox.Show($"Das Endjahr muss größer als das Startjahr sein. " &
                                     $"Soll es auf {suggestedEnd} gesetzt werden?",
+                                    "Warnung",
                                     MessageBoxButton.YesNo,
                                     MessageBoxImage.Warning,
                                     MessageBoxResult.Yes)
@@ -511,6 +534,22 @@ Class MainWindow
         If _engine Is Nothing OrElse _engine.Model Is Nothing OrElse _viewModel Is Nothing Then Return
 
         _engine.Model.ClimateSensitivityLambda = _viewModel.Lambda
+    End Sub
+
+    Private Sub SpinUpUiTimer_Tick(sender As Object, e As EventArgs)
+        'Falls der Spin-Up offiziell beendet ist, keine Fortschrittsupdates mehr machen
+        If Not _isSpinUpActive Then
+            Return
+        End If
+
+        'Roh-Progress (0..1) lesen
+        Dim p As Double = _spinUpProgressRaw
+
+        'Clampen nur zur Sicherheit
+        If p < 0.0 Then p = 0.0
+        If p > 1.0 Then p = 1.0
+
+        _viewModel.StatusText = $"Spin-Up: {p * 100.0:F1} %"
     End Sub
 
 End Class

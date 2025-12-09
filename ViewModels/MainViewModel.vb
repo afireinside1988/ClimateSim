@@ -8,6 +8,9 @@ Imports System.Runtime.InteropServices
 Public Class MainViewModel
     Implements INotifyPropertyChanged
 
+    Public ReadOnly Property AppTitle As String = AppInfoViewModel.AppTitleWithVersion
+    Public ReadOnly Property ProductName As String = AppInfoViewModel.ProductName
+
 #Region "--- Simulations- / UI-Parameter, die aktuell in TextBoxen / Labels liegen ---"
 
     Private _startYear As Integer = 1850
