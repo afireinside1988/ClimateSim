@@ -19,7 +19,6 @@ Public Class ClimateModel2D
     Public Shared Property AlbedoReference As Double = 0.3 'Albedo-Referenzwert
     Public Shared Property AlbedoSensitivityKPerUnit As Double = 25.0 'Albedo-Sensitivität (delta K/Albedo-Wert)
 
-
     Public Property BaseTemperatureOffsetK As Double = 0.0 'globaler Temperatur-Offset, um das gesamte Gleichgewichtsniveau zu verschieben
 
     '--- Ende physikalische Modellparameter ---
@@ -27,6 +26,37 @@ Public Class ClimateModel2D
     '--- Jahreszeitensteuerung ---
     Public Property UseSeasonCycle As Boolean = False   'Aufwenidges Jahreszeiten-EBM oder simples Budyko/Sellers-EBM nutzen
     Public Property CurrentYearFraction As Double = 0.0 'Jahresphase (0..1), 0 = Jahresanfang, 0.25 = Frühling usw.
+
+    '--- Solare Forcings / Sonnenzyklen ---
+    Public Property SolarCycleMode As SolarCycleMode = SolarCycleMode.None
+
+    'Aktuelles Kalenderjahr (wird in der SimulationEngine gesetzt)
+    Public Property CurrentCalendarYear As Double = 0.0
+
+    'Schwabe-Zyklus (~11 Jahre)
+    Public Property UseSchwabeCycle As Boolean = True
+    Public Property SchwabeAmplitude As Double = 0.001 'relative TSI-Variation (0.1%)
+    Public Property SchwabePeriodYears As Double = 11.0
+    Public Property SchwabePhaseDeg As Double = 0.0 'Phase in Grad
+
+    'Magnetischer Zyklus (~22 Jahre)
+    Public Property UseMagneticCycle As Boolean = True
+    Public Property MagneticAmplitude As Double = 0.0005 'etwas kleiner
+    Public Property MagneticPeriodYears As Double = 22.0
+    Public Property MagneticPhaseDeg As Double = 0.0
+
+    'Gleissberg-Zyklus (~80-100 Jahre)
+    Public Property UseGleissbergCycle As Boolean = True
+    Public Property GleissbergAmplitude As Double = 0.0005
+    Public Property GleissbergPeriodYears As Double = 88.0
+    Public Property GleissbergPhaseDeg As Double = 0.0
+
+    'de Vries / Suess (~200 Jahre)
+    Public Property UseDeVriesSuessCycle As Boolean = True
+    Public Property DeVriesAmplitude As Double = 0.0005
+    Public Property DeVriesPeriodYears As Double = 200.0
+    Public Property DeVriesPhaseDeg As Double = 0.0
+    '--- Ende Sonnenzyklen ---
 
     ''' <summary>
     ''' Erstellt ein neues 2D-Klimamodell auf dem gegebenen Gitter.
@@ -117,16 +147,24 @@ Public Class ClimateModel2D
             If yearFrac < 0.0 Then yearFrac = 0.0
             If yearFrac >= 1.0 Then yearFrac -= Math.Floor(yearFrac)
 
-            '2) Tagesgemittelte Einstrahlung Q(φ, t)
+            '2) Tagesgemittelte Einstrahlung Q(φ, t) ohne solare Zyklen
             Dim Q As Double = ComputeDailyMeanInsolation(latitudeDeg, yearFrac)
+
+            '2b) Solarfaktor anwenden (TSI-Variation)
+            Dim solarScale As Double = ComputeSolarScaleFactor(CurrentCalendarYear)
+            Q *= solarScale
 
             '3) Normierung auf Referenzwert (globaler Mittelwert ~341.3 W/m²)
             Const Qref As Double = 341.3
             qNorm = If(Qref > 0.0, Q / Qref, 1.0)
             If qNorm < 0.0 Then qNorm = 0.0
         Else
-            Dim qSimple As Double = ComputeSimpleInsolationFactor(latitudeDeg)
-            qNorm = Math.Max(0.0, qSimple)
+            Dim qBudyko As Double = ComputeBudykoInsolationFactor(latitudeDeg)
+            qNorm = Math.Max(0.0, qBudyko)
+
+            'Auch im Budyko/Sellers-Modus globale TSI-Variation einbeziehen
+            Dim solarScale As Double = ComputeSolarScaleFactor(CurrentCalendarYear)
+            qNorm *= solarScale
         End If
 
 
@@ -157,8 +195,8 @@ Public Class ClimateModel2D
     ''' </summary>
     ''' <param name="latitudeDeg"></param>
     ''' <returns></returns>
-    Private Function ComputeSimpleInsolationFactor(latitudeDeg As Double) As Double
-        Dim latRad As Double = latitudeDeg * Math.PI / 180
+    Private Function ComputeBudykoInsolationFactor(latitudeDeg As Double) As Double
+        Dim latRad As Double = Mathematics.DegToRad(latitudeDeg)
         Dim sinPhi As Double = Math.Sin(latRad)
 
         ' P2(sin φ) = 0.5 * (3 sin²φ - 1)
@@ -196,7 +234,7 @@ Public Class ClimateModel2D
         Dim decl As Double = ClimateConstants.EarthObliquityRad * Math.Sin(gamma)
 
         '3) --- Breite in Radiant ---
-        Dim phi As Double = latitudeDeg * Math.PI / 180.0
+        Dim phi As Double = Mathematics.DegToRad(latitudeDeg)
 
         '4) --- Tageslänge über Stundenwinkel H0 ---
         ' cos(H0) = -tanφ * tanδ
@@ -231,5 +269,65 @@ Public Class ClimateModel2D
         End If
 
         Return Q 'W/m²
+    End Function
+
+    ''' <summary>
+    ''' Liefert den dimensionslosen Solarfaktor f_solar(t) = TSI(t) /TSI0
+    ''' basierend auf dem gewählten SolarCycleMode und den SimpleCycle-Parametern
+    ''' </summary>
+    ''' <param name="year"></param>
+    ''' <returns></returns>
+    Private Function ComputeSolarScaleFactor(year As Double) As Double
+        Select Case SolarCycleMode
+
+            'Kein solarer Zyklus
+            Case SolarCycleMode.None
+                Return 1.0
+
+            'parametrisierte solare Zyklen
+            Case SolarCycleMode.SimpleCycles
+
+                Dim factor As Double = 1.0
+
+                '2π * t / P + Phase
+                If UseSchwabeCycle AndAlso SchwabePeriodYears > 0 Then
+                    Dim arg As Double = 2.0 * Math.PI * (year / SchwabePeriodYears) + DegToRad(SchwabePhaseDeg)
+                    factor += SchwabeAmplitude * Math.Sin(arg)
+                End If
+
+                If UseMagneticCycle AndAlso MagneticPeriodYears > 0 Then
+                    Dim arg As Double = 2.0 * Math.PI * (year / MagneticPeriodYears) + DegToRad(MagneticPhaseDeg)
+                    factor += MagneticAmplitude * Math.Sin(arg)
+                End If
+
+                If UseGleissbergCycle AndAlso GleissbergPeriodYears > 0 Then
+                    Dim arg As Double = 2.0 * Math.PI * (year / GleissbergPeriodYears) + DegToRad(GleissbergPhaseDeg)
+                    factor += GleissbergAmplitude * Math.Sin(arg)
+                End If
+
+                If UseDeVriesSuessCycle AndAlso DeVriesPeriodYears > 0 Then
+                    Dim arg As Double = 2.0 * Math.PI * (year / DeVriesPeriodYears) + DegToRad(DeVriesPhaseDeg)
+                    factor += DeVriesAmplitude * Math.Sin(arg)
+                End If
+
+                'Negative TSI wäre physikalisch unsinnig -> minimale Begrenzung
+                If factor < 0.0 Then factor = 0.0
+
+                Return factor
+
+            Case SolarCycleMode.DataDriven
+                'TODO: DataDriven Faktor
+                Return 1.0
+            Case SolarCycleMode.Orbital
+                'TODO: Orbitaler Faktor
+                Return 1.0
+            Case SolarCycleMode.OrbitalPlusSimpleCycles
+                'TODO: Orbitaler- + Zyklus-Faktor
+                Return 1.0
+            Case Else
+                Return 1.0
+        End Select
+
+        Return 1.0
     End Function
 End Class

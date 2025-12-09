@@ -47,11 +47,13 @@
         '2) Modell anlegen, Parameter setzen
         Model = New ClimateModel2D(Grid)
         Model.CO2Base = 280.0 'Basis-Co2
-        Model.RelaxationTimescaleYears = 40.0   'Systemträgheit
-        Model.DiffusionCoefficient = 0.001      'Horizontale Diffusion
-        Model.ClimateSensitivityLambda = 0.5    'Klimasensitivität
-        Model.BaseTemperatureOffsetK = 0.0      'Basis-Offset zum Kalibrieren der Start-Temperatur
-        Model.CurrentYearFraction = 0.25         'Start am Jahresanfang
+        Model.RelaxationTimescaleYears = 40.0               'Systemträgheit
+        Model.DiffusionCoefficient = 0.001                  'Horizontale Diffusion
+        Model.ClimateSensitivityLambda = 0.5                'Klimasensitivität
+        Model.BaseTemperatureOffsetK = 0.0                  'Basis-Offset zum Kalibrieren der Start-Temperatur
+        Model.CurrentYearFraction = 0.25                    'Start am Jahresanfang
+        Model.CurrentCalendarYear = Me.CurrentYear          'Aktuelles Jahr
+        Model.SolarCycleMode = SolarCycleMode.SimpleCycles  'initialer SolarCycleMode
 
         '3) CO2 passend zum Startjahr setzen
         Dim co2Now As Double = If(CO2Scenario IsNot Nothing, CO2Scenario.GetCO2ForYear(CurrentYear), 280.0)
@@ -110,6 +112,9 @@
         If frac >= 1 Then frac -= Math.Floor(frac)
 
         Model.CurrentYearFraction = frac
+
+        '3b) --- Absolutes Jahr auch ins Modell schreiben (für solare Zyklen)
+        Model.CurrentCalendarYear = CurrentYear
 
         '4) --- Simulationsschritt ausführen
         Model.StepSimulation(dtYears)
