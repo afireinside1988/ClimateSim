@@ -17,14 +17,9 @@ Public Class MainViewModel
     'Aktuelle Simulationskonfiguratiuon (später JSON-persistierbar)
     Private _currentConfig As SimulationConfig
 
-    Private _startYear As Integer
-    Private _endYear As Integer
-    Private _gridWidth As Integer
-    Private _gridHeight As Integer
 
-    Private _timeStepMode As TimeStepMode
-    Private _timeStepIndex As Integer = 2                   '0=Monat, 1=Quartal, 2=Jahr, 3=Dekade
-    Private _timeModeDescription As String = "1 Jahr"
+    Private _timeStepIndex As Integer                   '0=Monat, 1=Quartal, 2=Jahr, 3=Dekade
+    Private _timeModeDescription As String
 
     Private _co2Value As Double = 420.0
 
@@ -39,8 +34,6 @@ Public Class MainViewModel
     Private _simTimeText As String = "0,0 Jahre"
     Private _memoryEstimateText As String = ""
     Private _memoryEstimateBrush As Brush = Brushes.Black
-
-    Private _lambda As Double = 0.5
 
     Private _surfaceImage As ImageSource
     Private _temperatureImage As ImageSource
@@ -85,8 +78,6 @@ Public Class MainViewModel
 
         '---Simulationskonfiguration initialisieren ---
         CurrentConfig = SimulationConfig.CreateDefault()
-        'View-Properties an die Config anpassen (damit alles synchron startet)
-        SyncViewFromConfig()
 
         Engine.CO2Scenario = New DefaultCo2Scenario()
         Engine.EarthSurfaceProvider = New ToyEarthSurfaceProvider()
@@ -182,58 +173,11 @@ Public Class MainViewModel
 
                 OnPropertyChanged(NameOf(CurrentConfig))
 
-                SyncViewFromConfig()
                 UpdateMemoryEstimate()
             End If
         End Set
     End Property
 
-    Public Property StartYear As Integer
-        Get
-            Return _startYear
-        End Get
-        Set(value As Integer)
-            SetProperty(_startYear, value)
-            UpdateMemoryEstimate()
-        End Set
-    End Property
-    Public Property EndYear As Integer
-        Get
-            Return _endYear
-        End Get
-        Set(value As Integer)
-            SetProperty(_endYear, value)
-            UpdateMemoryEstimate()
-        End Set
-    End Property
-    Public Property GridWidth As Integer
-        Get
-            Return _gridWidth
-        End Get
-        Set(value As Integer)
-            SetProperty(_gridWidth, value)
-            UpdateMemoryEstimate()
-        End Set
-    End Property
-    Public Property GridHeigth As Integer
-        Get
-            Return _gridHeight
-        End Get
-        Set(value As Integer)
-            SetProperty(_gridHeight, value)
-            UpdateMemoryEstimate()
-        End Set
-    End Property
-
-    Public Property TimeStepMode As TimeStepMode
-        Get
-            Return _timeStepMode
-        End Get
-        Set(value As TimeStepMode)
-            SetProperty(_timeStepMode, value)
-            UpdateMemoryEstimate()
-        End Set
-    End Property
     Public Property TimeStepIndex As Integer
         Get
             Return _timeStepIndex
@@ -244,16 +188,16 @@ Public Class MainViewModel
             'Mapping Index -> Mode
             Select Case value
                 Case 0
-                    TimeStepMode = TimeStepMode.Month
+                    CurrentConfig.TimeStepMode = TimeStepMode.Month
                     TimeModeDescription = "1 Monat"
                 Case 1
-                    TimeStepMode = TimeStepMode.Quarter
+                    CurrentConfig.TimeStepMode = TimeStepMode.Quarter
                     TimeModeDescription = "1 Quartal"
                 Case 2
-                    TimeStepMode = TimeStepMode.Year
+                    CurrentConfig.TimeStepMode = TimeStepMode.Year
                     TimeModeDescription = "1 Jahr"
                 Case 3
-                    TimeStepMode = TimeStepMode.Decade
+                    CurrentConfig.TimeStepMode = TimeStepMode.Decade
                     TimeModeDescription = "10 Jahre"
             End Select
         End Set
@@ -301,7 +245,6 @@ Public Class MainViewModel
         End Get
         Set(value As String)
             SetProperty(_statusLonText, value)
-            OnPropertyChanged(NameOf(StatusLonText))
         End Set
     End Property
     Public Property StatusTempText As String
@@ -362,18 +305,6 @@ Public Class MainViewModel
         End Get
         Set(value As Brush)
             SetProperty(_memoryEstimateBrush, value)
-        End Set
-    End Property
-
-    Public Property Lambda As Double
-        Get
-            Return _lambda
-        End Get
-        Set(value As Double)
-            If Math.Abs(_lambda - value) > 0.0001 Then
-                _lambda = value
-                OnPropertyChanged(NameOf(Lambda))
-            End If
         End Set
     End Property
 
@@ -455,53 +386,6 @@ Public Class MainViewModel
 
 #End Region
 
-#Region "--- Konfig-Sync (View <-> Config) ---"
-    ''' <summary>
-    ''' Überträgt die Werte aus CurrentConfig in die ViewModel-Properties
-    ''' </summary>
-    Public Sub SyncViewFromConfig()
-        If CurrentConfig Is Nothing Then Return
-
-        'Allgemeine Parameter
-        StartYear = CurrentConfig.StartYear
-        EndYear = CurrentConfig.EndYear
-        GridWidth = CurrentConfig.GridWidth
-        GridHeigth = CurrentConfig.GridHeight
-        TimeStepMode = CurrentConfig.TimeStepMode
-
-        'TimeStepIndex mitziehen, damit der Slider passt
-        Select Case TimeStepMode
-            Case TimeStepMode.Month
-                TimeStepIndex = 0
-            Case TimeStepMode.Quarter
-                TimeStepIndex = 1
-            Case TimeStepMode.Year
-                TimeStepIndex = 2
-            Case TimeStepMode.Decade
-                TimeStepIndex = 3
-        End Select
-
-        Lambda = CurrentConfig.Lambda
-    End Sub
-
-    ''' <summary>
-    ''' Überträgt die aktuellen ViewModel-Properties in CurrentConfig
-    ''' </summary>
-    Public Sub SyncConfigFromView()
-        If CurrentConfig Is Nothing Then
-            CurrentConfig = New SimulationConfig()
-        End If
-
-        'Allgemeine Paramter
-        CurrentConfig.StartYear = Me.StartYear
-        CurrentConfig.EndYear = Me.EndYear
-        CurrentConfig.GridWidth = Me.GridWidth
-        CurrentConfig.GridHeight = Me.GridHeigth
-        CurrentConfig.TimeStepMode = Me.TimeStepMode
-        CurrentConfig.Lambda = Me.Lambda
-
-    End Sub
-
     Private Sub OnConfigPropertyChanged(sender As Object, e As PropertyChangedEventArgs)
         'Wenn sich eine der speicherrelevanten Größen ändert, Speichervorhersage aktualisieren
         Select Case e.PropertyName
@@ -511,12 +395,9 @@ Public Class MainViewModel
                  NameOf(SimulationConfig.GridHeight),
                  NameOf(SimulationConfig.TimeStepMode)
 
-                SyncViewFromConfig()
                 UpdateMemoryEstimate()
         End Select
     End Sub
-
-#End Region
 
 #Region "--- Memory-Helfer ---"
 
@@ -614,7 +495,7 @@ Public Class MainViewModel
 #Region "--- DtYears-Helfer ---"
 
     Public Function GetDtYearsFromMode() As Double
-        Select Case _timeStepMode
+        Select Case CurrentConfig.TimeStepMode
             Case TimeStepMode.Month
                 Return (1.0 / 12.0)
             Case TimeStepMode.Quarter

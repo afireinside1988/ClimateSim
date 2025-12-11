@@ -46,7 +46,6 @@ Class MainWindow
         If cfg Is Nothing Then
             cfg = SimulationConfig.CreateDefault()
             _viewModel.CurrentConfig = cfg
-            _viewModel.SyncViewFromConfig()
         End If
 
         '--- Engine-Grid und Modell aus der Config initialisieren ---
@@ -291,16 +290,13 @@ Class MainWindow
             Return
         End If
 
-        Dim wnd As New HistoryWindow(_engine, _viewModel.TimeStepMode)
+        Dim wnd As New HistoryWindow(_engine, _viewModel.CurrentConfig.TimeStepMode)
         wnd.Owner = Me
         wnd.Show()
     End Sub
 
     Private Sub OnSimulationConfigRequested(sender As Object, e As EventArgs)
         If _viewModel Is Nothing Then Return
-
-        'Aktuelle Konfiguration aus UI/Modell in CurrentConfig spiegeln
-        _viewModel.SyncConfigFromView()
 
         Dim baseConfig As SimulationConfig = _viewModel.CurrentConfig
         If baseConfig Is Nothing Then baseConfig = SimulationConfig.CreateDefault()
@@ -324,9 +320,6 @@ Class MainWindow
             If warn = MessageBoxResult.Yes Then
                 'Neue Konfiguration übernehmen
                 _viewModel.CurrentConfig = cfgVm.Config
-
-                'ViewModel-Properties aus neuer Config befüllen
-                _viewModel.SyncViewFromConfig()
 
                 'Spin-Up als ungültig markieren
                 _viewModel.IsInitialized = False
@@ -489,7 +482,7 @@ Class MainWindow
 
     Private Sub UpdateSimTimeDisplay()
         _viewModel.SimTimeText = $"{_engine.SimTimeYears:F1} Jahre"
-        _viewModel.CurrentYearText = FormatYearWithStepMode(_engine.CurrentYear, _viewModel.TimeStepMode)
+        _viewModel.CurrentYearText = FormatYearWithStepMode(_engine.CurrentYear, _viewModel.CurrentConfig.TimeStepMode)
     End Sub
 
     Private Sub UpdateCO2Display(co2 As Double)
@@ -507,7 +500,7 @@ Class MainWindow
     Private Sub ApplyTimeStepModeToModel()
         If _engine Is Nothing OrElse _engine.Model Is Nothing Then Return
 
-        Dim useSeasonal As Boolean = (_viewModel.TimeStepMode = TimeStepMode.Month OrElse _viewModel.TimeStepMode = TimeStepMode.Quarter)
+        Dim useSeasonal As Boolean = (_viewModel.CurrentConfig.TimeStepMode = TimeStepMode.Month OrElse _viewModel.CurrentConfig.TimeStepMode = TimeStepMode.Quarter)
 
         _engine.Model.UseSeasonCycle = useSeasonal
     End Sub
