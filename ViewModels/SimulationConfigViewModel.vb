@@ -31,7 +31,10 @@ Public Class SimulationConfigViewModel
             Return _config.StartYear
         End Get
         Set(value As Integer)
-            SetProperty(_config.StartYear, value)
+            If _config.StartYear <> value Then
+                _config.StartYear = value
+                OnPropertyChanged(NameOf(StartYear))
+            End If
         End Set
     End Property
 
@@ -40,7 +43,10 @@ Public Class SimulationConfigViewModel
             Return _config.EndYear
         End Get
         Set(value As Integer)
-            SetProperty(_config.EndYear, value)
+            If _config.EndYear <> value Then
+                _config.EndYear = value
+                OnPropertyChanged(NameOf(EndYear))
+            End If
         End Set
     End Property
 
@@ -49,7 +55,10 @@ Public Class SimulationConfigViewModel
             Return _config.GridWidth
         End Get
         Set(value As Integer)
-            SetProperty(_config.GridWidth, value)
+            If _config.GridWidth <> value Then
+                _config.GridWidth = value
+                OnPropertyChanged(NameOf(GridWidth))
+            End If
         End Set
     End Property
 
@@ -58,7 +67,10 @@ Public Class SimulationConfigViewModel
             Return _config.GridHeight
         End Get
         Set(value As Integer)
-            SetProperty(_config.GridHeight, value)
+            If _config.GridHeight <> value Then
+                _config.GridHeight = value
+                OnPropertyChanged(NameOf(GridHeight))
+            End If
         End Set
     End Property
 
@@ -67,8 +79,11 @@ Public Class SimulationConfigViewModel
             Return _config.TimeStepMode
         End Get
         Set(value As TimeStepMode)
-            SetProperty(_config.TimeStepMode, value)
-            OnPropertyChanged(NameOf(TimeStepDescription))
+            If _config.TimeStepMode <> value Then
+                _config.TimeStepMode = value
+                OnPropertyChanged(NameOf(TimeStepMode))
+                OnPropertyChanged(NameOf(TimeStepDescription))
+            End If
         End Set
     End Property
 
@@ -110,8 +125,11 @@ Public Class SimulationConfigViewModel
             Return _config.SolarCycleMode
         End Get
         Set(value As SolarCycleMode)
-            SetProperty(_config.SolarCycleMode, value)
-            OnPropertyChanged(NameOf(IsSimpleCyclesMode))
+            If _config.SolarCycleMode <> value Then
+                _config.SolarCycleMode = value
+                OnPropertyChanged(NameOf(SolarCycleMode))
+                OnPropertyChanged(NameOf(IsSimpleCyclesMode))
+            End If
         End Set
     End Property
 
@@ -127,7 +145,10 @@ Public Class SimulationConfigViewModel
             Return _config.UseSchwabeCycle
         End Get
         Set(value As Boolean)
-            SetProperty(_config.UseSchwabeCycle, value)
+            If _config.UseSchwabeCycle <> value Then
+                _config.UseSchwabeCycle = value
+                OnPropertyChanged(NameOf(UseSchwabeCycle))
+            End If
         End Set
     End Property
 
@@ -178,7 +199,10 @@ Public Class SimulationConfigViewModel
             Return _config.UseMagneticCycle
         End Get
         Set(value As Boolean)
-            SetProperty(_config.UseMagneticCycle, value)
+            If _config.UseMagneticCycle <> value Then
+                _config.UseMagneticCycle = value
+                OnPropertyChanged(NameOf(UseMagneticCycle))
+            End If
         End Set
     End Property
 
@@ -229,7 +253,10 @@ Public Class SimulationConfigViewModel
             Return _config.UseGleissbergCycle
         End Get
         Set(value As Boolean)
-            SetProperty(_config.UseGleissbergCycle, value)
+            If _config.UseGleissbergCycle <> value Then
+                _config.UseGleissbergCycle = value
+                OnPropertyChanged(NameOf(UseGleissbergCycle))
+            End If
         End Set
     End Property
 
@@ -280,7 +307,10 @@ Public Class SimulationConfigViewModel
             Return _config.UseDeVriesSuessCycle
         End Get
         Set(value As Boolean)
-            SetProperty(_config.UseDeVriesSuessCycle, value)
+            If _config.UseDeVriesSuessCycle <> value Then
+                _config.UseDeVriesSuessCycle = value
+                OnPropertyChanged(NameOf(UseDeVriesSuessCycle))
+            End If
         End Set
     End Property
 
