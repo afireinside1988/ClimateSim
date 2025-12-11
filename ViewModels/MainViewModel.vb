@@ -544,36 +544,6 @@ Public Class MainViewModel
         CurrentConfig.TimeStepMode = Me.TimeStepMode
         CurrentConfig.Lambda = Me.Lambda
 
-        'Solare Parameter kommen aus dem Modell
-        If Engine IsNot Nothing AndAlso Engine.Model IsNot Nothing Then
-            Dim m As ClimateModel2D = Engine.Model
-
-            CurrentConfig.SolarCycleMode = m.SolarCycleMode
-
-            'Schwabe
-            CurrentConfig.UseSchwabeCycle = m.UseSchwabeCycle
-            CurrentConfig.SchwabeAmplitude = m.SchwabeAmplitude
-            CurrentConfig.SchwabePeriodYears = m.SchwabePeriodYears
-            CurrentConfig.SchwabePhaseDeg = m.SchwabePhaseDeg
-
-            'Magnetic
-            CurrentConfig.UseMagneticCycle = m.UseMagneticCycle
-            CurrentConfig.MagneticAmplitude = m.MagneticAmplitude
-            CurrentConfig.MagneticPeriodYears = m.MagneticPeriodYears
-            CurrentConfig.MagneticPhaseDeg = m.MagneticPhaseDeg
-
-            'Gleissberg
-            CurrentConfig.UseGleissbergCycle = m.UseGleissbergCycle
-            CurrentConfig.GleissbergAmplitude = m.GleissbergAmplitude
-            CurrentConfig.GleissbergPeriodYears = m.GleissbergPeriodYears
-            CurrentConfig.GleissbergPhaseDeg = m.GleissbergPhaseDeg
-
-            'De Vries/Suess
-            CurrentConfig.UseDeVriesSuessCycle = m.UseDeVriesSuessCycle
-            CurrentConfig.DeVriesAmplitude = m.DeVriesAmplitude
-            CurrentConfig.DeVriesPeriodYears = m.DeVriesPeriodYears
-            CurrentConfig.DeVriesPhaseDeg = m.DeVriesPhaseDeg
-        End If
     End Sub
 
 #End Region
