@@ -14,8 +14,24 @@
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <conv:BooleanNotConverter x:Key="NotConverter"/>
     </Window.Resources>
-    
-    <Grid Margin="10">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><!-- Menü -->
+            <RowDefinition Height="*"/><!-- Restlicher Inhalt -->
+        </Grid.RowDefinitions>
+        <Menu Grid.Row="0">
+            <MenuItem Header="_Simulation">
+                <MenuItem Header="_Konfiguration..." Command="{Binding SimulationConfigCommand}"/>
+                <MenuItem Header="_Verlauf..." Command="{Binding ShowHistoryCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_Szenarien">
+                <MenuItem Header="_CO₂-Szenarien..." IsEnabled="False"/>
+                <MenuItem Header="_Ozon-Szenarien..." IsEnabled="False"/>
+            </MenuItem>
+        </Menu>
+
+    <Grid Grid.Row="1"  Margin="10">
+        
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="3*"/>
             <ColumnDefinition Width="*"/>
@@ -123,6 +139,8 @@
             </StackPanel>
 
             <TextBlock Text="Simulationsteuerung:" FontWeight="SemiBold" Margin="0,10,0,0" />
+            <Button x:Name="BtnConfig" Content="Konfiguration..." Height="35" Margin="0,5,0,0" Command="{Binding SimulationConfigCommand}"/>
+                    
             <Button x:Name="BtnSpinUp" Content="Spin-Up und initialisieren" Height="35" Margin="0,5,0,0" Command="{Binding SpinUpCommand}"/>
             <Button x:Name="BtnStep" Content="1 Simulationsschritt" Height="35" Margin="0,10,0,0" Command="{Binding StepCommand}"/>
 
@@ -168,5 +186,6 @@
 
             <Button x:Name="BtnShowHistory" Content="Verlauf anzeigen..." Height="30" Margin="0,20,0,0" Command="{Binding ShowHistoryCommand}"/>
         </StackPanel>
+    </Grid>
     </Grid>
 </Window>

@@ -42,6 +42,7 @@
     Public Property DeVriesPhaseDeg As Double
 
 #End Region
+
     ''' <summary>
     ''' Erstellt eine Default-Konfiguration
     ''' </summary>
@@ -83,4 +84,40 @@
         Return cfg
     End Function
 
+    Public Function Clone() As SimulationConfig
+        Dim cfg As New SimulationConfig()
+
+        'Allgemein
+        cfg.StartYear = Me.StartYear
+        cfg.EndYear = Me.EndYear
+        cfg.GridWidth = Me.GridWidth
+        cfg.GridHeight = Me.GridHeight
+        cfg.TimeStepMode = Me.TimeStepMode
+        cfg.Lambda = Me.Lambda
+
+        'Solare Zyklen
+        cfg.SolarCycleMode = Me.SolarCycleMode
+
+        cfg.UseSchwabeCycle = Me.UseSchwabeCycle
+        cfg.SchwabeAmplitude = Me.SchwabeAmplitude
+        cfg.SchwabePeriodYears = Me.SchwabePeriodYears
+        cfg.SchwabePhaseDeg = Me.SchwabePhaseDeg
+
+        cfg.UseMagneticCycle = Me.UseMagneticCycle
+        cfg.MagneticAmplitude = Me.MagneticAmplitude
+        cfg.MagneticPeriodYears = Me.MagneticPeriodYears
+        cfg.MagneticPhaseDeg = Me.MagneticPhaseDeg
+
+        cfg.UseGleissbergCycle = Me.UseGleissbergCycle
+        cfg.GleissbergAmplitude = Me.GleissbergAmplitude
+        cfg.GleissbergPeriodYears = Me.GleissbergPeriodYears
+        cfg.GleissbergPhaseDeg = Me.GleissbergPhaseDeg
+
+        cfg.UseDeVriesSuessCycle = Me.UseDeVriesSuessCycle
+        cfg.DeVriesAmplitude = Me.DeVriesAmplitude
+        cfg.DeVriesPeriodYears = Me.DeVriesPeriodYears
+        cfg.DeVriesPhaseDeg = Me.DeVriesPhaseDeg
+
+        Return cfg
+    End Function
 End Class

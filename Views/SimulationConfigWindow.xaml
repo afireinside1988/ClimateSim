@@ -1,0 +1,285 @@
+﻿<Window x:Class="SimulationConfigWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:ClimateSim"
+        xmlns:climatesim="clr-namespace:ClimateSim"
+        xmlns:conv="clr-namespace:ClimateSim"
+        d:DataContext="{d:DesignInstance Type=climatesim:SimulationConfigViewModel}"
+        mc:Ignorable="d"
+        Title="Simulation konfigurieren" MinHeight="400" MinWidth="600"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="CenterOwner">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <conv:BooleanNotConverter x:Key="NotConverter"/>
+    </Window.Resources>
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TabControl Grid.Row="0">
+            <!-- Tab Allgemein -->
+            <TabItem Header="Allgemein">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- Gitter -->
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Gitternetz:" FontWeight="Bold" Margin="0,0,0,5"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Breite:" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Width="80" Margin="10,0,10,0"
+                             Text="{Binding GridWidth, UpdateSourceTrigger=PropertyChanged}"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="Höhe:" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="1" Grid.Column="3" Width="80" HorizontalAlignment="Left" Margin="10,0,0,0"
+                             Text="{Binding GridHeight, UpdateSourceTrigger=PropertyChanged}"/>
+                    
+                    <!-- Zeit -->
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Zeitsteuerung:" FontWeight="Bold" Margin="0,10,0,5"/>
+                    
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Startjahr:"/>
+                    <TextBox Grid.Row="3" Grid.Column="1" Width="80" Margin="10,0,10,0"
+                             Text="{Binding StartYear, UpdateSourceTrigger=PropertyChanged}"/>
+
+                    <TextBlock Grid.Row="3" Grid.Column="2" Text="Endjahr:"/>
+                    <TextBox Grid.Row="3" Grid.Column="3" Width="80" HorizontalAlignment="Left" Margin="10,0,0,0"
+                             Text="{Binding EndYear, UpdateSourceTrigger=PropertyChanged}"/>
+                    
+                    <!-- Zeitschritte -->
+                    <GroupBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3" Header="Zeitschritt" Margin="0,15,0,0">
+                        <StackPanel Margin="10,5,10,5">
+                            <ComboBox Width="180"
+                                      SelectedValue="{Binding TimeStepMode}"
+                                      SelectedValuePath="Tag">
+                                <ComboBoxItem Content="1 Monat" Tag="{x:Static climatesim:TimeStepMode.Month}"/>
+                                <ComboBoxItem Content="1 Quartal" Tag="{x:Static climatesim:TimeStepMode.Quarter}"/>
+                                <ComboBoxItem Content="1 Jahr" Tag="{x:Static climatesim:TimeStepMode.Year}"/>
+                                <ComboBoxItem Content="10 Jahre" Tag="{x:Static climatesim:TimeStepMode.Decade}"/>
+                            </ComboBox>
+                        </StackPanel>
+                    </GroupBox>
+                </Grid>
+            </TabItem>
+            
+            <!-- Tab Insolation -->
+            <TabItem Header="Insolation">
+                <StackPanel Margin="10">
+                    <TextBlock Text="Solar-Forcing-Modus:" FontWeight="Bold" Margin="0,0,0,5"/>
+
+                    <ComboBox Width="250"
+                              HorizontalAlignment="Left"
+                              SelectedValue="{Binding SolarCycleMode}"
+                              SelectedValuePath="Tag">
+                        <ComboBoxItem Content="Keine solaren Zyklen" Tag="{x:Static climatesim:SolarCycleMode.None}"/>
+                        <ComboBoxItem Content="Parametrische Zyklen" Tag="{x:Static climatesim:SolarCycleMode.SimpleCycles}"/>
+                        <ComboBoxItem Content="Datengetrieben (TSI aus Datei)" Tag="{x:Static climatesim:SolarCycleMode.DataDriven}"/>
+                        <ComboBoxItem Content="Orbital (nicht implementiert)" Tag="{x:Static climatesim:SolarCycleMode.Orbital}"/>
+                        <ComboBoxItem Content="Orbital + Parametrische Zyklen (nicht implementiert)" Tag="{x:Static climatesim:SolarCycleMode.OrbitalPlusSimpleCycles}"/>
+                    </ComboBox>
+                    
+                    <!-- SimpleCycles-Einstellungen -->
+                    <StackPanel Margin="0,15,0,0"
+                                Visibility="{Binding IsSimpleCyclesMode, Converter={StaticResource BoolToVisibilityConverter}, FallbackValue=Visible}">
+                        <TextBlock Text="Parametrische Zyklen (TSI-Variation in %):" FontWeight="Bold" Margin="0,0,0,5"/>
+                        
+                        <!-- Schwabe -->
+                        <TabControl>
+                            <TabItem Header="Schwabe-Zyklus">
+                                <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                    
+                                        <CheckBox Grid.Row="0" Grid.Column="0" Content="aktiv" IsChecked="{Binding UseSchwabeCycle}" Margin="5,0,0,5"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Amplitude:" VerticalAlignment="Center" Margin="5,0,5,0"/>
+                                        <Slider Grid.Row="1" Grid.Column="1" Width="150" Margin="5,0,5,5"
+                                            Minimum="0.0" Maximum="0.3" TickFrequency="0.05"
+                                            Value="{Binding SchwabeAmplitudePercent, Mode=TwoWay}"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="2" Width="60" TextAlignment="Right"
+                                            Text="{Binding SchwabeAmplitudePercent, StringFormat={}{0:F2} %}"/>
+
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Periode (Jahre):" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                                        <TextBox Grid.Row="2" Grid.Column="1" Width="Auto" Margin="5,0,5,5"
+                                             Text="{Binding SchwabePeriodYears, Mode=TwoWay}"
+                                             IsEnabled="False"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Phase (Grad Verschiebung):" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                                        <Slider Grid.Row="3" Grid.Column="1" Width="150"
+                                            Minimum="0" Maximum="360" TickFrequency="1"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="2" Text="(nicht implementiert)"/>
+                                    </Grid>
+                            </TabItem>
+
+                            <!--- Magnetischer Zyklus -->
+                            <TabItem Header="Magnetischer Zyklus">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <CheckBox Grid.Row="0" Grid.Column="0" Content="aktiv" IsChecked="{Binding UseMagneticCycle}" Margin="5,0,0,5"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Amplitude:" VerticalAlignment="Center" Margin="5,0,5,0"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" Width="150" Margin="5,0,5,5"
+                                            Minimum="0.0" Maximum="0.3" TickFrequency="0.05"
+                                            Value="{Binding MagneticAmplitudePercent, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Width="60" TextAlignment="Right"
+                                            Text="{Binding MagneticAmplitudePercent, StringFormat={}{0:F2} %}"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Periode (Jahre):" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Width="Auto" Margin="5,0,5,5"
+                                             Text="{Binding MagneticPeriodYears, Mode=TwoWay}"
+                                             IsEnabled="False"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Phase (Grad Verschiebung):" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                                    <Slider Grid.Row="3" Grid.Column="1" Width="150"
+                                            Minimum="0" Maximum="360" TickFrequency="1"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" Text="(nicht implementiert)"/>
+                                </Grid>
+                            </TabItem>
+
+                            <!--- Gleissberg-Zyklus -->
+                            <TabItem Header="Gleissberg-Zyklus">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <CheckBox Grid.Row="0" Grid.Column="0" Content="aktiv" IsChecked="{Binding UseGleissbergCycle}" Margin="5,0,0,5"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Amplitude:" VerticalAlignment="Center" Margin="5,0,5,0"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" Width="150" Margin="5,0,5,5"
+                                            Minimum="0.0" Maximum="0.3" TickFrequency="0.05"
+                                            Value="{Binding GleissbergAmplitudePercent, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Width="60" TextAlignment="Right"
+                                            Text="{Binding GleissbergAmplitudePercent, StringFormat={}{0:F2} %}"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Periode (Jahre):" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Width="Auto" Margin="5,0,5,5"
+                                             Text="{Binding GleissbergPeriodYears, Mode=TwoWay}"
+                                             IsEnabled="False"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Phase (Grad Verschiebung):" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                                    <Slider Grid.Row="3" Grid.Column="1" Width="150"
+                                            Minimum="0" Maximum="360" TickFrequency="1"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" Text="(nicht implementiert)"/>
+                                </Grid>
+                            </TabItem>
+
+                            <!--- De Vries / Suess -->
+                            <TabItem Header="De Vries/Suess-Zyklus">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <CheckBox Grid.Row="0" Grid.Column="0" Content="aktiv" IsChecked="{Binding UseDeVriesSuessCycle}" Margin="5,0,0,5"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Amplitude:" VerticalAlignment="Center" Margin="5,0,5,0"/>
+                                    <Slider Grid.Row="1" Grid.Column="1" Width="150" Margin="5,0,5,5"
+                                            Minimum="0.0" Maximum="0.3" TickFrequency="0.05"
+                                            Value="{Binding DeVriesAmplitudePercent, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Width="60" TextAlignment="Right"
+                                            Text="{Binding DeVriesAmplitudePercent, StringFormat={}{0:F2} %}"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Periode (Jahre):" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Width="Auto" Margin="5,0,5,5"
+                                             Text="{Binding DeVriesPeriodYears, Mode=TwoWay}"
+                                             IsEnabled="False"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Phase (Grad Verschiebung):" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                                    <Slider Grid.Row="3" Grid.Column="1" Width="150"
+                                            Minimum="0" Maximum="360" TickFrequency="1"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" Text="(nicht implementiert)"/>
+                                </Grid>
+                            </TabItem>
+                        </TabControl>
+                    </StackPanel>
+                </StackPanel>
+            </TabItem>
+
+
+            <TabItem Header="Ozean-Zirkulation">
+                <TextBlock Margin="10" TextWrapping="Wrap"
+                           Text="Platzhalter für zukünftige Ozean-Zirkulations-Parameter."/>
+            </TabItem>
+
+            <TabItem Header="Atmosphärische Zirkulation">
+                <TextBlock Margin="10" TextWrapping="Wrap"
+                           Text="Platzhalter für zukünftige atmosphärische Zirkulations-Parameter."/>
+            </TabItem>
+
+            <TabItem Header="Eis-Albedo-Feedback">
+                <TextBlock Margin="10" TextWrapping="Wrap"
+                           Text="Platzhalter für zukünftige Eis-Albedo-Feedback-Parameter."/>
+            </TabItem>
+
+            <TabItem Header="Biologische Feedbacks">
+                <TextBlock Margin="10" TextWrapping="Wrap"
+                           Text="Platzhalter für zukünftige biologische Feedbacks (Vegetation, Desertifikation, etc.)."/>
+            </TabItem>
+
+        </TabControl>
+
+        <!-- OK / Abbrechen -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Width="90" Height="28" Margin="0,0,10,0" Content="OK"
+                    IsDefault="True"
+                    Click="OkButton_Click"/>
+            <Button Width="90" Height="28" Content="Abbrechen"
+                    IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

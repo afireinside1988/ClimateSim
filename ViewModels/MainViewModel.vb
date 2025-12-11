@@ -53,6 +53,7 @@ Public Class MainViewModel
     Public Event SpinUpRequested As EventHandler
     Public Event StepRequested As EventHandler
     Public Event ShowHistoryRequested As EventHandler
+    Public Event SimulationConfigRequested As EventHandler
 
 #End Region
 
@@ -63,6 +64,7 @@ Public Class MainViewModel
     Public ReadOnly Property SpinUpCommand As ICommand
     Public ReadOnly Property StepCommand As ICommand
     Public ReadOnly Property ShowHistoryCommand As ICommand
+    Public ReadOnly Property SimulationConfigCommand As ICommand
 
 #End Region
 
@@ -142,6 +144,17 @@ Public Class MainViewModel
                 'Verlauf nur, wenn initialisiert ist und es Daten gibt
                 Return IsInitialized AndAlso Engine IsNot Nothing AndAlso Engine.History IsNot Nothing AndAlso Engine.History.Count > 0
             End Function)
+
+        'Simulations-Konfiguration aufrufen
+        SimulationConfigCommand = New RelayCommand(Of Object)(
+            Sub(o As Object)
+                RaiseEvent SimulationConfigRequested(Me, EventArgs.Empty)
+            End Sub,
+            Function(o As Object) As Boolean
+                'Konfiguration nur ändern, wenn gerade keine Simulation läuft
+                Return Not IsSimulationRunning
+            End Function
+            )
 
         '--- Speicherprognose aktualisieren
         UpdateMemoryEstimate()

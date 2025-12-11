@@ -51,6 +51,7 @@ Class MainWindow
         AddHandler _viewModel.SpinUpRequested, AddressOf OnSpinUpRequested
         AddHandler _viewModel.StepRequested, AddressOf OnStepRequested
         AddHandler _viewModel.ShowHistoryRequested, AddressOf OnShowHistoryRequested
+        AddHandler _viewModel.SimulationConfigRequested, AddressOf OnSimulationConfigRequested
 
         'Mouseovers
         AddHandler ImgTemperature.MouseMove, AddressOf ImgTemperature_MouseMove
@@ -288,6 +289,48 @@ Class MainWindow
         Dim wnd As New HistoryWindow(_engine, _viewModel.TimeStepMode)
         wnd.Owner = Me
         wnd.Show()
+    End Sub
+
+    Private Sub OnSimulationConfigRequested(sender As Object, e As EventArgs)
+        If _viewModel Is Nothing Then Return
+
+        'Aktuelle Konfiguration aus UI/Modell in CurrentConfig spiegeln
+        _viewModel.SyncConfigFromView()
+
+        Dim baseConfig As SimulationConfig = _viewModel.CurrentConfig
+        If baseConfig Is Nothing Then
+            baseConfig = SimulationConfig.CreateDefault()
+        End If
+
+        'ViewModel für den Dialog (arbeitet auf einem Klon)
+        Dim cfgVm As New SimulationConfigViewModel(baseConfig)
+
+        Dim dlg As New SimulationConfigWindow()
+        dlg.Owner = Me
+        dlg.DataContext = cfgVm
+
+        Dim result As Boolean? = dlg.ShowDialog()
+
+        If result.HasValue AndAlso result.Value = True Then
+            'Nutzer hat OK geklickt -> Warnen, dass Spin-Up ungültig wird
+            Dim warn As MessageBoxResult = MessageBox.Show("Durch Änderung der Konfiguration wird der bisherige Spin-Up ungültig. Fortfahren und neuen Spin-Up erforderlich machen?", "Simulations-Konfiguration geändert",
+                                                            MessageBoxButton.YesNo,
+                                                            MessageBoxImage.Warning,
+                                                            MessageBoxResult.Yes)
+
+            If warn = MessageBoxResult.Yes Then
+                'Neue Konfiguration übernehmen
+                _viewModel.CurrentConfig = cfgVm.Config
+
+                'ViewModel-Properties aus neuer Config befüllen
+                _viewModel.SyncViewFromConfig()
+
+                'Spin-Up als ungültig markieren
+                _viewModel.IsInitialized = False
+                _viewModel.StatusText = "Konfiguration geändert. Bitte Spin-Up neu starten."
+            End If
+
+        End If
     End Sub
 
     Private Sub ImgTemperature_MouseMove(sender As Object, e As MouseEventArgs)
