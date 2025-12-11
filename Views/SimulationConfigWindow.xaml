@@ -65,7 +65,7 @@
                              Text="{Binding EndYear, UpdateSourceTrigger=PropertyChanged}"/>
                     
                     <!-- Zeitschritte -->
-                    <GroupBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3" Header="Zeitschritt" Margin="0,15,0,0">
+                    <GroupBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3" Header="Simulationsschritt" Margin="0,15,0,0">
                         <StackPanel Margin="10,5,10,5">
                             <ComboBox Width="180"
                                       SelectedValue="{Binding TimeStepMode}"
@@ -77,6 +77,14 @@
                             </ComboBox>
                         </StackPanel>
                     </GroupBox>
+                    <TextBlock Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Text="Klimasensitivität λ [K/(W/m²)]:" FontWeight="Bold" Margin="0,10,0,5"/>
+                    <StackPanel Grid.Row="5" Grid.Column="2" Grid.ColumnSpan="2" Orientation="Horizontal">
+                        <Slider Width="150" Margin="5,10,5,0" 
+                                Minimum="0.1" Maximum="1.5" TickFrequency="0.1"
+                                IsSnapToTickEnabled="True"
+                                Value="{Binding Lambda, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Width="60" TextAlignment="Right" FontFamily="Consolas" Text="{Binding Lambda, StringFormat=0.0}" Margin="0,10,0,0"/>
+                    </StackPanel>
                 </Grid>
             </TabItem>
             
@@ -125,7 +133,7 @@
                                             Minimum="0.0" Maximum="0.3" TickFrequency="0.05"
                                             Value="{Binding SchwabeAmplitudePercent, Mode=TwoWay}"/>
                                         <TextBlock Grid.Row="1" Grid.Column="2" Width="60" TextAlignment="Right"
-                                            Text="{Binding SchwabeAmplitudePercent, StringFormat={}{0:F2} %}"/>
+                                            Text="{Binding SchwabeAmplitudePercent, StringFormat={}{0:F3} %}"/>
 
                                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Periode (Jahre):" VerticalAlignment="Center" Margin="5,0,0,0"/>
                                         <TextBox Grid.Row="2" Grid.Column="1" Width="Auto" Margin="5,0,5,5"
@@ -161,7 +169,7 @@
                                             Minimum="0.0" Maximum="0.3" TickFrequency="0.05"
                                             Value="{Binding MagneticAmplitudePercent, Mode=TwoWay}"/>
                                     <TextBlock Grid.Row="1" Grid.Column="2" Width="60" TextAlignment="Right"
-                                            Text="{Binding MagneticAmplitudePercent, StringFormat={}{0:F2} %}"/>
+                                            Text="{Binding MagneticAmplitudePercent, StringFormat={}{0:F3} %}"/>
 
                                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Periode (Jahre):" VerticalAlignment="Center" Margin="5,0,0,0"/>
                                     <TextBox Grid.Row="2" Grid.Column="1" Width="Auto" Margin="5,0,5,5"
@@ -197,7 +205,7 @@
                                             Minimum="0.0" Maximum="0.3" TickFrequency="0.05"
                                             Value="{Binding GleissbergAmplitudePercent, Mode=TwoWay}"/>
                                     <TextBlock Grid.Row="1" Grid.Column="2" Width="60" TextAlignment="Right"
-                                            Text="{Binding GleissbergAmplitudePercent, StringFormat={}{0:F2} %}"/>
+                                            Text="{Binding GleissbergAmplitudePercent, StringFormat={}{0:F3} %}"/>
 
                                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Periode (Jahre):" VerticalAlignment="Center" Margin="5,0,0,0"/>
                                     <TextBox Grid.Row="2" Grid.Column="1" Width="Auto" Margin="5,0,5,5"
@@ -233,7 +241,7 @@
                                             Minimum="0.0" Maximum="0.3" TickFrequency="0.05"
                                             Value="{Binding DeVriesAmplitudePercent, Mode=TwoWay}"/>
                                     <TextBlock Grid.Row="1" Grid.Column="2" Width="60" TextAlignment="Right"
-                                            Text="{Binding DeVriesAmplitudePercent, StringFormat={}{0:F2} %}"/>
+                                            Text="{Binding DeVriesAmplitudePercent, StringFormat={}{0:F3} %}"/>
 
                                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Periode (Jahre):" VerticalAlignment="Center" Margin="5,0,0,0"/>
                                     <TextBox Grid.Row="2" Grid.Column="1" Width="Auto" Margin="5,0,5,5"

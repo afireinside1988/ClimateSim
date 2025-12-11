@@ -4,17 +4,18 @@ Imports System.Threading.Tasks
 Imports System.Windows.Media
 Imports System.Windows.Media.Imaging
 Imports System.Runtime.InteropServices
+Imports System.CodeDom
 
 Public Class MainViewModel
-    Implements INotifyPropertyChanged
+    Inherits ViewModelBase
 
     Public ReadOnly Property AppTitle As String = AppInfoViewModel.AppTitleWithVersion
     Public ReadOnly Property ProductName As String = AppInfoViewModel.ProductName
 
-#Region "--- Simulations- / UI-Parameter, die aktuell in TextBoxen / Labels liegen ---"
+#Region "Private Felder"
 
     'Aktuelle Simulationskonfiguratiuon (später JSON-persistierbar)
-    Public Property CurrentConfig As SimulationConfig
+    Private _currentConfig As SimulationConfig
 
     Private _startYear As Integer
     Private _endYear As Integer
@@ -23,7 +24,7 @@ Public Class MainViewModel
 
     Private _timeStepMode As TimeStepMode
     Private _timeStepIndex As Integer = 2                   '0=Monat, 1=Quartal, 2=Jahr, 3=Dekade
-    Private _dtModeText As String = "1 Jahr"
+    Private _timeModeDescription As String = "1 Jahr"
 
     Private _co2Value As Double = 420.0
 
@@ -162,55 +163,65 @@ Public Class MainViewModel
 
 #Region "--- Properties für Bindings ---"
 
+    Public Property CurrentConfig As SimulationConfig
+        Get
+            Return _currentConfig
+        End Get
+        Set(value As SimulationConfig)
+            If Not Object.ReferenceEquals(_currentConfig, value) Then
+
+                If _currentConfig IsNot Nothing Then
+                    RemoveHandler _currentConfig.PropertyChanged, AddressOf OnConfigPropertyChanged
+                End If
+
+                _currentConfig = value
+
+                If _currentConfig IsNot Nothing Then
+                    AddHandler _currentConfig.PropertyChanged, AddressOf OnConfigPropertyChanged
+                End If
+
+                OnPropertyChanged(NameOf(CurrentConfig))
+
+                SyncViewFromConfig()
+                UpdateMemoryEstimate()
+            End If
+        End Set
+    End Property
+
     Public Property StartYear As Integer
         Get
             Return _startYear
         End Get
         Set(value As Integer)
-            If _startYear <> value Then
-                _startYear = value
-                OnPropertyChanged(NameOf(StartYear))
-                UpdateMemoryEstimate()
-            End If
+            SetProperty(_startYear, value)
+            UpdateMemoryEstimate()
         End Set
     End Property
-
     Public Property EndYear As Integer
         Get
             Return _endYear
         End Get
         Set(value As Integer)
-            If _endYear <> value Then
-                _endYear = value
-                OnPropertyChanged(NameOf(EndYear))
-                UpdateMemoryEstimate()
-            End If
+            SetProperty(_endYear, value)
+            UpdateMemoryEstimate()
         End Set
     End Property
-
     Public Property GridWidth As Integer
         Get
             Return _gridWidth
         End Get
         Set(value As Integer)
-            If _gridWidth <> value Then
-                _gridWidth = value
-                OnPropertyChanged(NameOf(GridWidth))
-                UpdateMemoryEstimate()
-            End If
+            SetProperty(_gridWidth, value)
+            UpdateMemoryEstimate()
         End Set
     End Property
-
     Public Property GridHeigth As Integer
         Get
             Return _gridHeight
         End Get
         Set(value As Integer)
-            If _gridHeight <> value Then
-                _gridHeight = value
-                OnPropertyChanged(NameOf(GridHeigth))
-                UpdateMemoryEstimate()
-            End If
+            SetProperty(_gridHeight, value)
+            UpdateMemoryEstimate()
         End Set
     End Property
 
@@ -219,51 +230,40 @@ Public Class MainViewModel
             Return _timeStepMode
         End Get
         Set(value As TimeStepMode)
-            If _timeStepMode <> value Then
-                _timeStepMode = value
-                OnPropertyChanged(NameOf(TimeStepMode))
-                UpdateMemoryEstimate()
-            End If
+            SetProperty(_timeStepMode, value)
+            UpdateMemoryEstimate()
         End Set
     End Property
-
     Public Property TimeStepIndex As Integer
         Get
             Return _timeStepIndex
         End Get
         Set(value As Integer)
-            If _timeStepIndex <> value Then
-                _timeStepIndex = value
-                OnPropertyChanged(NameOf(TimeStepIndex))
+            SetProperty(_timeStepIndex, value)
 
-                'Mapping Index -> Mode
-                Select Case value
-                    Case 0
-                        TimeStepMode = TimeStepMode.Month
-                        DtModeText = "1 Monat"
-                    Case 1
-                        TimeStepMode = TimeStepMode.Quarter
-                        DtModeText = "1 Quartal"
-                    Case 2
-                        TimeStepMode = TimeStepMode.Year
-                        DtModeText = "1 Jahr"
-                    Case 3
-                        TimeStepMode = TimeStepMode.Decade
-                        DtModeText = "10 Jahre"
-                End Select
-            End If
+            'Mapping Index -> Mode
+            Select Case value
+                Case 0
+                    TimeStepMode = TimeStepMode.Month
+                    TimeModeDescription = "1 Monat"
+                Case 1
+                    TimeStepMode = TimeStepMode.Quarter
+                    TimeModeDescription = "1 Quartal"
+                Case 2
+                    TimeStepMode = TimeStepMode.Year
+                    TimeModeDescription = "1 Jahr"
+                Case 3
+                    TimeStepMode = TimeStepMode.Decade
+                    TimeModeDescription = "10 Jahre"
+            End Select
         End Set
     End Property
-
-    Public Property DtModeText As String
+    Public Property TimeModeDescription As String
         Get
-            Return _dtModeText
+            Return _timeModeDescription
         End Get
         Set(value As String)
-            If _dtModeText <> value Then
-                _dtModeText = value
-                OnPropertyChanged(NameOf(DtModeText))
-            End If
+            SetProperty(_timeModeDescription, value)
         End Set
     End Property
 
@@ -284,58 +284,40 @@ Public Class MainViewModel
             Return _statusText
         End Get
         Set(value As String)
-            If _statusText <> value Then
-                _statusText = value
-                OnPropertyChanged(NameOf(StatusText))
-            End If
+            SetProperty(_statusText, value)
         End Set
     End Property
-
     Public Property StatusLatText As String
         Get
             Return _statusLatText
         End Get
         Set(value As String)
-            If _statusLatText <> value Then
-                _statusLatText = value
-                OnPropertyChanged(NameOf(StatusLatText))
-            End If
+            SetProperty(_statusLatText, value)
         End Set
     End Property
-
     Public Property StatusLonText As String
         Get
             Return _statusLonText
         End Get
         Set(value As String)
-            If _statusLonText <> value Then
-                _statusLonText = value
-                OnPropertyChanged(NameOf(StatusLonText))
-            End If
+            SetProperty(_statusLonText, value)
+            OnPropertyChanged(NameOf(StatusLonText))
         End Set
     End Property
-
     Public Property StatusTempText As String
         Get
             Return _statusTempText
         End Get
         Set(value As String)
-            If _statusTempText <> value Then
-                _statusTempText = value
-                OnPropertyChanged(NameOf(StatusTempText))
-            End If
+            SetProperty(_statusTempText, value)
         End Set
     End Property
-
     Public Property StatusSurfaceText As String
         Get
             Return _statusSurfaceText
         End Get
         Set(value As String)
-            If _statusSurfaceText <> value Then
-                _statusSurfaceText = value
-                OnPropertyChanged(NameOf(StatusSurfaceText))
-            End If
+            SetProperty(_statusSurfaceText, value)
         End Set
     End Property
 
@@ -344,10 +326,7 @@ Public Class MainViewModel
             Return _globalMeanText
         End Get
         Set(value As String)
-            If _globalMeanText <> value Then
-                _globalMeanText = value
-                OnPropertyChanged(NameOf(GlobalMeanText))
-            End If
+            SetProperty(_globalMeanText, value)
         End Set
     End Property
 
@@ -356,10 +335,7 @@ Public Class MainViewModel
             Return _currentYearText
         End Get
         Set(value As String)
-            If _currentYearText <> value Then
-                _currentYearText = value
-                OnPropertyChanged(NameOf(CurrentYearText))
-            End If
+            SetProperty(_currentYearText, value)
         End Set
     End Property
 
@@ -368,10 +344,7 @@ Public Class MainViewModel
             Return _simTimeText
         End Get
         Set(value As String)
-            If _simTimeText <> value Then
-                _simTimeText = value
-                OnPropertyChanged(NameOf(SimTimeText))
-            End If
+            SetProperty(_simTimeText, value)
         End Set
     End Property
 
@@ -380,22 +353,15 @@ Public Class MainViewModel
             Return _memoryEstimateText
         End Get
         Set(value As String)
-            If _memoryEstimateText <> value Then
-                _memoryEstimateText = value
-                OnPropertyChanged(NameOf(MemoryEstimateText))
-            End If
+            SetProperty(_memoryEstimateText, value)
         End Set
     End Property
-
     Public Property MemoryEstimateBrush As Brush
         Get
             Return _memoryEstimateBrush
         End Get
         Set(value As Brush)
-            If _memoryEstimateBrush IsNot value Then
-                _memoryEstimateBrush = value
-                OnPropertyChanged(NameOf(MemoryEstimateBrush))
-            End If
+            SetProperty(_memoryEstimateBrush, value)
         End Set
     End Property
 
@@ -422,7 +388,6 @@ Public Class MainViewModel
             End If
         End Set
     End Property
-
     Public Property TemperatureImage As ImageSource
         Get
             Return _temperatureImage
@@ -440,10 +405,7 @@ Public Class MainViewModel
             Return _isTemperatureLayerVisible
         End Get
         Set(value As Boolean)
-            If _isTemperatureLayerVisible <> value Then
-                _isTemperatureLayerVisible = value
-                OnPropertyChanged(NameOf(IsTemperatureLayerVisible))
-            End If
+            SetProperty(_isTemperatureLayerVisible, value)
         End Set
     End Property
 
@@ -474,12 +436,9 @@ Public Class MainViewModel
             Return _isInitialized
         End Get
         Set(value As Boolean)
-            If _isInitialized <> value Then
-                _isInitialized = value
-                OnPropertyChanged(NameOf(IsInitialized))
-                OnPropertyChanged(NameOf(AreLayerControlsEnabled))
-                CommandManager.InvalidateRequerySuggested()
-            End If
+            SetProperty(_isInitialized, value)
+            OnPropertyChanged(NameOf(AreLayerControlsEnabled))
+            CommandManager.InvalidateRequerySuggested()
         End Set
     End Property
 
@@ -488,12 +447,9 @@ Public Class MainViewModel
             Return _isSimulationRunning
         End Get
         Set(value As Boolean)
-            If _isSimulationRunning <> value Then
-                _isSimulationRunning = value
-                OnPropertyChanged(NameOf(IsSimulationRunning))
-                OnPropertyChanged(NameOf(AreLayerControlsEnabled))
-                CommandManager.InvalidateRequerySuggested()
-            End If
+            SetProperty(_isSimulationRunning, value)
+            OnPropertyChanged(NameOf(AreLayerControlsEnabled))
+            CommandManager.InvalidateRequerySuggested()
         End Set
     End Property
 
@@ -546,7 +502,22 @@ Public Class MainViewModel
 
     End Sub
 
+    Private Sub OnConfigPropertyChanged(sender As Object, e As PropertyChangedEventArgs)
+        'Wenn sich eine der speicherrelevanten Größen ändert, Speichervorhersage aktualisieren
+        Select Case e.PropertyName
+            Case NameOf(SimulationConfig.StartYear),
+                 NameOf(SimulationConfig.EndYear),
+                 NameOf(SimulationConfig.GridWidth),
+                 NameOf(SimulationConfig.GridHeight),
+                 NameOf(SimulationConfig.TimeStepMode)
+
+                SyncViewFromConfig()
+                UpdateMemoryEstimate()
+        End Select
+    End Sub
+
 #End Region
+
 #Region "--- Memory-Helfer ---"
 
     <StructLayout(LayoutKind.Sequential, CharSet:=CharSet.Auto)>
@@ -603,10 +574,16 @@ Public Class MainViewModel
     End Function
 
     Public Sub UpdateMemoryEstimate()
-        Dim width As Integer = _gridWidth
-        Dim height As Integer = _gridHeight
-        Dim startYear As Integer = _startYear
-        Dim endYear As Integer = _endYear
+        If CurrentConfig Is Nothing Then
+            MemoryEstimateText = "Speicherprognose: n/a"
+            MemoryEstimateBrush = Brushes.Gray
+            Return
+        End If
+
+        Dim width As Integer = CurrentConfig.GridWidth
+        Dim height As Integer = CurrentConfig.GridHeight
+        Dim startYear As Integer = CurrentConfig.StartYear
+        Dim endYear As Integer = CurrentConfig.EndYear
 
         Dim dtYears As Double = GetDtYearsFromMode()
 
@@ -635,6 +612,7 @@ Public Class MainViewModel
 #End Region
 
 #Region "--- DtYears-Helfer ---"
+
     Public Function GetDtYearsFromMode() As Double
         Select Case _timeStepMode
             Case TimeStepMode.Month
@@ -652,12 +630,4 @@ Public Class MainViewModel
 
 #End Region
 
-#Region "--- INotifyPropertyChanged-Implementierung ---"
-    ' 
-    Public Event PropertyChanged As PropertyChangedEventHandler Implements INotifyPropertyChanged.PropertyChanged
-
-    Protected Sub OnPropertyChanged(propName As String)
-        RaiseEvent PropertyChanged(Me, New PropertyChangedEventArgs(propName))
-    End Sub
-#End Region
 End Class

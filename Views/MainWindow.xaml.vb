@@ -41,9 +41,19 @@ Class MainWindow
 
         _engine = _viewModel.Engine
 
+        '--- Gitter und Startjahr initialisieren, idealerweise aus der Config ---
+        Dim cfg As SimulationConfig = _viewModel.CurrentConfig
+        If cfg Is Nothing Then
+            cfg = SimulationConfig.CreateDefault()
+            _viewModel.CurrentConfig = cfg
+            _viewModel.SyncViewFromConfig()
+        End If
+
+        '--- Engine-Grid und Modell aus der Config initialisieren ---
+        _engine.Initialize(cfg.GridWidth, cfg.GridHeight, cfg.StartYear)
+        ApplyConfigToModel()
+
         '--- UI-Handler ---
-        'Auf Änderungen im ViewModel reagieren
-        AddHandler _viewModel.PropertyChanged, AddressOf ViewModel_PropertyChanged
 
         'Auf Command-Events reagieren
         AddHandler _viewModel.StartSimulationRequested, AddressOf OnStartSimulationRequested
@@ -65,40 +75,39 @@ Class MainWindow
         '--- Buttons & Layer initial sperren ---
         _viewModel.IsTemperatureLayerVisible = False
 
-        'Erdoberfläche initialisieren
-        _engine.Initialize(360, 180, 1850)
-        ApplyViewModelToModel()
+        '--- Erdoberfläche initialisieren ---
         RenderSurfaceLayer()
 
-        'Status setzen
+        '--- Status setzen ---
         _viewModel.StatusText = "Bitte Spin-Up starten."
         _viewModel.UpdateMemoryEstimate()
 
     End Sub
 
     Private Async Sub OnSpinUpRequested(sender As Object, e As EventArgs)
+        If _viewModel Is Nothing OrElse _viewModel.CurrentConfig Is Nothing Then Return
 
-        '1) Simulations-Settings lesen
-        Dim startYear As Integer, endYear As Integer
-        Dim dtYears As Double
-        If Not TryReadSimulationSettings(startYear, endYear, dtYears, showMessages:=True) Then
-            Return
-        End If
+        '1) Aktuelle Simulations-Konfiguration aus dem ViewModel holen
+        Dim cfg As SimulationConfig = _viewModel.CurrentConfig
 
-        '2) Gitterauflösung lesen
-        If _viewModel.GridWidth <= 0 OrElse _viewModel.GridHeigth <= 0 Then
+        'Start- und Endjahr aus der Config lesen
+        Dim startYear As Integer = cfg.StartYear
+        Dim endYear As Integer = cfg.EndYear
+
+        'Gitterauflösung lesen
+        If cfg.GridWidth <= 0 OrElse cfg.GridHeight <= 0 Then
             MessageBox.Show("Bitte gültige Rasterauflösung angeben.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
             Return
         End If
-        Dim width As Integer = _viewModel.GridWidth
-        Dim height As Integer = _viewModel.GridHeigth
+        Dim width As Integer = cfg.GridWidth
+        Dim height As Integer = cfg.GridHeight
 
         '3) Spin-Up-Konfiguration anhängig vom TimeStepMode
         Dim spinUpYears As Integer = 200
         Dim spinUpDtYears As Double
         Dim spinUpUseSeasonal As Boolean
 
-        Select Case _viewModel.TimeStepMode
+        Select Case cfg.TimeStepMode
             Case TimeStepMode.Month, TimeStepMode.Quarter   'Feiner Modus -> saisonales EBM
                 spinUpDtYears = 0.25                        'Quartalsschritte zur Beschleunigung des Spin-Ups
                 spinUpUseSeasonal = True
@@ -115,8 +124,8 @@ Class MainWindow
         '5) Engine initialisieren mit spinUpStartYear
         _engine.Initialize(width, height, spinUpStartYear)
 
-        'Lambda aus dem ViewModel ins Modell übernehmen
-        ApplyViewModelToModel()
+        'Config ins Model übernehmen
+        ApplyConfigToModel()
 
         'Basis-Layer rendern
         RenderSurfaceLayer()
@@ -245,19 +254,15 @@ Class MainWindow
             Return
         End If
 
-        Dim startYear As Integer
-        Dim endYear As Integer
-        Dim dtYears As Double
-
-        If Not TryReadSimulationSettings(startYear, endYear, dtYears, showMessages:=True) Then
-            'Ungültige Werte wurden nicht korrigiert -> Abbrechen
-            Exit Sub
-        End If
+        Dim cfg As SimulationConfig = _viewModel.CurrentConfig
+        Dim startYear As Integer = cfg.StartYear
+        Dim endYear As Integer = cfg.EndYear
+        Dim dtYears As Double = _viewModel.GetDtYearsFromMode
 
         _endYear = endYear
 
-        ApplyViewModelToModel()   'Modellparamter einmalig vor Start aus der UI übernehmen
-        ApplyTimeStepModeToModel()      'Gewählten TimeStep an Modell übergeben
+        'Konfiguration ans Model übergeben
+        ApplyConfigToModel()
 
         _viewModel.IsSimulationRunning = True
         _simCts = New CancellationTokenSource()
@@ -298,9 +303,7 @@ Class MainWindow
         _viewModel.SyncConfigFromView()
 
         Dim baseConfig As SimulationConfig = _viewModel.CurrentConfig
-        If baseConfig Is Nothing Then
-            baseConfig = SimulationConfig.CreateDefault()
-        End If
+        If baseConfig Is Nothing Then baseConfig = SimulationConfig.CreateDefault()
 
         'ViewModel für den Dialog (arbeitet auf einem Klon)
         Dim cfgVm As New SimulationConfigViewModel(baseConfig)
@@ -386,20 +389,6 @@ Class MainWindow
 
     Private Sub ImgTemperature_MouseLeave(sender As Object, e As MouseEventArgs)
         ClearStatusBar()
-    End Sub
-
-    Private Sub ViewModel_PropertyChanged(sender As Object, e As PropertyChangedEventArgs)
-        Select Case e.PropertyName
-            Case NameOf(MainViewModel.CO2Value)
-                'CO2 aus dem ViewModel ins Modell übertragen
-                If _engine IsNot Nothing AndAlso _engine.Model IsNot Nothing Then
-                    _engine.Model.CO2ppm = _viewModel.CO2Value
-                End If
-
-            Case NameOf(MainViewModel.Lambda)
-                'Klimasensitivität ins Modell durchreichen
-                ApplyViewModelToModel()
-        End Select
     End Sub
 
     Private Sub ClearStatusBar()
@@ -515,53 +504,6 @@ Class MainWindow
         _viewModel.IsTemperatureLayerVisible = True
     End Sub
 
-    ''' <summary>
-    ''' Liest Startjahr, Endjahr und dt aus den Textboxen und normiert sie.
-    ''' </summary>
-    ''' <param name="startYear">Startjahr der Simulation</param>
-    ''' <param name="endYear">Endjahr der Simulation</param>
-    ''' <param name="dtYears">Simulations-Ticks in Jahren</param>
-    ''' <param name="showMessages">Legt fest, ob Fehlermeldungen angezeigt werden sollen. Wenn False, werden automatisch Standardwerte festgesetzt.</param>
-    ''' <returns>Gibt True zurück, wenn alle Werte korrekt sind oder korrigiert wurden, sonst False</returns>
-    Private Function TryReadSimulationSettings(ByRef startYear As Integer, ByRef endYear As Integer, ByRef dtYears As Double, Optional showMessages As Boolean = True) As Boolean
-
-        If _viewModel Is Nothing Then Return False
-
-        '--- Start- und Endjahr direkt aus dem ViewModel  ---
-        startYear = _viewModel.StartYear
-        endYear = _viewModel.EndYear
-
-        '--- Endjahr > Startjahr erzwingen
-        If endYear <= startYear Then
-            Dim suggestedEnd As Integer = startYear + 250
-
-            If showMessages Then
-                Dim errMsg As MessageBoxResult =
-                    MessageBox.Show($"Das Endjahr muss größer als das Startjahr sein. " &
-                                    $"Soll es auf {suggestedEnd} gesetzt werden?",
-                                    "Warnung",
-                                    MessageBoxButton.YesNo,
-                                    MessageBoxImage.Warning,
-                                    MessageBoxResult.Yes)
-
-                If errMsg = MessageBoxResult.Yes Then
-                    endYear = suggestedEnd
-                    _viewModel.EndYear = suggestedEnd 'ViewModel (und damit TextBox) aktualisieren
-                Else
-                    Return False
-                End If
-            Else
-                endYear = suggestedEnd
-                _viewModel.EndYear = suggestedEnd
-            End If
-        End If
-
-        '--- dtYears kommt jetzt ausschließlich aus dem TimeStepMode---
-        dtYears = _viewModel.GetDtYearsFromMode()
-
-        Return True
-    End Function
-
     Private Sub ApplyTimeStepModeToModel()
         If _engine Is Nothing OrElse _engine.Model Is Nothing Then Return
 
@@ -573,20 +515,18 @@ Class MainWindow
     ''' <summary>
     ''' Übernimmt Parameter aus dem ViewModel ins Klimamodell (aktuell nur Lambda).
     ''' </summary>
-    Private Sub ApplyViewModelToModel()
+    Private Sub ApplyConfigToModel()
         If _engine Is Nothing OrElse _engine.Model Is Nothing OrElse _viewModel Is Nothing Then Return
 
-        '1) Snapshot der aktuellen UI-Werte in die Konfiguration
-        _viewModel.SyncConfigFromView()
-
         Dim cfg As SimulationConfig = _viewModel.CurrentConfig
+        If cfg Is Nothing Then Return
+
         Dim model As ClimateModel2D = _engine.Model
 
-        '2) Allgemeine physikalische Parameter
+        'Allgemeine physikalische Parameter
         model.ClimateSensitivityLambda = cfg.Lambda
-        ' (weitere Modellparameter wie RelaxationTimeScale, Diffusion können wir später ebenfalls in die Config ziehen)
 
-        '3) Solare Zyklen-Parameter ins Modell kopieren
+        'Solare Zyklen
         model.SolarCycleMode = cfg.SolarCycleMode
 
         'Schwabe
@@ -595,7 +535,7 @@ Class MainWindow
         model.SchwabePeriodYears = cfg.SchwabePeriodYears
         model.SchwabePhaseDeg = cfg.SchwabePhaseDeg
 
-        'Magnetic
+        'Magnetischer Zyklus
         model.UseMagneticCycle = cfg.UseMagneticCycle
         model.MagneticAmplitude = cfg.MagneticAmplitude
         model.MagneticPeriodYears = cfg.MagneticPeriodYears
@@ -607,11 +547,12 @@ Class MainWindow
         model.GleissbergPeriodYears = cfg.GleissbergPeriodYears
         model.GleissbergPhaseDeg = cfg.GleissbergPhaseDeg
 
-        'De Vries/Suess
+        'De Vries / Suess
         model.UseDeVriesSuessCycle = cfg.UseDeVriesSuessCycle
         model.DeVriesAmplitude = cfg.DeVriesAmplitude
         model.DeVriesPeriodYears = cfg.DeVriesPeriodYears
         model.DeVriesPhaseDeg = cfg.DeVriesPhaseDeg
+
     End Sub
 
     Private Sub SpinUpUiTimer_Tick(sender As Object, e As EventArgs)
