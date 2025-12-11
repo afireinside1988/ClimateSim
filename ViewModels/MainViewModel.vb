@@ -32,8 +32,6 @@ Public Class MainViewModel
     Private _globalMeanText As String = "0,00 °C"
     Private _currentYearText As String = "1850"
     Private _simTimeText As String = "0,0 Jahre"
-    Private _memoryEstimateText As String = ""
-    Private _memoryEstimateBrush As Brush = Brushes.Black
 
     Private _surfaceImage As ImageSource
     Private _temperatureImage As ImageSource
@@ -148,8 +146,6 @@ Public Class MainViewModel
             End Function
             )
 
-        '--- Speicherprognose aktualisieren
-        UpdateMemoryEstimate()
     End Sub
 
 #Region "--- Properties für Bindings ---"
@@ -173,7 +169,6 @@ Public Class MainViewModel
 
                 OnPropertyChanged(NameOf(CurrentConfig))
 
-                UpdateMemoryEstimate()
             End If
         End Set
     End Property
@@ -291,23 +286,6 @@ Public Class MainViewModel
         End Set
     End Property
 
-    Public Property MemoryEstimateText As String
-        Get
-            Return _memoryEstimateText
-        End Get
-        Set(value As String)
-            SetProperty(_memoryEstimateText, value)
-        End Set
-    End Property
-    Public Property MemoryEstimateBrush As Brush
-        Get
-            Return _memoryEstimateBrush
-        End Get
-        Set(value As Brush)
-            SetProperty(_memoryEstimateBrush, value)
-        End Set
-    End Property
-
     Public Property SurfaceImage As ImageSource
         Get
             Return _surfaceImage
@@ -395,120 +373,7 @@ Public Class MainViewModel
                  NameOf(SimulationConfig.GridHeight),
                  NameOf(SimulationConfig.TimeStepMode)
 
-                UpdateMemoryEstimate()
         End Select
     End Sub
-
-#Region "--- Memory-Helfer ---"
-
-    <StructLayout(LayoutKind.Sequential, CharSet:=CharSet.Auto)>
-    Private Structure MEMORYSTATUSEX
-        Public dwLength As UInteger
-        Public dwMemoryLoad As UInteger
-        Public ullTotalPhys As ULong
-        Public ullAvailPhys As ULong
-        Public ullTotalPageFile As ULong
-        Public ullAvailPageFile As ULong
-        Public ullTotalVirtual As ULong
-        Public ullAvailVirtual As ULong
-        Public ullAvailExtendedVirtual As ULong
-    End Structure
-
-    <DllImport("kernel32.dll", CharSet:=CharSet.Auto, SetLastError:=True)>
-    Private Shared Function GlobalMemoryStatusEx(ByRef lpBuffer As MEMORYSTATUSEX) As Boolean
-    End Function
-
-    Private Shared Function GetAvailablePhysicalMemoryBytes() As Long
-        Dim mem As New MEMORYSTATUSEX()
-        mem.dwLength = CUInt(Marshal.SizeOf(Of MEMORYSTATUSEX)())
-
-        If Not GlobalMemoryStatusEx(mem) Then
-            Return 0
-        End If
-
-        If mem.ullAvailPhys > Long.MaxValue Then
-            Return Long.MaxValue
-        End If
-
-        Return CLng(mem.ullAvailPhys)
-    End Function
-
-    Private Shared Function EstimateMemoryUsageBytes(width As Integer, height As Integer, startYear As Integer, endYear As Integer, dtYears As Double) As Long
-        Dim totalYears As Double = Math.Max(0.0, endYear - startYear)
-        If dtYears <= 0.0 OrElse totalYears <= 0.0 Then Return 0
-
-        Dim steps As Long = CLng(Math.Ceiling(totalYears / dtYears))
-        Dim cells As Long = CLng(width) * CLng(height)
-
-        ' Double pro Zelle
-        Dim bytesPerSnapshot As Double = cells * 8.0
-
-        ' Overhead-Faktor
-        Dim overheadFactor As Double = 1.3 '30% Overhead
-
-        Dim totalBytes As Double = steps * bytesPerSnapshot * overheadFactor
-        If totalBytes > Long.MaxValue Then
-            Return Long.MaxValue
-        End If
-
-        Return CLng(totalBytes)
-    End Function
-
-    Public Sub UpdateMemoryEstimate()
-        If CurrentConfig Is Nothing Then
-            MemoryEstimateText = "Speicherprognose: n/a"
-            MemoryEstimateBrush = Brushes.Gray
-            Return
-        End If
-
-        Dim width As Integer = CurrentConfig.GridWidth
-        Dim height As Integer = CurrentConfig.GridHeight
-        Dim startYear As Integer = CurrentConfig.StartYear
-        Dim endYear As Integer = CurrentConfig.EndYear
-
-        Dim dtYears As Double = GetDtYearsFromMode()
-
-        Dim totalYears As Double = Math.Max(0.0, endYear - startYear)
-        If width <= 0 OrElse height <= 0 OrElse totalYears <= 0 OrElse dtYears <= 0 Then
-            MemoryEstimateText = "Speicherprognose: n/a"
-            MemoryEstimateBrush = Brushes.Gray
-            Return
-        End If
-
-        Dim estimatedBytes As Long = EstimateMemoryUsageBytes(width, height, startYear, endYear, dtYears)
-        Dim availableBytes As Long = GetAvailablePhysicalMemoryBytes()
-
-        Dim estGiB As Double = estimatedBytes / (1024 ^ 3)
-        Dim availGiB As Double = availableBytes / (1024 ^ 3)
-
-        MemoryEstimateText = $"Speicherprognose: ~{estGiB:F2} GiB (frei: {availGiB:F2} GiB)"
-
-        If estimatedBytes > availableBytes Then
-            MemoryEstimateBrush = Brushes.Red
-        Else
-            MemoryEstimateBrush = Brushes.Black
-        End If
-    End Sub
-
-#End Region
-
-#Region "--- DtYears-Helfer ---"
-
-    Public Function GetDtYearsFromMode() As Double
-        Select Case CurrentConfig.TimeStepMode
-            Case TimeStepMode.Month
-                Return (1.0 / 12.0)
-            Case TimeStepMode.Quarter
-                Return 0.25
-            Case TimeStepMode.Year
-                Return 1
-            Case TimeStepMode.Decade
-                Return 10
-            Case Else
-                Return 1
-        End Select
-    End Function
-
-#End Region
 
 End Class

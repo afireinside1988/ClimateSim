@@ -334,4 +334,57 @@ Public Class SimulationConfig
 
         Return cfg
     End Function
+
+    Public Function IsEqualTo(other As SimulationConfig) As Boolean
+        If other Is Nothing Then Return False
+
+        'Allgemein
+        If StartYear <> other.StartYear Then Return False
+        If EndYear <> other.EndYear Then Return False
+        If GridWidth <> other.GridWidth Then Return False
+        If GridHeight <> other.GridHeight Then Return False
+        If TimeStepMode <> other.TimeStepMode Then Return False
+        If Math.Abs(Lambda - other.Lambda) > 0.000001 Then Return False
+
+        'Solar-Forcings
+        If SolarCycleMode <> other.SolarCycleMode Then Return False
+
+        If UseSchwabeCycle <> other.UseSchwabeCycle Then Return False
+        If Math.Abs(SchwabeAmplitude - other.SchwabeAmplitude) > 0.000001 Then Return False
+        If Math.Abs(SchwabePeriodYears - other.SchwabePeriodYears) > 0.000001 Then Return False
+        If Math.Abs(SchwabePhaseDeg - other.SchwabePhaseDeg) > 0.000001 Then Return False
+
+        If UseMagneticCycle <> other.UseMagneticCycle Then Return False
+        If Math.Abs(MagneticAmplitude - other.MagneticAmplitude) > 0.000001 Then Return False
+        If Math.Abs(MagneticPeriodYears - other.MagneticPeriodYears) > 0.000001 Then Return False
+        If Math.Abs(MagneticPhaseDeg - other.MagneticPhaseDeg) > 0.000001 Then Return False
+
+        If UseGleissbergCycle <> other.UseGleissbergCycle Then Return False
+        If Math.Abs(GleissbergAmplitude - other.GleissbergAmplitude) > 0.000001 Then Return False
+        If Math.Abs(GleissbergPeriodYears - other.GleissbergPeriodYears) > 0.000001 Then Return False
+        If Math.Abs(GleissbergPhaseDeg - other.GleissbergPhaseDeg) > 0.000001 Then Return False
+
+        If UseDeVriesSuessCycle <> other.UseDeVriesSuessCycle Then Return False
+        If Math.Abs(DeVriesAmplitude - other.DeVriesAmplitude) > 0.000001 Then Return False
+        If Math.Abs(DeVriesPeriodYears - other.DeVriesPeriodYears) > 0.000001 Then Return False
+        If Math.Abs(DeVriesPhaseDeg - other.DeVriesPhaseDeg) > 0.000001 Then Return False
+
+        Return True
+
+    End Function
+    Public Function GetDtYearsFromMode() As Double
+        Select Case TimeStepMode
+            Case TimeStepMode.Month
+                Return (1.0 / 12.0)
+            Case TimeStepMode.Quarter
+                Return 0.25
+            Case TimeStepMode.Year
+                Return 1
+            Case TimeStepMode.Decade
+                Return 10
+            Case Else
+                Return 1
+        End Select
+    End Function
+
 End Class

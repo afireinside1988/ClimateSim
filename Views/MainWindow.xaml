@@ -82,11 +82,8 @@
                     <StatusBarItem>
                         <TextBlock Text="{Binding StatusSurfaceText}" Margin="0,0,50,0"/>
                     </StatusBarItem>
-                    <StatusBarItem>
-                        <TextBlock Text="{Binding StatusText}"/>
-                    </StatusBarItem>
                     <StatusBarItem HorizontalAlignment="Right">
-                        <TextBlock Text="{Binding MemoryEstimateText}" Foreground="{Binding MemoryEstimateBrush}"/>
+                        <TextBlock Text="{Binding StatusText}"/>
                     </StatusBarItem>
                 </StatusBar>
             </Grid>
@@ -97,9 +94,9 @@
             <TextBlock FontSize="20" FontWeight="Bold" Margin="0,0,0,10" HorizontalAlignment="Center" Text="{Binding ProductName}"/>
             <TextBlock Text="Gitternetz-Auflösung:" FontWeight="SemiBold" />
             <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
-                <TextBlock Text="Breite (Lon):" VerticalAlignment="Center"/>
+                <TextBlock Text="Breite (Lon):"/>
                     <TextBlock Margin="5,0,0,0" FontFamily="Consolas" MinWidth="50" VerticalAlignment="Bottom" Text="{Binding CurrentConfig.GridWidth}"/>
-                    <TextBlock Text="Höhe (Lat):" VerticalAlignment="Center"/>
+                    <TextBlock Text="Höhe (Lat):"/>
                     <TextBlock Margin="5,0,0,0" FontFamily="Consolas" MinWidth="50" VerticalAlignment="Bottom" Text="{Binding CurrentConfig.GridHeight}"/>
                 </StackPanel>
 
@@ -124,12 +121,12 @@
             </StackPanel>
 
             <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
-                <TextBlock Text="Startjahr der Simulation:" FontWeight="SemiBold"/>
+                    <TextBlock Text="Startjahr der Simulation:" FontWeight="SemiBold"/>
                     <TextBlock Margin="5,0,0,0" FontFamily="Consolas" Text="{Binding CurrentConfig.StartYear}"/>
                 </StackPanel>
 
             <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
-                <TextBlock Text="Endjahr der Simulation:" FontWeight="SemiBold"/>
+                    <TextBlock Text="Endjahr der Simulation:" FontWeight="SemiBold"/>
                     <TextBlock Margin="5,0,0,0" FontFamily="Consolas" Text="{Binding CurrentConfig.EndYear}"/>
                 </StackPanel>
 

@@ -79,7 +79,6 @@ Class MainWindow
 
         '--- Status setzen ---
         _viewModel.StatusText = "Bitte Spin-Up starten."
-        _viewModel.UpdateMemoryEstimate()
 
     End Sub
 
@@ -240,7 +239,7 @@ Class MainWindow
             Return
         End If
 
-        Dim dtYears As Double = _viewModel.GetDtYearsFromMode()
+        Dim dtYears As Double = _viewModel.CurrentConfig.GetDtYearsFromMode()
 
         SimulateOneStep(dtYears)
 
@@ -256,7 +255,7 @@ Class MainWindow
         Dim cfg As SimulationConfig = _viewModel.CurrentConfig
         Dim startYear As Integer = cfg.StartYear
         Dim endYear As Integer = cfg.EndYear
-        Dim dtYears As Double = _viewModel.GetDtYearsFromMode
+        Dim dtYears As Double = _viewModel.CurrentConfig.GetDtYearsFromMode
 
         _endYear = endYear
 
