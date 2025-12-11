@@ -195,7 +195,7 @@ Public Class ClimateModel2D
     ''' </summary>
     ''' <param name="latitudeDeg"></param>
     ''' <returns></returns>
-    Private Function ComputeBudykoInsolationFactor(latitudeDeg As Double) As Double
+    Private Shared Function ComputeBudykoInsolationFactor(latitudeDeg As Double) As Double
         Dim latRad As Double = Mathematics.DegToRad(latitudeDeg)
         Dim sinPhi As Double = Math.Sin(latRad)
 
@@ -330,4 +330,5 @@ Public Class ClimateModel2D
 
         Return 1.0
     End Function
+
 End Class

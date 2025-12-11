@@ -533,7 +533,42 @@ Class MainWindow
     Private Sub ApplyViewModelToModel()
         If _engine Is Nothing OrElse _engine.Model Is Nothing OrElse _viewModel Is Nothing Then Return
 
-        _engine.Model.ClimateSensitivityLambda = _viewModel.Lambda
+        '1) Snapshot der aktuellen UI-Werte in die Konfiguration
+        _viewModel.SyncConfigFromView()
+
+        Dim cfg As SimulationConfig = _viewModel.CurrentConfig
+        Dim model As ClimateModel2D = _engine.Model
+
+        '2) Allgemeine physikalische Parameter
+        model.ClimateSensitivityLambda = cfg.Lambda
+        ' (weitere Modellparameter wie RelaxationTimeScale, Diffusion können wir später ebenfalls in die Config ziehen)
+
+        '3) Solare Zyklen-Parameter ins Modell kopieren
+        model.SolarCycleMode = cfg.SolarCycleMode
+
+        'Schwabe
+        model.UseSchwabeCycle = cfg.UseSchwabeCycle
+        model.SchwabeAmplitude = cfg.SchwabeAmplitude
+        model.SchwabePeriodYears = cfg.SchwabePeriodYears
+        model.SchwabePhaseDeg = cfg.SchwabePhaseDeg
+
+        'Magnetic
+        model.UseMagneticCycle = cfg.UseMagneticCycle
+        model.MagneticAmplitude = cfg.MagneticAmplitude
+        model.MagneticPeriodYears = cfg.MagneticPeriodYears
+        model.MagneticPhaseDeg = cfg.MagneticPhaseDeg
+
+        'Gleissberg
+        model.UseGleissbergCycle = cfg.UseGleissbergCycle
+        model.GleissbergAmplitude = cfg.GleissbergAmplitude
+        model.GleissbergPeriodYears = cfg.GleissbergPeriodYears
+        model.GleissbergPhaseDeg = cfg.GleissbergPhaseDeg
+
+        'De Vries/Suess
+        model.UseDeVriesSuessCycle = cfg.UseDeVriesSuessCycle
+        model.DeVriesAmplitude = cfg.DeVriesAmplitude
+        model.DeVriesPeriodYears = cfg.DeVriesPeriodYears
+        model.DeVriesPhaseDeg = cfg.DeVriesPhaseDeg
     End Sub
 
     Private Sub SpinUpUiTimer_Tick(sender As Object, e As EventArgs)

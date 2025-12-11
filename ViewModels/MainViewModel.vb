@@ -13,12 +13,15 @@ Public Class MainViewModel
 
 #Region "--- Simulations- / UI-Parameter, die aktuell in TextBoxen / Labels liegen ---"
 
-    Private _startYear As Integer = 1850
-    Private _endYear As Integer = 2100
-    Private _gridWidth As Integer = 360
-    Private _gridHeight As Integer = 180
+    'Aktuelle Simulationskonfiguratiuon (später JSON-persistierbar)
+    Public Property CurrentConfig As SimulationConfig
 
-    Private _timeStepMode As TimeStepMode = TimeStepMode.Year
+    Private _startYear As Integer
+    Private _endYear As Integer
+    Private _gridWidth As Integer
+    Private _gridHeight As Integer
+
+    Private _timeStepMode As TimeStepMode
     Private _timeStepIndex As Integer = 2                   '0=Monat, 1=Quartal, 2=Jahr, 3=Dekade
     Private _dtModeText As String = "1 Jahr"
 
@@ -76,6 +79,12 @@ Public Class MainViewModel
 
     Public Sub New()
         Engine = New SimulationEngine()
+
+        '---Simulationskonfiguration initialisieren ---
+        CurrentConfig = SimulationConfig.CreateDefault()
+        'View-Properties an die Config anpassen (damit alles synchron startet)
+        SyncViewFromConfig()
+
         Engine.CO2Scenario = New DefaultCo2Scenario()
         Engine.EarthSurfaceProvider = New ToyEarthSurfaceProvider()
 
@@ -477,6 +486,84 @@ Public Class MainViewModel
 
 #End Region
 
+#Region "--- Konfig-Sync (View <-> Config) ---"
+    ''' <summary>
+    ''' Überträgt die Werte aus CurrentConfig in die ViewModel-Properties
+    ''' </summary>
+    Public Sub SyncViewFromConfig()
+        If CurrentConfig Is Nothing Then Return
+
+        'Allgemeine Parameter
+        StartYear = CurrentConfig.StartYear
+        EndYear = CurrentConfig.EndYear
+        GridWidth = CurrentConfig.GridWidth
+        GridHeigth = CurrentConfig.GridHeight
+        TimeStepMode = CurrentConfig.TimeStepMode
+
+        'TimeStepIndex mitziehen, damit der Slider passt
+        Select Case TimeStepMode
+            Case TimeStepMode.Month
+                TimeStepIndex = 0
+            Case TimeStepMode.Quarter
+                TimeStepIndex = 1
+            Case TimeStepMode.Year
+                TimeStepIndex = 2
+            Case TimeStepMode.Decade
+                TimeStepIndex = 3
+        End Select
+
+        Lambda = CurrentConfig.Lambda
+    End Sub
+
+    ''' <summary>
+    ''' Überträgt die aktuellen ViewModel-Properties in CurrentConfig
+    ''' </summary>
+    Public Sub SyncConfigFromView()
+        If CurrentConfig Is Nothing Then
+            CurrentConfig = New SimulationConfig()
+        End If
+
+        'Allgemeine Paramter
+        CurrentConfig.StartYear = Me.StartYear
+        CurrentConfig.EndYear = Me.EndYear
+        CurrentConfig.GridWidth = Me.GridWidth
+        CurrentConfig.GridHeight = Me.GridHeigth
+        CurrentConfig.TimeStepMode = Me.TimeStepMode
+        CurrentConfig.Lambda = Me.Lambda
+
+        'Solare Parameter kommen aus dem Modell
+        If Engine IsNot Nothing AndAlso Engine.Model IsNot Nothing Then
+            Dim m As ClimateModel2D = Engine.Model
+
+            CurrentConfig.SolarCycleMode = m.SolarCycleMode
+
+            'Schwabe
+            CurrentConfig.UseSchwabeCycle = m.UseSchwabeCycle
+            CurrentConfig.SchwabeAmplitude = m.SchwabeAmplitude
+            CurrentConfig.SchwabePeriodYears = m.SchwabePeriodYears
+            CurrentConfig.SchwabePhaseDeg = m.SchwabePhaseDeg
+
+            'Magnetic
+            CurrentConfig.UseMagneticCycle = m.UseMagneticCycle
+            CurrentConfig.MagneticAmplitude = m.MagneticAmplitude
+            CurrentConfig.MagneticPeriodYears = m.MagneticPeriodYears
+            CurrentConfig.MagneticPhaseDeg = m.MagneticPhaseDeg
+
+            'Gleissberg
+            CurrentConfig.UseGleissbergCycle = m.UseGleissbergCycle
+            CurrentConfig.GleissbergAmplitude = m.GleissbergAmplitude
+            CurrentConfig.GleissbergPeriodYears = m.GleissbergPeriodYears
+            CurrentConfig.GleissbergPhaseDeg = m.GleissbergPhaseDeg
+
+            'De Vries/Suess
+            CurrentConfig.UseDeVriesSuessCycle = m.UseDeVriesSuessCycle
+            CurrentConfig.DeVriesAmplitude = m.DeVriesAmplitude
+            CurrentConfig.DeVriesPeriodYears = m.DeVriesPeriodYears
+            CurrentConfig.DeVriesPhaseDeg = m.DeVriesPhaseDeg
+        End If
+    End Sub
+
+#End Region
 #Region "--- Memory-Helfer ---"
 
     <StructLayout(LayoutKind.Sequential, CharSet:=CharSet.Auto)>
