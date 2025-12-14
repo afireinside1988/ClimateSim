@@ -15,6 +15,20 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <conv:BooleanNotConverter x:Key="NotConverter"/>
+        
+        <!-- Error-Style für ToolTips -->
+        <Style TargetType="{x:Type TextBox}" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Style.Triggers>
+                <Trigger Property="Validation.HasError" Value="True">
+                    <Setter Property="ToolTip"
+                            Value="{Binding RelativeSource={RelativeSource Self},
+                                            Path=(Validation.Errors)[0].ErrorContent}"/>
+                </Trigger>
+                <Trigger Property="Validation.HasError" Value="False">
+                    <Setter Property="ToolTip" Value="{x:Null}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="10">
@@ -49,26 +63,22 @@
 
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Breite (Lon):" VerticalAlignment="Center"/>
                     <TextBox Grid.Row="1" Grid.Column="1" Width="80" Margin="10,0,10,0"
-                             climatesim:TextBoxInputFilter.IsIntegerInput="True"
-                             Text="{Binding GridWidth, UpdateSourceTrigger=PropertyChanged}"/>
+                             Text="{Binding TestDoubleText, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True, NotifyOnValidationError=True}"/>
 
                     <TextBlock Grid.Row="1" Grid.Column="2" Text="Höhe (Lat):" VerticalAlignment="Center"/>
                     <TextBox Grid.Row="1" Grid.Column="3" Width="80" HorizontalAlignment="Left" Margin="10,0,0,0"
-                             climatesim:TextBoxInputFilter.IsIntegerInput="True"
-                             Text="{Binding GridHeight, UpdateSourceTrigger=PropertyChanged}"/>
+                             Text="{Binding GridHeightText, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True, NotifyOnValidationError=True}"/>
                     
                     <!-- Zeit -->
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Zeitsteuerung:" FontWeight="Bold" Margin="0,20,0,5"/>
                     
                     <TextBlock Grid.Row="3" Grid.Column="0" Text="Startjahr:"/>
                     <TextBox Grid.Row="3" Grid.Column="1" Width="80" Margin="10,0,10,0"
-                             climatesim:TextBoxInputFilter.IsNegativeIntegerInput="True"
-                             Text="{Binding StartYear, UpdateSourceTrigger=PropertyChanged}"/>
+                             Text="{Binding StartYearText, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True, NotifyOnValidationError=True}"/>
 
                     <TextBlock Grid.Row="3" Grid.Column="2" Text="Endjahr:"/>
                     <TextBox Grid.Row="3" Grid.Column="3" Width="80" HorizontalAlignment="Left" Margin="10,0,0,0"
-                             climatesim:TextBoxInputFilter.IsNegativeIntegerInput="True"
-                             Text="{Binding EndYear, UpdateSourceTrigger=PropertyChanged}"/>
+                             Text="{Binding EndYearText, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True, NotifyOnValidationError=True}"/>
                     
                     <!-- Simulationsschritt -->
                     <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,5,0,0" Text="Simulationsschritt:"/>
@@ -293,6 +303,7 @@
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
             <Button Width="90" Height="28" Margin="0,0,10,0" Content="OK"
                     IsDefault="True"
+                    IsEnabled="{Binding HasErrors, Converter={StaticResource NotConverter}}"
                     Command="{Binding OkCommand}"/>
             <Button Width="90" Height="28" Content="Abbrechen"
                     IsCancel="True"/>

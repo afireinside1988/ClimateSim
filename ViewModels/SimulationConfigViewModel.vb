@@ -2,12 +2,20 @@
 Imports System.Windows.Media
 Imports System.Runtime.InteropServices
 Imports System.Windows.Input
+Imports System.CodeDom
+Imports System.Collections
+Imports System.Globalization
+Imports System.Xml
+Imports System.Reflection.Metadata
 
 Public Class SimulationConfigViewModel
     Inherits ViewModelBase
+    Implements INotifyDataErrorInfo
 
     Private ReadOnly _config As SimulationConfig
     Private ReadOnly _originalConfig As SimulationConfig
+
+    Private _testDouble As Double
 
     Private _memoryEstimateText As String = ""
     Private _memoryEstimateBrush As Brush = Brushes.Black
@@ -15,8 +23,8 @@ Public Class SimulationConfigViewModel
     '--- Commands ---
     Public Event OkRequested As EventHandler
     Public Event CancelRequested As EventHandler
+    Public Event FocusFirstErrorRequested As EventHandler
     Public ReadOnly Property OkCommand As ICommand
-
 
 #Region "Felder für Speicherprognose"
 
@@ -41,6 +49,29 @@ Public Class SimulationConfigViewModel
 
 #Region "Allgemeine Parameter"
 
+    Public Property TestDouble As Double
+        Get
+            Return _testDouble
+        End Get
+        Set(value As Double)
+            If Math.Abs(_testDouble - value) > 0.0001 Then
+                _testDouble = value
+                OnPropertyChanged(NameOf(TestDouble))
+            End If
+        End Set
+    End Property
+    Private _testDoubleText As String = "1,3"
+    Public Property TestDoubleText As String
+        Get
+            Return _testDoubletext
+        End Get
+        Set(value As String)
+            If SetProperty(_testDoubleText, value) Then
+                ValidateTestDouble()
+            End If
+        End Set
+    End Property
+
     Public Property StartYear As Integer
         Get
             Return _config.StartYear
@@ -49,7 +80,21 @@ Public Class SimulationConfigViewModel
             If _config.StartYear <> value Then
                 _config.StartYear = value
                 OnPropertyChanged(NameOf(StartYear))
+                OnPropertyChanged(NameOf(EndYear))
                 UpdateMemoryEstimate()
+            End If
+        End Set
+    End Property
+    Private _startYearText As String
+    Public Property StartYearText As String
+        Get
+            Return _startYearText
+        End Get
+        Set(value As String)
+            If SetProperty(_startYearText, value) Then
+                ValidateStartYear()
+                ValidateYearRelation()
+                ApplyToConfigIfPossible()
             End If
         End Set
     End Property
@@ -61,7 +106,21 @@ Public Class SimulationConfigViewModel
             If _config.EndYear <> value Then
                 _config.EndYear = value
                 OnPropertyChanged(NameOf(EndYear))
+                OnPropertyChanged(NameOf(StartYear))
                 UpdateMemoryEstimate()
+            End If
+        End Set
+    End Property
+    Private _endYearText As String
+    Public Property EndYearText As String
+        Get
+            Return _endYearText
+        End Get
+        Set(value As String)
+            If SetProperty(_endYearText, value) Then
+                ValidateEndYear()
+                ValidateYearRelation()
+                ApplyToConfigIfPossible()
             End If
         End Set
     End Property
@@ -78,6 +137,18 @@ Public Class SimulationConfigViewModel
             End If
         End Set
     End Property
+    Private _gridWidthText As String
+    Public Property GridWidthText As String
+        Get
+            Return _gridWidthText
+        End Get
+        Set(value As String)
+            If SetProperty(_gridWidthText, value) Then
+                ValidateGridWidth()
+                ApplyToConfigIfPossible()
+            End If
+        End Set
+    End Property
     Public Property GridHeight As Integer
         Get
             Return _config.GridHeight
@@ -87,6 +158,18 @@ Public Class SimulationConfigViewModel
                 _config.GridHeight = value
                 OnPropertyChanged(NameOf(GridHeight))
                 UpdateMemoryEstimate()
+            End If
+        End Set
+    End Property
+    Private _gridHeightText As String
+    Public Property GridHeightText As String
+        Get
+            Return _gridHeightText
+        End Get
+        Set(value As String)
+            If SetProperty(_gridHeightText, value) Then
+                ValidateGridHeight()
+                ApplyToConfigIfPossible()
             End If
         End Set
     End Property
@@ -424,6 +507,26 @@ Public Class SimulationConfigViewModel
         'Snapshot für späteren Vergleich
         _originalConfig = _config.Clone()
 
+        'Editor-Strings initialisieren (Culture-aware)
+        StartYearText = _config.StartYear.ToString(_culture)
+        EndYearText = _config.EndYear.ToString(_culture)
+        GridWidthText = _config.GridWidth.ToString(_culture)
+        GridHeightText = _config.GridHeight.ToString(_culture)
+
+        'Optional TestDouble
+        TestDoubleText = _testDoubleText.ToString(_culture)
+
+        'initial validieren (damit OK initial korrekt disabled ist)
+        ValidateStartYear()
+        ValidateEndYear()
+        ValidateYearRelation()
+        ValidateGridWidth()
+        ValidateGridHeight()
+
+        ValidateTestDouble()
+
+        ApplyToConfigIfPossible()
+
         '--- Commands initialisieren ---
         OkCommand = New RelayCommand(Of Object)(
             Sub(o As Object)
@@ -434,15 +537,23 @@ Public Class SimulationConfigViewModel
     End Sub
 
     Private Sub ExecuteOk()
-        '1) Auf Änderungen prüfen
-        If _config.IsEqualTo(_originalConfig) Then
-            RaiseEvent CancelRequested(Me, EventArgs.Empty)
+
+        'Wenn Errors: Fokus auf erstes Feld anfordern (Ok sollte eigentlich disabled sein)
+        If HasErrors Then
+            RaiseEvent FocusFirstErrorRequested(Me, EventArgs.Empty)
             Return
         End If
 
-        '2) Einfache Konsistenzprüfung: Startjahr < Endjahr
-        If EndYear <= StartYear Then
-            MessageBox.Show("Das Endjahr muss größer als das Startjahr sein.", "Ungültige Konfiguration", MessageBoxButton.OK, MessageBoxImage.Warning)
+        'Sicherstellen, dass Editor -> Config geschrieben ist
+        ApplyToConfigIfPossible()
+        If HasErrors Then
+            RaiseEvent FocusFirstErrorRequested(Me, EventArgs.Empty)
+            Return
+        End If
+
+        '1) Auf Änderungen prüfen
+        If _config.IsEqualTo(_originalConfig) Then
+            RaiseEvent CancelRequested(Me, EventArgs.Empty)
             Return
         End If
 
@@ -539,6 +650,153 @@ Public Class SimulationConfigViewModel
         End If
     End Sub
 
+#End Region
+
+#Region "Validation/Errors"
+
+    Private ReadOnly _errors As New Dictionary(Of String, List(Of String))()
+    Private ReadOnly _culture As CultureInfo = CultureInfo.CurrentUICulture
+    Public Event ErrorsChanged As EventHandler(Of DataErrorsChangedEventArgs) Implements INotifyDataErrorInfo.ErrorsChanged
+
+    Public ReadOnly Property HasErrors As Boolean Implements INotifyDataErrorInfo.HasErrors
+        Get
+            Return _errors.Values.Any(Function(l) l IsNot Nothing AndAlso l.Count > 0)
+        End Get
+    End Property
+
+    Public Function GetErrors(propertyName As String) As IEnumerable Implements INotifyDataErrorInfo.GetErrors
+        If String.IsNullOrEmpty(propertyName) Then
+            Return _errors.SelectMany(Function(kv) kv.Value).ToList()
+        End If
+
+        Dim list As List(Of String) = Nothing
+        If _errors.TryGetValue(propertyName, list) Then
+            Return list
+        End If
+
+        Return Enumerable.Empty(Of String)()
+    End Function
+
+    Private Sub SetErrors(propertyName As String, ParamArray messages() As String)
+        Dim clean As List(Of String) = If(messages, Array.Empty(Of String)()).Where(Function(m) Not String.IsNullOrWhiteSpace(m)).ToList()
+
+        If clean.Count = 0 Then
+            If _errors.Remove(propertyName) Then
+                RaiseEvent ErrorsChanged(Me, New DataErrorsChangedEventArgs(propertyName))
+                OnPropertyChanged(NameOf(HasErrors))
+            End If
+            Return
+        End If
+
+        _errors(propertyName) = clean
+        RaiseEvent ErrorsChanged(Me, New DataErrorsChangedEventArgs(propertyName))
+        OnPropertyChanged(NameOf(HasErrors))
+    End Sub
+
+    Private Function TryParseInt(text As String, ByRef value As Integer) As Boolean
+        Return Integer.TryParse(text, NumberStyles.Integer, _culture, value)
+    End Function
+
+    Private Function TryParseDouble(text As String, ByRef value As Double) As Boolean
+        Return Double.TryParse(text, NumberStyles.Float, _culture, value)
+    End Function
+
+    Private Sub ValidateStartYear()
+        Dim v As Integer
+        If String.IsNullOrWhiteSpace(StartYearText) Then
+            SetErrors(NameOf(StartYearText), "Bitte ein Startjahr eingeben.")
+        ElseIf Not TryParseInt(StartYearText, v) Then
+            SetErrors(NameOf(StartYearText), "Ungültige Zahl. Bitte ein ganzzahliges Jahr eingeben. (z.B. -500, 1850)")
+        Else
+            SetErrors(NameOf(StartYearText))
+        End If
+    End Sub
+
+    Private Sub ValidateEndYear()
+        Dim v As Integer
+        If String.IsNullOrWhiteSpace(EndYearText) Then
+            SetErrors(NameOf(EndYearText), "Bitte ein Endjahr eingeben.")
+        ElseIf Not TryParseInt(EndYearText, v) Then
+            SetErrors(NameOf(EndYearText), "Ungültige Zahl. Bitte ein ganzzahliges Jahr eingeben. (z.B. -500, 1850)")
+        Else
+            SetErrors(NameOf(EndYearText))
+        End If
+    End Sub
+
+    Private Sub ValidateYearRelation()
+        Dim s As Integer, e As Integer
+        If TryParseInt(StartYearText, s) AndAlso TryParseInt(EndYearText, e) Then
+            If e <= s Then
+                SetErrors(NameOf(StartYearText), "Das Startjahr muss kleiner als das Endjahr sein.")
+                SetErrors(NameOf(EndYearText), "Das Endjahr muss größer als das Startjahr sein.")
+            Else
+                SetErrors(NameOf(StartYearText))
+                SetErrors(NameOf(EndYearText))
+            End If
+        End If
+    End Sub
+
+    Private Sub ValidateGridWidth()
+        Dim v As Integer
+        If String.IsNullOrWhiteSpace(GridWidthText) Then
+            SetErrors(NameOf(GridWidthText), "Bitte eine Gitternetzbreite eingeben.")
+        ElseIf Not TryParseInt(GridWidthText, v) Then
+            SetErrors(NameOf(GridWidthText), "Ungültige Zahl. Bitte eine ganze Zahl eingeben.")
+        ElseIf v <= 0 Then
+            SetErrors(NameOf(GridWidthText), "Die Gitternetzbreite muss größer als 0 sein.")
+        Else
+            SetErrors(NameOf(GridWidthText))
+        End If
+    End Sub
+
+    Private Sub ValidateGridHeight()
+        Dim v As Integer
+        If String.IsNullOrWhiteSpace(GridHeightText) Then
+            SetErrors(NameOf(GridHeightText), "Bitte eine Gitternetzhöhe eingeben.")
+        ElseIf Not TryParseInt(GridHeightText, v) Then
+            SetErrors(NameOf(GridHeightText), "Ungültige Zahl. Bitte eine ganze Zahl eingeben.")
+        ElseIf v <= 0 Then
+            SetErrors(NameOf(GridHeightText), "Die Gitternetzhöhe muss größer als 0 sein.")
+        Else
+            SetErrors(NameOf(GridHeightText))
+        End If
+    End Sub
+
+    Private Sub ValidateTestDouble()
+        Dim v As Double
+        If String.IsNullOrWhiteSpace(TestDoubleText) Then
+            SetErrors(NameOf(TestDoubleText), "Bitte eine Zahl eingeben.")
+        ElseIf Not TryParseDouble(TestDoubleText, v) Then
+            SetErrors(NameOf(TestDoubleText), "Ungültige Zahl. Bitte eine Dezimalzahl eingeben.")
+        Else
+            SetErrors(NameOf(TestDoubleText))
+        End If
+    End Sub
+
+    Private Sub ApplyToConfigIfPossible()
+        'Wenn irgendwas (noch) fehlerhaft ist: Config nicht überschreiben
+        If HasErrors Then
+            'Optional: MemoryEstimate auf n/a setzen
+            Return
+        End If
+
+        Dim sYear As Integer
+        Dim eYear As Integer
+        Dim gWidth As Integer
+        Dim gHeight As Integer
+
+        If Not TryParseInt(StartYearText, sYear) Then Return
+        If Not TryParseInt(EndYearText, eYear) Then Return
+        If Not TryParseInt(GridWidthText, gWidth) Then Return
+        If Not TryParseInt(GridHeightText, gHeight) Then Return
+
+        _config.StartYear = sYear
+        _config.EndYear = eYear
+        _config.GridWidth = gWidth
+        _config.GridHeight = gHeight
+
+        UpdateMemoryEstimate()
+    End Sub
 #End Region
 
 End Class
