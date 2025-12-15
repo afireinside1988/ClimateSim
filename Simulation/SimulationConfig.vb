@@ -3,6 +3,15 @@
 Public Class SimulationConfig
     Inherits ViewModelBase
 
+#Region "Versionierung"
+
+    Public Const CurrentConfigVersion As Integer = 1
+
+    'Schema-Version der Config-Datei
+    Public Property ConfigVersion As Integer = CurrentConfigVersion
+
+#End Region
+
 #Region "Private Felder"
 
     Private _startYear As Integer

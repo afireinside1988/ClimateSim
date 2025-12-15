@@ -71,82 +71,6 @@ Public Class MainViewModel
 
 #End Region
 
-    Public Sub New()
-        Engine = New SimulationEngine()
-
-        '---Simulationskonfiguration initialisieren ---
-        CurrentConfig = SimulationConfig.CreateDefault()
-
-        Engine.CO2Scenario = New DefaultCo2Scenario()
-        Engine.EarthSurfaceProvider = New ToyEarthSurfaceProvider()
-
-        '--- Commands initialisieren ---
-
-        'Start: async Command
-        StartCommand = New AsyncRelayCommand(Of Object)(
-            Async Function(o As Object) As Task
-                'Code-Behind reagiert dann im Event-Handler (async Sub)
-                RaiseEvent StartSimulationRequested(Me, EventArgs.Empty)
-                Await Task.CompletedTask
-            End Function,
-            Function(o As Object) As Boolean
-                'Start nur möglich, wenn initialisiert und nicht gerade eine Simulation läuft
-                Return IsInitialized AndAlso Not IsSimulationRunning
-            End Function)
-
-        'Stop: synchron
-        StopCommand = New RelayCommand(Of Object)(
-            Sub(o As Object)
-                RaiseEvent StopSimulationRequested(Me, EventArgs.Empty)
-            End Sub,
-            Function(o As Object) As Boolean
-                'Stop nur sinnvoll, wenn gerade etwas läuft
-                Return IsSimulationRunning
-            End Function)
-
-        'Spin-Up: async Command
-        SpinUpCommand = New AsyncRelayCommand(Of Object)(
-            Async Function(o As Object) As Task
-                RaiseEvent SpinUpRequested(Me, EventArgs.Empty)
-                Await Task.CompletedTask
-            End Function,
-            Function(o As Object) As Boolean
-                'Spin-Up starten, wenn aktuell nichts läuft
-                Return Not IsSimulationRunning
-            End Function)
-
-        'Step: synchron
-        StepCommand = New RelayCommand(Of Object)(
-            Sub(o As Object)
-                RaiseEvent StepRequested(Me, EventArgs.Empty)
-            End Sub,
-            Function(o As Object) As Boolean
-                'Einzelschritt nur, wenn initialisiert wurde und nichts läuft
-                Return IsInitialized AndAlso Not IsSimulationRunning
-            End Function)
-
-        'Verlauf aufrufen: synchron
-        ShowHistoryCommand = New RelayCommand(Of Object)(
-            Sub(o As Object)
-                RaiseEvent ShowHistoryRequested(Me, EventArgs.Empty)
-            End Sub,
-            Function(o As Object) As Boolean
-                'Verlauf nur, wenn initialisiert ist und es Daten gibt
-                Return IsInitialized AndAlso Engine IsNot Nothing AndAlso Engine.History IsNot Nothing AndAlso Engine.History.Count > 0
-            End Function)
-
-        'Simulations-Konfiguration aufrufen
-        SimulationConfigCommand = New RelayCommand(Of Object)(
-            Sub(o As Object)
-                RaiseEvent SimulationConfigRequested(Me, EventArgs.Empty)
-            End Sub,
-            Function(o As Object) As Boolean
-                'Konfiguration nur ändern, wenn gerade keine Simulation läuft
-                Return Not IsSimulationRunning
-            End Function
-            )
-
-    End Sub
 
 #Region "--- Properties für Bindings ---"
 
@@ -363,6 +287,83 @@ Public Class MainViewModel
     End Property
 
 #End Region
+
+    Public Sub New()
+        Engine = New SimulationEngine()
+
+        '---Simulationskonfiguration initialisieren ---
+        CurrentConfig = ConfigStore.LoadOrCreateDefault()
+
+        Engine.CO2Scenario = New DefaultCo2Scenario()
+        Engine.EarthSurfaceProvider = New ToyEarthSurfaceProvider()
+
+        '--- Commands initialisieren ---
+
+        'Start: async Command
+        StartCommand = New AsyncRelayCommand(Of Object)(
+            Async Function(o As Object) As Task
+                'Code-Behind reagiert dann im Event-Handler (async Sub)
+                RaiseEvent StartSimulationRequested(Me, EventArgs.Empty)
+                Await Task.CompletedTask
+            End Function,
+            Function(o As Object) As Boolean
+                'Start nur möglich, wenn initialisiert und nicht gerade eine Simulation läuft
+                Return IsInitialized AndAlso Not IsSimulationRunning
+            End Function)
+
+        'Stop: synchron
+        StopCommand = New RelayCommand(Of Object)(
+            Sub(o As Object)
+                RaiseEvent StopSimulationRequested(Me, EventArgs.Empty)
+            End Sub,
+            Function(o As Object) As Boolean
+                'Stop nur sinnvoll, wenn gerade etwas läuft
+                Return IsSimulationRunning
+            End Function)
+
+        'Spin-Up: async Command
+        SpinUpCommand = New AsyncRelayCommand(Of Object)(
+            Async Function(o As Object) As Task
+                RaiseEvent SpinUpRequested(Me, EventArgs.Empty)
+                Await Task.CompletedTask
+            End Function,
+            Function(o As Object) As Boolean
+                'Spin-Up starten, wenn aktuell nichts läuft
+                Return Not IsSimulationRunning
+            End Function)
+
+        'Step: synchron
+        StepCommand = New RelayCommand(Of Object)(
+            Sub(o As Object)
+                RaiseEvent StepRequested(Me, EventArgs.Empty)
+            End Sub,
+            Function(o As Object) As Boolean
+                'Einzelschritt nur, wenn initialisiert wurde und nichts läuft
+                Return IsInitialized AndAlso Not IsSimulationRunning
+            End Function)
+
+        'Verlauf aufrufen: synchron
+        ShowHistoryCommand = New RelayCommand(Of Object)(
+            Sub(o As Object)
+                RaiseEvent ShowHistoryRequested(Me, EventArgs.Empty)
+            End Sub,
+            Function(o As Object) As Boolean
+                'Verlauf nur, wenn initialisiert ist und es Daten gibt
+                Return IsInitialized AndAlso Engine IsNot Nothing AndAlso Engine.History IsNot Nothing AndAlso Engine.History.Count > 0
+            End Function)
+
+        'Simulations-Konfiguration aufrufen
+        SimulationConfigCommand = New RelayCommand(Of Object)(
+            Sub(o As Object)
+                RaiseEvent SimulationConfigRequested(Me, EventArgs.Empty)
+            End Sub,
+            Function(o As Object) As Boolean
+                'Konfiguration nur ändern, wenn gerade keine Simulation läuft
+                Return Not IsSimulationRunning
+            End Function
+            )
+
+    End Sub
 
     Private Sub OnConfigPropertyChanged(sender As Object, e As PropertyChangedEventArgs)
         'Wenn sich eine der speicherrelevanten Größen ändert, Speichervorhersage aktualisieren

@@ -7,27 +7,21 @@ Imports System.Collections
 Imports System.Globalization
 Imports System.Xml
 Imports System.Reflection.Metadata
+Imports System.IO
+Imports Microsoft.Win32
 
 Public Class SimulationConfigViewModel
     Inherits ViewModelBase
     Implements INotifyDataErrorInfo
 
-    Private ReadOnly _config As SimulationConfig
+#Region "Funktionelle Felder"
+    'Configs
+    Private _config As SimulationConfig
     Private ReadOnly _originalConfig As SimulationConfig
 
-    Private _testDouble As Double
-
+    'Speicherprognose
     Private _memoryEstimateText As String = ""
     Private _memoryEstimateBrush As Brush = Brushes.Black
-
-    '--- Commands ---
-    Public Event OkRequested As EventHandler
-    Public Event CancelRequested As EventHandler
-    Public Event FocusFirstErrorRequested As EventHandler
-    Public ReadOnly Property OkCommand As ICommand
-
-#Region "Felder für Speicherprognose"
-
     Public Property MemoryEstimateText As String
         Get
             Return _memoryEstimateText
@@ -45,32 +39,41 @@ Public Class SimulationConfigViewModel
         End Set
     End Property
 
+    'Error-Handling
+    Private ReadOnly _errors As New Dictionary(Of String, List(Of String))()
+    Private ReadOnly _culture As CultureInfo = CultureInfo.CurrentUICulture
+
+    'File-Handling
+    Private _saveAsDefault As Boolean
+    Public Property SaveAsDefault As Boolean
+        Get
+            Return _saveAsDefault
+        End Get
+        Set(value As Boolean)
+            SetProperty(_saveAsDefault, value)
+        End Set
+    End Property
+
+#End Region
+
+#Region "Events"
+
+    '--- Events ---
+    Public Event OkRequested As EventHandler
+    Public Event CancelRequested As EventHandler
+    Public Event FocusFirstErrorRequested As EventHandler
+    Public Event ErrorsChanged As EventHandler(Of DataErrorsChangedEventArgs) Implements INotifyDataErrorInfo.ErrorsChanged
+
+#End Region
+
+#Region "Commands"
+    Public ReadOnly Property OkCommand As ICommand
+    Public ReadOnly Property LoadConfigCommand As ICommand
+    Public ReadOnly Property SaveConfigCommand As ICommand
+
 #End Region
 
 #Region "Allgemeine Parameter"
-
-    Public Property TestDouble As Double
-        Get
-            Return _testDouble
-        End Get
-        Set(value As Double)
-            If Math.Abs(_testDouble - value) > 0.0001 Then
-                _testDouble = value
-                OnPropertyChanged(NameOf(TestDouble))
-            End If
-        End Set
-    End Property
-    Private _testDoubleText As String = "1,3"
-    Public Property TestDoubleText As String
-        Get
-            Return _testDoubletext
-        End Get
-        Set(value As String)
-            If SetProperty(_testDoubleText, value) Then
-                ValidateTestDouble()
-            End If
-        End Set
-    End Property
 
     Public Property StartYear As Integer
         Get
@@ -513,17 +516,12 @@ Public Class SimulationConfigViewModel
         GridWidthText = _config.GridWidth.ToString(_culture)
         GridHeightText = _config.GridHeight.ToString(_culture)
 
-        'Optional TestDouble
-        TestDoubleText = _testDoubleText.ToString(_culture)
-
         'initial validieren (damit OK initial korrekt disabled ist)
         ValidateStartYear()
         ValidateEndYear()
         ValidateYearRelation()
         ValidateGridWidth()
         ValidateGridHeight()
-
-        ValidateTestDouble()
 
         ApplyToConfigIfPossible()
 
@@ -533,7 +531,20 @@ Public Class SimulationConfigViewModel
                 ExecuteOk()
             End Sub, Function(o) True)
 
+
+        LoadConfigCommand = New RelayCommand(Of Object)(
+            Sub(o As Object)
+                ExecuteLoadConfig()
+            End Sub, Function(o) True)
+
+        SaveConfigCommand = New RelayCommand(Of Object)(
+            Sub(o As Object)
+                ExecuteSaveConfig()
+            End Sub, Function(o) True)
+
+        '--- Speicherprognose aktualisieren
         UpdateMemoryEstimate()
+
     End Sub
 
     Private Sub ExecuteOk()
@@ -546,6 +557,16 @@ Public Class SimulationConfigViewModel
 
         'Sicherstellen, dass Editor -> Config geschrieben ist
         ApplyToConfigIfPossible()
+
+        If SaveAsDefault Then
+            Try
+                ConfigStore.SaveToFile(ConfigStore.DefaultConfigPath, _config)
+            Catch ex As Exception
+                MessageBox.Show($"Die Konfiguration konnte nicht als Standard gespeichert werden.{Environment.NewLine}{ex.Message}", "Speichern fehlgeschlagen", MessageBoxButton.OK, MessageBoxImage.Error)
+                Return
+            End Try
+        End If
+
         If HasErrors Then
             RaiseEvent FocusFirstErrorRequested(Me, EventArgs.Empty)
             Return
@@ -561,6 +582,87 @@ Public Class SimulationConfigViewModel
         RaiseEvent OkRequested(Me, EventArgs.Empty)
     End Sub
 
+    Private Sub ExecuteLoadConfig()
+        Dim dlg As New OpenFileDialog With {
+            .Title = "Konfiguration laden",
+            .Filter = "ClimateSim Konfiguration (*.json)|*.json|Alle Dateien (*.*)|*.*",
+            .CheckFileExists = True,
+            .Multiselect = False
+        }
+
+        If dlg.ShowDialog() <> True Then Return
+
+        Dim res As ConfigLoadResult = ConfigStore.TryLoadFromFile(dlg.FileName)
+        If Not res.IsSuccess Then
+            Dim msg As String
+
+            Select Case res.Status
+                Case ConfigLoadStatus.FileNotFound
+                    msg = "Die Datei wurde nicht gefunden."
+                Case ConfigLoadStatus.JsonInvalid
+                    msg = "Die Datei ist kein gültiges JSON oder wurde beschädigt."
+                Case ConfigLoadStatus.SchemaTooNew
+                    msg = res.Message 'enthält die Versionsinfo
+                Case ConfigLoadStatus.IOError
+                    msg = "Die Datei konnte nicht gelesen werden (Zugriff verweigert)."
+                Case Else
+                    msg = "Die Konfiguration konnte nicht geladen werden."
+            End Select
+
+            MessageBox.Show(msg, "Laden fehlgeschlagen", MessageBoxButton.OK, MessageBoxImage.Error)
+            Return
+        End If
+
+        'Konfig setzen + Original-Snapshot NICHT anfassen (damit Änderungen korrekt erkannt werden)
+        Dim loaded As SimulationConfig = res.Config
+        _config = loaded
+
+        'Editor-Strings neu setzen (damit TextBoxen direkt den geladenen Stand zeigen)
+        StartYearText = _config.StartYear.ToString(_culture)
+        EndYearText = _config.EndYear.ToString(_culture)
+        GridWidthText = _config.GridWidth.ToString(_culture)
+        GridHeightText = _config.GridHeight.ToString(_culture)
+
+        'Neu validieren + Speicherprognose aktualisieren
+        ValidateStartYear()
+        ValidateEndYear()
+        ValidateYearRelation()
+        ValidateGridWidth()
+        ValidateGridHeight()
+
+        ApplyToConfigIfPossible()
+        UpdateMemoryEstimate()
+
+        'Für alle "echten" Config-Properties, die direkt gebunden sind (Slider, Checkboxen...)
+        RaiseAllConfigPropertiesChanged()
+    End Sub
+
+    Private Sub ExecuteSaveConfig()
+        'Sicherstellen, dass die aktuelle Text-Eingabe in _config steht (falls gerade noch Text geändert wurde)
+        ApplyToConfigIfPossible()
+
+        If HasErrors Then
+            RaiseEvent FocusFirstErrorRequested(Me, EventArgs.Empty)
+            Return
+        End If
+
+        Dim dlg As New SaveFileDialog With {
+            .Title = "Konfiguration speichern",
+            .Filter = "ClimateSim Konfiguration (*.json)|*.json",
+            .InitialDirectory = ConfigStore.ConfigDirectory,
+            .AddExtension = True,
+            .DefaultExt = ".json",
+            .FileName = "Config.json"
+        }
+
+        If dlg.ShowDialog() <> True Then Return
+
+        Try
+            ConfigStore.SaveToFile(dlg.FileName, _config)
+        Catch ex As Exception
+            MessageBox.Show($"Die Konfiguration konnte nicht gespeichert werden.{Environment.NewLine}{ex.Message}", "Speichern fehlgeschlagen", MessageBoxButton.OK, MessageBoxImage.Error)
+        End Try
+    End Sub
 
 #Region "Memory-Helper"
     <StructLayout(LayoutKind.Sequential, CharSet:=CharSet.Auto)>
@@ -654,10 +756,6 @@ Public Class SimulationConfigViewModel
 #End Region
 
 #Region "Validation/Errors"
-
-    Private ReadOnly _errors As New Dictionary(Of String, List(Of String))()
-    Private ReadOnly _culture As CultureInfo = CultureInfo.CurrentUICulture
-    Public Event ErrorsChanged As EventHandler(Of DataErrorsChangedEventArgs) Implements INotifyDataErrorInfo.ErrorsChanged
 
     Public ReadOnly Property HasErrors As Boolean Implements INotifyDataErrorInfo.HasErrors
         Get
@@ -783,25 +881,6 @@ Public Class SimulationConfigViewModel
         End If
     End Sub
 
-    Private Sub ValidateTestDouble()
-        Dim v As Double
-        If String.IsNullOrWhiteSpace(TestDoubleText) Then
-            SetErrors(NameOf(TestDoubleText), "Bitte eine Zahl eingeben.")
-        ElseIf Not TryParseDoubleLenient(TestDoubleText, v) Then
-            SetErrors(NameOf(TestDoubleText), "Ungültige Zahl. Bitte eine Dezimalzahl eingeben.")
-        Else
-            SetErrors(NameOf(TestDoubleText))
-        End If
-
-        If TryParseDoubleLenient(TestDoubleText, v) Then
-            Dim formatted = v.ToString("0.###", _culture)
-            If formatted <> TestDoubleText Then
-                _testDoubleText = formatted
-                OnPropertyChanged(NameOf(TestDoubleText))
-            End If
-        End If
-    End Sub
-
     Private Sub ApplyToConfigIfPossible()
         'Wenn irgendwas (noch) fehlerhaft ist: Config nicht überschreiben
         If HasErrors Then
@@ -827,5 +906,35 @@ Public Class SimulationConfigViewModel
         UpdateMemoryEstimate()
     End Sub
 #End Region
+
+    Private Sub RaiseAllConfigPropertiesChanged()
+        OnPropertyChanged(NameOf(TimeStepMode))
+        OnPropertyChanged(NameOf(TimeStepIndex))
+        OnPropertyChanged(NameOf(TimeStepDescription))
+        OnPropertyChanged(NameOf(Lambda))
+
+        OnPropertyChanged(NameOf(SolarCycleMode))
+        OnPropertyChanged(NameOf(IsSimpleCyclesMode))
+
+        OnPropertyChanged(NameOf(UseSchwabeCycle))
+        OnPropertyChanged(NameOf(SchwabeAmplitudePercent))
+        OnPropertyChanged(NameOf(SchwabePeriodYears))
+        OnPropertyChanged(NameOf(SchwabePhaseDeg))
+
+        OnPropertyChanged(NameOf(UseMagneticCycle))
+        OnPropertyChanged(NameOf(MagneticAmplitudePercent))
+        OnPropertyChanged(NameOf(MagneticPeriodYears))
+        OnPropertyChanged(NameOf(MagneticPhaseDeg))
+
+        OnPropertyChanged(NameOf(UseGleissbergCycle))
+        OnPropertyChanged(NameOf(GleissbergAmplitudePercent))
+        OnPropertyChanged(NameOf(GleissbergPeriodYears))
+        OnPropertyChanged(NameOf(GleissbergPhaseDeg))
+
+        OnPropertyChanged(NameOf(UseDeVriesSuessCycle))
+        OnPropertyChanged(NameOf(DeVriesAmplitudePercent))
+        OnPropertyChanged(NameOf(DeVriesPeriodYears))
+        OnPropertyChanged(NameOf(DeVriesPhaseDeg))
+    End Sub
 
 End Class

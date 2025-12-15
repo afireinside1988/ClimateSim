@@ -65,7 +65,7 @@
 
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Breite (Lon):" VerticalAlignment="Center"/>
                     <TextBox Grid.Row="1" Grid.Column="1" Width="80" Margin="10,0,10,0"
-                             Text="{Binding TestDoubleText, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True, NotifyOnValidationError=True}"/>
+                             Text="{Binding GridWidthText, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True, NotifyOnValidationError=True}"/>
 
                     <TextBlock Grid.Row="1" Grid.Column="2" Text="Höhe (Lat):" VerticalAlignment="Center"/>
                     <TextBox Grid.Row="1" Grid.Column="3" Width="80" HorizontalAlignment="Left" Margin="10,0,0,0"
@@ -300,15 +300,35 @@
             </TabItem>
 
         </TabControl>
-
-        <!-- OK / Abbrechen -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-            <Button Width="90" Height="28" Margin="0,0,10,0" Content="OK"
-                    IsDefault="True"
-                    IsEnabled="{Binding HasErrors, Converter={StaticResource NotConverter}}"
-                    Command="{Binding OkCommand}"/>
-            <Button Width="90" Height="28" Content="Abbrechen"
-                    IsCancel="True"/>
-        </StackPanel>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Links Laden/Speichern -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,10,0,0">
+                <Button Width="90" Height="28" Content="Laden..." Margin="0,0,10,0"
+                        Command="{Binding LoadConfigCommand}"/>
+                <Button Width="90" Height="28" Content="Speichern..."
+                        IsEnabled="{Binding HasErrors, Converter={StaticResource NotConverter}}"
+                        Command="{Binding SaveConfigCommand}"/>
+            </StackPanel>
+            
+            <!-- OK / Abbrechen -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                <CheckBox Content="Als Standard festlegen"
+                          VerticalAlignment="Center" Margin="0,0,10,0"
+                          IsChecked="{Binding SaveAsDefault, Mode=TwoWay}"/>
+                
+                <Button Width="90" Height="28" Margin="0,0,10,0" Content="OK"
+                        IsDefault="True"
+                        IsEnabled="{Binding HasErrors, Converter={StaticResource NotConverter}}"
+                        Command="{Binding OkCommand}"/>
+                <Button Width="90" Height="28" Content="Abbrechen"
+                        IsCancel="True"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>
