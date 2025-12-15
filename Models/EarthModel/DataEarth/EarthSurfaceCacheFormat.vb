@@ -94,5 +94,57 @@ Public NotInheritable Class EarthSurfaceCacheFormat
         End If
     End Sub
 
+    Public Shared Function ReadCache(binPath As String) As (latCount As Integer, lonCount As Integer, cellSizeDeg As Double, flags As CacheFlags, height As Single(), tid As Single())
+        If Not File.Exists(binPath) Then
+            Throw New FileNotFoundException("Cache-Datei nicht gefunden.", binPath)
+        End If
+
+        Using fs As New FileStream(binPath, FileMode.Open, FileAccess.Read, FileShare.None)
+            Using br As New BinaryReader(fs, Encoding.UTF8, leaveOpen:=False)
+
+                Dim magicBytes() As Byte = br.ReadBytes(4)
+                Dim magicStr As String = Encoding.ASCII.GetString(magicBytes)
+                If magicStr <> Magic Then
+                    Throw New InvalidDataException($"Ungültiges Cache-Format (Magic='{magicStr}')")
+                End If
+
+                Dim version As Integer = br.ReadInt32()
+                If version <> CurrentVersion Then
+                    Throw New InvalidDataException($"Nicht unterstützte Cache-Version: {version}. Erwartet: {CurrentVersion}")
+                End If
+
+                Dim latCount As Integer = br.ReadInt32()
+                Dim lonCount As Integer = br.ReadInt32()
+                Dim cellSize As Double = br.ReadDouble()
+                Dim flags As CacheFlags = CType(br.ReadInt32(), CacheFlags)
+                br.ReadInt32() 'Reserved-Int
+
+                If latCount <= 0 OrElse lonCount <= 0 Then
+                    Throw New InvalidDataException("Ungültige Rasterdimensionen im Cache.")
+                End If
+
+                Dim n As Integer = latCount * lonCount
+
+                Dim height As Single() = Nothing
+                Dim tid As Single() = Nothing
+
+                If flags.HasFlag(CacheFlags.HasHeight) Then
+                    height = New Single(n - 1) {}
+                    For i As Integer = 0 To n - 1
+                        height(i) = br.ReadSingle()
+                    Next
+                End If
+
+                If flags.HasFlag(CacheFlags.HasTid) Then
+                    tid = New Single(n - 1) {}
+                    For i As Integer = 0 To i - 1
+                        tid(i) = br.ReadSingle()
+                    Next
+                End If
+
+                Return (latCount, lonCount, cellSize, flags, height, tid)
+            End Using
+        End Using
+    End Function
 
 End Class

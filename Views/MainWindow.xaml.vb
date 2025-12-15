@@ -563,4 +563,50 @@ Class MainWindow
         _viewModel.StatusText = $"Spin-Up: {p * 100.0:F1} %"
     End Sub
 
+    Private Sub BtnTestCache_Click()
+        'TEST: Dummy-Cache erzeugen, speichern, laden
+        Dim source = "GEBCO_2025"
+        Dim cellSize = 1.0
+        Dim resampling = "nearest"
+
+        Dim latCount = 180
+        Dim lonCount = 360
+        Dim n = latCount * lonCount
+
+        Dim meta As New EarthSurfaceCacheMeta With {
+            .Source = source,
+            .CellSizeDeg = cellSize,
+            .LatCount = latCount,
+            .LonCount = lonCount,
+            .Resampling = resampling,
+            .HasHeight = True,
+            .HasTid = True,
+            .RawTidFile = EarthSurfacePaths.RawTidPath,
+            .RawSubIceTopoFile = EarthSurfacePaths.RawSubIceTopoPath
+        }
+
+        Dim height(n - 1) As Single
+        Dim tid(n - 1) As Single
+
+        'irgendein Muster
+        For i As Integer = 0 To n - 1
+            height(i) = CSng(-3000 + (i Mod 500) * 5) 'nur Test
+            tid(i) = CSng(i Mod 7)
+        Next
+
+        Dim cacheOut As New EarthSurfaceCache(meta, height, tid)
+        EarthSurfaceCacheStore.SaveCache(source, cellSize, resampling, cacheOut)
+
+        Dim loaded As EarthSurfaceCache = Nothing
+        Dim kind As CacheOpenErrorKind
+        Dim msg As String
+
+        If EarthSurfaceCacheStore.TryOpenCache(source, cellSize, resampling, loaded, kind, msg) Then
+            Debug.WriteLine($"Cache geladen: {loaded.Meta.Source}, {loaded.Meta.CellSizeDeg}°, n={loaded.Meta.LatCount * loaded.Meta.LonCount}")
+            Debug.WriteLine($"Sample Height(0)={loaded.HeightM(0)}, TID(0)={loaded.Tid(0)}")
+        Else
+            Debug.WriteLine($"Cache konnte nicht geöffnet werden: {kind} - {msg}")
+        End If
+    End Sub
+
 End Class
