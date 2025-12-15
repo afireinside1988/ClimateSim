@@ -15,14 +15,16 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <conv:BooleanNotConverter x:Key="NotConverter"/>
-        
+        <conv:AllValidationErrorsConverter x:Key="AllValidationErrorConverter"/>
+
         <!-- Error-Style für ToolTips -->
         <Style TargetType="{x:Type TextBox}" BasedOn="{StaticResource {x:Type TextBox}}">
             <Style.Triggers>
                 <Trigger Property="Validation.HasError" Value="True">
                     <Setter Property="ToolTip"
                             Value="{Binding RelativeSource={RelativeSource Self},
-                                            Path=(Validation.Errors)[0].ErrorContent}"/>
+                                            Path=(Validation.Errors),
+                                            Converter={StaticResource AllValidationErrorConverter}}"/>
                 </Trigger>
                 <Trigger Property="Validation.HasError" Value="False">
                     <Setter Property="ToolTip" Value="{x:Null}"/>

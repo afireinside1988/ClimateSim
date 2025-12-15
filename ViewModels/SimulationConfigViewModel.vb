@@ -561,6 +561,7 @@ Public Class SimulationConfigViewModel
         RaiseEvent OkRequested(Me, EventArgs.Empty)
     End Sub
 
+
 #Region "Memory-Helper"
     <StructLayout(LayoutKind.Sequential, CharSet:=CharSet.Auto)>
     Private Structure MEMORYSTATUSEX
@@ -697,8 +698,28 @@ Public Class SimulationConfigViewModel
         Return Integer.TryParse(text, NumberStyles.Integer, _culture, value)
     End Function
 
-    Private Function TryParseDouble(text As String, ByRef value As Double) As Boolean
-        Return Double.TryParse(text, NumberStyles.Float, _culture, value)
+    Private Function TryParseDoubleLenient(text As String, ByRef value As Double) As Boolean
+        If text Is Nothing Then Return False
+
+        Dim s As String = text.Trim()
+        If s.Length = 0 Then Return False
+
+        '1) Wenn sowohl '.' als auch ',' vorkommen -> mehrdeutig (typisch Tausender+Dezimal)
+        Dim hasDot As Boolean = s.Contains("."c)
+        Dim hasComma As Boolean = s.Contains(","c)
+        If hasDot AndAlso hasComma Then
+            'Option A:strikt ablehnen (empfohlen)
+            Return False
+        End If
+
+        '2) Akzeptiere beide als Dezimaltrenner: normalize auf Culture-DecSep
+        Dim decSep As String = _culture.NumberFormat.NumberDecimalSeparator '"," oder "."
+        Dim otherSep As String = If(decSep = ",", ".", ",")
+
+        s = s.Replace(otherSep, decSep)
+
+        '3) Parse mit Culture
+        Return Double.TryParse(s, NumberStyles.Float, _culture, value)
     End Function
 
     Private Sub ValidateStartYear()
@@ -766,10 +787,18 @@ Public Class SimulationConfigViewModel
         Dim v As Double
         If String.IsNullOrWhiteSpace(TestDoubleText) Then
             SetErrors(NameOf(TestDoubleText), "Bitte eine Zahl eingeben.")
-        ElseIf Not TryParseDouble(TestDoubleText, v) Then
+        ElseIf Not TryParseDoubleLenient(TestDoubleText, v) Then
             SetErrors(NameOf(TestDoubleText), "Ungültige Zahl. Bitte eine Dezimalzahl eingeben.")
         Else
             SetErrors(NameOf(TestDoubleText))
+        End If
+
+        If TryParseDoubleLenient(TestDoubleText, v) Then
+            Dim formatted = v.ToString("0.###", _culture)
+            If formatted <> TestDoubleText Then
+                _testDoubleText = formatted
+                OnPropertyChanged(NameOf(TestDoubleText))
+            End If
         End If
     End Sub
 
