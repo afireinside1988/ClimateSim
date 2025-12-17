@@ -27,6 +27,7 @@ Public Class EarthSurfaceCacheMeta
     'Welche Layer sind enthalten
     Public Property HasHeight As Boolean = True
     Public Property HasTid As Boolean = True
+    Public Property HasLandMask As Boolean = False
 
     'Zeitstempel
     Public Property CreateUtc As DateTime = DateTime.UtcNow

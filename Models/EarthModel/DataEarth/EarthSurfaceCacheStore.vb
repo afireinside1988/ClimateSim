@@ -122,13 +122,18 @@ Public Class EarthSurfaceCacheStore
             'Cross-Check: Flags
             Dim hasHeightBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasHeight)
             Dim hasTidBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasTid)
-            If hasHeightBin <> meta.HasHeight OrElse hasTidBin <> meta.HasTid Then
+            Dim hasLandMaskBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasLandMask)
+
+            If hasHeightBin <> meta.HasHeight OrElse
+               hasTidBin <> meta.HasTid OrElse
+               hasLandMaskBin <> meta.HasLandMask Then
+
                 errorKind = CacheOpenErrorKind.BinaryInvalid
                 errorMessage = "Binärdatei passt nicht zu Meta (Layer-Flags stimmen nicht)."
                 Return False
             End If
 
-            cache = New EarthSurfaceCache(meta, r.height, r.tid)
+            cache = New EarthSurfaceCache(meta, r.height, r.tid, r.landMask)
             Return True
         Catch ex As FileNotFoundException
             errorKind = CacheOpenErrorKind.NotFound

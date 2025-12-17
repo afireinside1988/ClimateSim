@@ -565,20 +565,23 @@ Class MainWindow
             .Resampling = resampling,
             .HasHeight = True,
             .HasTid = True,
+            .HasLandMask = True,
             .RawTidFile = EarthSurfacePaths.RawTidPath,
             .RawSubIceTopoFile = EarthSurfacePaths.RawSubIceTopoPath
         }
 
         Dim height(n - 1) As Single
         Dim tid(n - 1) As Single
+        Dim landmask(n - 1) As Byte
 
         'irgendein Muster
         For i As Integer = 0 To n - 1
             height(i) = CSng(-3000 + (i Mod 500) * 5) 'nur Test
             tid(i) = CSng(i Mod 7)
+            landmask(i) = CByte(1)
         Next
 
-        Dim cacheOut As New EarthSurfaceCache(meta, height, tid)
+        Dim cacheOut As New EarthSurfaceCache(meta, height, tid, landmask)
         EarthSurfaceCacheStore.SaveCache(source, cellSize, resampling, cacheOut)
 
         Dim loaded As EarthSurfaceCache = Nothing
@@ -587,7 +590,7 @@ Class MainWindow
 
         If EarthSurfaceCacheStore.TryOpenCache(source, cellSize, resampling, loaded, kind, msg) Then
             Debug.WriteLine($"Cache geladen: {loaded.Meta.Source}, {loaded.Meta.CellSizeDeg}°, n={loaded.Meta.LatCount * loaded.Meta.LonCount}")
-            Debug.WriteLine($"Sample Height(0)={loaded.HeightM(0)}, TID(0)={loaded.Tid(0)}")
+            Debug.WriteLine($"Sample Height(0)={loaded.HeightM(0)}, TID(0)={loaded.Tid(0)}, LandMask(0)={loaded.LandMask(0)}")
             Debug.Flush()
         Else
             Debug.WriteLine($"Cache konnte nicht geöffnet werden: {kind} - {msg}")
