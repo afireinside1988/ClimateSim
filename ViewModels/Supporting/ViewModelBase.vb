@@ -52,6 +52,7 @@ Public MustInherit Class ViewModelBase
         End Get
         Set(value As Boolean)
             SetProperty(_isBusy, value)
+            CommandManager.InvalidateRequerySuggested()
         End Set
     End Property
     Public Property BusyTitle As String

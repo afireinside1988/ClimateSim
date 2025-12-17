@@ -329,7 +329,7 @@ Public Class MainViewModel
             End Function,
             Function(o As Object) As Boolean
                 'Spin-Up starten, wenn aktuell nichts läuft
-                Return Not IsSimulationRunning
+                Return Not IsSimulationRunning AndAlso Not IsBusy
             End Function)
 
         'Step: synchron

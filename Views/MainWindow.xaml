@@ -187,6 +187,6 @@
         </Grid>
         
         <!-- Overlay -->
-        <climatesim:ProgressOverlay Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibilityConverter}}"/>
+        <climatesim:ProgressOverlay Panel.ZIndex="999" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibilityConverter}}"/>
     </Grid>
 </Window>

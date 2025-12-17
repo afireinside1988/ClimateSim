@@ -15,8 +15,8 @@ Public Module BusyRunner
                                    work As Action(Of IProgress(Of ProgressInfo), CancellationToken),
                                    Optional canCancel As Boolean = True) As Task
 
-        If vm Is Nothing Then Throw New ArgumentNullException(NameOf(vm))
-        If work Is Nothing Then Throw New ArgumentNullException(NameOf(work))
+        ArgumentNullException.ThrowIfNull(vm)
+        ArgumentNullException.ThrowIfNull(work)
 
         Dim cts As New CancellationTokenSource()
 
@@ -30,16 +30,15 @@ Public Module BusyRunner
 
         Dim prog = New Progress(Of ProgressInfo)(
             Sub(p)
+                vm.BusyMessage = p.Message
+
                 If p.Percent < 0 Then
                     vm.BusyIsIndeterminate = True
                 Else
                     vm.BusyIsIndeterminate = False
                     vm.BusyPercent = p.Percent
                 End If
-                vm.BusyMessage = p.Message
 
-                'Wenn Percent voll ist, machen wir determinate:
-                vm.BusyIsIndeterminate = False
             End Sub)
 
         Try

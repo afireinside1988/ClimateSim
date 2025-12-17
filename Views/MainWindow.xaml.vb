@@ -21,11 +21,6 @@ Class MainWindow
     'MVVM-Implementierung
     Private _viewModel As MainViewModel
 
-    '--- NEU: Spin-Up-Progress für entkoppelte UI-Anzeige ---
-    Private _spinUpProgressRaw As Double = 0.0         '0.0 .. 1.0
-    Private _spinUpUiTimer As DispatcherTimer          'UI-Update-Timer
-    Private _isSpinUpActive As Boolean = False         'Guard gegen späte Updates
-
     Public Sub RefreshFromEngine()
         If _engine Is Nothing Then Return
 
@@ -66,11 +61,6 @@ Class MainWindow
         AddHandler ImgTemperature.MouseMove, AddressOf ImgTemperature_MouseMove
         AddHandler ImgTemperature.MouseLeave, AddressOf ImgTemperature_MouseLeave
 
-        '--- NEU: Spin-Up UI-Timer einrichten ---
-        _spinUpUiTimer = New DispatcherTimer()
-        _spinUpUiTimer.Interval = TimeSpan.FromMilliseconds(50)   '20 FPS Fortschrittsanzeige
-        AddHandler _spinUpUiTimer.Tick, AddressOf SpinUpUiTimer_Tick
-
         '--- Buttons & Layer initial sperren ---
         _viewModel.IsTemperatureLayerVisible = False
 
@@ -100,7 +90,7 @@ Class MainWindow
         Dim width As Integer = cfg.GridWidth
         Dim height As Integer = cfg.GridHeight
 
-        '3) Spin-Up-Konfiguration anhängig vom TimeStepMode
+        '3) Spin-Up-Konfiguration abhängig vom TimeStepMode
         Dim spinUpYears As Integer = 200
         Dim spinUpDtYears As Double
         Dim spinUpUseSeasonal As Boolean
@@ -144,33 +134,18 @@ Class MainWindow
         'UI sperren
         _viewModel.IsSimulationRunning = True
 
-        Dim cts As New CancellationTokenSource()
-        _simCts = cts
-
-        '--- NEU: Spin-Up-Progress initialisieren und UI-Timer starten ---
-        _spinUpProgressRaw = 0.0
-        _isSpinUpActive = True
-        _spinUpUiTimer.Start()
-
         '8) Spin-Up im Hintergrund laufen lassen
         Try
-            Await Task.Run(Sub() RunSpinUpLoop(spinUpStartYear, startYear, spinUpDtYears, cts.Token))
+            Await BusyRunner.RunAsync(
+                _viewModel, "Spin-Up und Initialisierung",
+                Sub(p, ct)
+                    'Wichtig: ct kommt vom BusyRunner (Cancel im Overlay)
+                    RunSpinUpLoop(spinUpStartYear, startYear, spinUpDtYears, p, ct)
+                End Sub, canCancel:=True)
 
-            'Wenn Spin-Up abgebrochen wurde, darauf reagieren
-            If _simCts IsNot Nothing AndAlso _simCts.IsCancellationRequested Then
-                'Spin-Up-UI sofort stoppen
-                _isSpinUpActive = False
-                _spinUpUiTimer.Stop()
-
-                Dispatcher.Invoke(Sub()
-                                      _viewModel.StatusText = "Spin-Up abgebrochen."
-                                      'UI teilweise wieder freigeben, aber NICHT als "initialized" markieren
-                                      BtnSpinUp.IsEnabled = True
-                                  End Sub)
-
-                Return '<<< da Spin-Up abgebrochen wurde, nicht weiter initialisieren
-
-            End If
+            'Wenn abgebrochen:
+            'BusyRunner wirft bei Cancel typischerweise OperationCanceledException (je nachdem wie es behandelt wird)
+            ' => hier nach dem Await sind wir nur bei Erfolg
 
             '9) Nach dem Spin-Up: Startjahr zurücksetzen
             _engine.IsSpinUp = False
@@ -203,32 +178,20 @@ Class MainWindow
             '11) EBM-Modus jetzt wieder an den TimeStepMode der "eigentlichen" Simulation anpassen
             ApplyTimeStepModeToModel()
 
+            '12) UI aktualisieren
+            RenderTemperatureLayer()
+            UpdateSimTimeDisplay()
+            UpdateCO2Display(co2Now)
 
+            _viewModel.IsInitialized = True
+            EnableUIAfterSpinUp()
 
-            '12) UI aktualisieren & freigeben
-
-            'Vor UI-Update: Spin-Up-UI-Anzeige stoppen
-            _isSpinUpActive = False
-            _spinUpUiTimer.Stop()
-
-            Dispatcher.Invoke(
-                Sub()
-                    RenderTemperatureLayer()
-                    UpdateSimTimeDisplay()
-                    UpdateCO2Display(co2Now)
-
-                    _viewModel.IsInitialized = True
-                    EnableUIAfterSpinUp()
-                    _viewModel.StatusText = "Spin-Up angeschlossen. Modell bereit."
-                End Sub)
+            _viewModel.StatusText = "Spin-Up angeschlossen. Modell bereit."
         Catch ex As Exception
             MessageBox.Show($"Fehler beim Spin-Up: {ex.Message}", "Hinweis", MessageBoxButton.OK, MessageBoxImage.Error)
         Finally
             _engine.IsSpinUp = False
-            Dispatcher.Invoke(Sub()
-                                  _viewModel.IsSimulationRunning = False
-                                  _isSpinUpActive = False
-                              End Sub)
+            _viewModel.IsSimulationRunning = False
         End Try
     End Sub
 
@@ -392,21 +355,24 @@ Class MainWindow
         _viewModel.StatusSurfaceText = "Surface: -"
     End Sub
 
-    Private Sub RunSpinUpLoop(spinUpStartYear As Integer, targetStartYear As Integer, dtYears As Double, token As CancellationToken)
+    Private Sub RunSpinUpLoop(spinUpStartYear As Integer, targetStartYear As Integer, dtYears As Double, progress As IProgress(Of ProgressInfo), token As CancellationToken)
+
         Dim totalYears As Double = targetStartYear - spinUpStartYear
         Dim totalSteps As Integer = CInt(Math.Ceiling(totalYears / dtYears))
         If totalSteps <= 0 Then Return
 
+        progress?.Report(New ProgressInfo("Spin-Up wird vorbereitet...", -1))
+
         For stepIndex As Integer = 1 To totalSteps
-            If token.IsCancellationRequested Then
-                Exit For
-            End If
+            If token.IsCancellationRequested Then Exit For
 
             _engine.StepSimulation(dtYears)
 
-            '--- NEU: Nur Roh-Progress aktualisieren, kein Dispatcher im Loop ---
-            Dim progress As Double = stepIndex / CDbl(totalSteps)
-            _spinUpProgressRaw = progress
+            'Progress nur alle X Steps reporten (sonst Spam)
+            If stepIndex = 1 OrElse stepIndex = totalSteps OrElse (stepIndex Mod 20 = 0) Then
+                Dim percent As Integer = CInt(Math.Round(stepIndex * 100.0 / totalSteps))
+                progress?.Report(New ProgressInfo($"Spin-Up läuft... ({percent} %)", percent))
+            End If
 
         Next
 
@@ -545,22 +511,6 @@ Class MainWindow
         model.DeVriesPeriodYears = cfg.DeVriesPeriodYears
         model.DeVriesPhaseDeg = cfg.DeVriesPhaseDeg
 
-    End Sub
-
-    Private Sub SpinUpUiTimer_Tick(sender As Object, e As EventArgs)
-        'Falls der Spin-Up offiziell beendet ist, keine Fortschrittsupdates mehr machen
-        If Not _isSpinUpActive Then
-            Return
-        End If
-
-        'Roh-Progress (0..1) lesen
-        Dim p As Double = _spinUpProgressRaw
-
-        'Clampen nur zur Sicherheit
-        If p < 0.0 Then p = 0.0
-        If p > 1.0 Then p = 1.0
-
-        _viewModel.StatusText = $"Spin-Up: {p * 100.0:F1} %"
     End Sub
 
     Private Sub BtnTestCache_Click()
