@@ -1,6 +1,7 @@
 ﻿Imports System.IO
 Imports System.Text
 Imports System.Text.Json
+Imports System.Threading
 
 Public Enum CacheOpenErrorKind
     None = 0
@@ -40,7 +41,12 @@ Public Class EarthSurfaceCacheStore
         Return (binPath, metaPath)
     End Function
 
-    Public Shared Function TryOpenCache(source As String, cellSizeDeg As Double, resampling As String, ByRef cache As EarthSurfaceCache, ByRef errorKind As CacheOpenErrorKind, ByRef errorMessage As String) As Boolean
+    Public Shared Function TryOpenCache(source As String, cellSizeDeg As Double, resampling As String,
+                                        ByRef cache As EarthSurfaceCache,
+                                        ByRef errorKind As CacheOpenErrorKind,
+                                        ByRef errorMessage As String,
+                                        Optional progress As IProgress(Of ProgressInfo) = Nothing,
+                                        Optional ct As CancellationToken = Nothing) As Boolean
 
         cache = Nothing
         errorKind = CacheOpenErrorKind.None
@@ -57,6 +63,9 @@ Public Class EarthSurfaceCacheStore
         End If
 
         Dim meta As EarthSurfaceCacheMeta
+
+        progress?.Report(New ProgressInfo("Cache öffnen: Meta prüfen...", 0))
+        ct.ThrowIfCancellationRequested()
 
         '1) Meta laden
         Try
@@ -101,7 +110,7 @@ Public Class EarthSurfaceCacheStore
 
         '3) Binär lesen
         Try
-            Dim r = EarthSurfaceCacheFormat.ReadCache(binPath)
+            Dim r = EarthSurfaceCacheFormat.ReadCache(binPath, progress, ct)
 
             'Cross-Check: Dimensions
             If r.latCount <> meta.LatCount OrElse r.lonCount <> meta.LonCount Then
@@ -138,23 +147,37 @@ Public Class EarthSurfaceCacheStore
         End Try
     End Function
 
-    Public Shared Sub SaveCache(source As String, cellSizeDeg As Double, resampling As String, cache As EarthSurfaceCache)
+    Public Shared Sub SaveCache(source As String, cellSizeDeg As Double, resampling As String, cache As EarthSurfaceCache,
+                                Optional progress As IProgress(Of ProgressInfo) = Nothing,
+                                Optional ct As CancellationToken = Nothing)
+
         If cache Is Nothing OrElse cache.Meta Is Nothing Then Throw New ArgumentNullException(NameOf(cache))
 
         Dim paths As (binPath As String, metaPath As String) = GetCachePaths(source, cellSizeDeg, resampling)
 
         '1) Binär
-        EarthSurfaceCacheFormat.WriteCache(paths.binPath, cache)
+        progress?.Report(New ProgressInfo("Cache speichern: Binärdaten...", 0))
+        ct.ThrowIfCancellationRequested()
+        EarthSurfaceCacheFormat.WriteCache(paths.binPath, cache, progress, ct)
 
         '2) Meta
+        progress?.Report(New ProgressInfo("Cache speichern: Meta...", 98))
+        ct.ThrowIfCancellationRequested()
         Dim metaJson As String = JsonSerializer.Serialize(cache.Meta, ConfigStore.JsonOptions)
-        WriteTextAtomic(paths.metaPath, metaJson)
+        WriteTextAtomic(paths.metaPath, metaJson, ct)
+
+        progress?.Report(New ProgressInfo("Cache gespeichert.", 100))
     End Sub
 
-    Private Shared Sub WriteTextAtomic(savePath As String, content As String)
+    Private Shared Sub WriteTextAtomic(savePath As String, content As String, Optional ct As CancellationToken = Nothing)
+
+        ct.ThrowIfCancellationRequested()
+
         Directory.CreateDirectory(Path.GetDirectoryName(savePath))
         Dim tmp As String = savePath & ".tmp"
         File.WriteAllText(tmp, content, Encoding.UTF8)
+
+        ct.ThrowIfCancellationRequested()
 
         If File.Exists(savePath) Then
             File.Replace(tmp, savePath, destinationBackupFileName:=Nothing)

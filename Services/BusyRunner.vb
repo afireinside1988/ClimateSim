@@ -13,7 +13,8 @@ Public Module BusyRunner
     ''' <returns></returns>
     Public Async Function RunAsync(vm As ViewModelBase, title As String,
                                    work As Action(Of IProgress(Of ProgressInfo), CancellationToken),
-                                   Optional canCancel As Boolean = True) As Task
+                                   Optional canCancel As Boolean = True,
+                                   Optional showOverlay As Boolean = True) As Task
 
         ArgumentNullException.ThrowIfNull(vm)
         ArgumentNullException.ThrowIfNull(work)
@@ -26,6 +27,7 @@ Public Module BusyRunner
         vm.BusyIsIndeterminate = True
         vm.BusyCanCancel = canCancel
         vm.BusyCancelAction = If(canCancel, Sub() cts.Cancel(), Nothing)
+        vm.BusyShowOverlay = showOverlay
         vm.IsBusy = True
 
         Dim prog = New Progress(Of ProgressInfo)(
@@ -48,6 +50,7 @@ Public Module BusyRunner
             vm.BusyCancelAction = Nothing
             vm.BusyCanCancel = False
             vm.BusyIsIndeterminate = False
+            vm.BusyShowOverlay = False
         End Try
     End Function
 

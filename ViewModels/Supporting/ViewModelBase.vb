@@ -34,6 +34,7 @@ Public MustInherit Class ViewModelBase
 
 #Region "Progress-Verhalten"
 
+    Private _busyShowOverlay As Boolean = True
     Private _isBusy As Boolean
     Private _busyTitle As String = "Bitte warten..."
     Private _busyMessage As String = ""
@@ -46,6 +47,14 @@ Public MustInherit Class ViewModelBase
     'wird vom BusyRunner gesetzt
     Friend Property BusyCancelAction As Action
 
+    Public Property BusyShowOverlay As Boolean
+        Get
+            Return _busyShowOverlay
+        End Get
+        Set(value As Boolean)
+            SetProperty(_busyShowOverlay, value)
+        End Set
+    End Property
     Public Property IsBusy As Boolean
         Get
             Return _isBusy

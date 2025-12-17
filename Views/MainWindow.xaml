@@ -13,6 +13,7 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <conv:BooleanNotConverter x:Key="NotConverter"/>
+        <conv:BooleanAndToVisibilityConverter x:Key="AndToVis"/>
     </Window.Resources>
 
     <Grid>
@@ -187,6 +188,13 @@
         </Grid>
         
         <!-- Overlay -->
-        <climatesim:ProgressOverlay Panel.ZIndex="999" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibilityConverter}}"/>
+        <climatesim:ProgressOverlay Panel.ZIndex="999">
+            <climatesim:ProgressOverlay.Visibility>
+                <MultiBinding Converter="{StaticResource AndToVis}">
+                    <Binding Path="IsBusy"/>
+                    <Binding Path="BusyShowOverlay"/>
+                </MultiBinding>
+            </climatesim:ProgressOverlay.Visibility>
+        </climatesim:ProgressOverlay>
     </Grid>
 </Window>

@@ -11,6 +11,7 @@ Class MainWindow
 
     'Felder fürs Multi-Threading
     Private _simCts As CancellationTokenSource
+    Private _uiUpdatePending As Integer = 0
 
     Private _memoryEstimateOk As Boolean = True
 
@@ -186,7 +187,7 @@ Class MainWindow
             _viewModel.IsInitialized = True
             EnableUIAfterSpinUp()
 
-            _viewModel.StatusText = "Spin-Up angeschlossen. Modell bereit."
+            _viewModel.StatusText = "Spin-Up abgeschlossen. Modell bereit."
         Catch ex As Exception
             MessageBox.Show($"Fehler beim Spin-Up: {ex.Message}", "Hinweis", MessageBoxButton.OK, MessageBoxImage.Error)
         Finally
@@ -226,22 +227,39 @@ Class MainWindow
         ApplyConfigToModel()
 
         _viewModel.IsSimulationRunning = True
+        _viewModel.StatusText = "Simulation läuft..."
         _simCts = New CancellationTokenSource()
 
         Try
-            'Simulation im Hintergrund-Thread laufen lassen
-            Await Task.Run(Sub() RunSimulationLoop(dtYears, endYear, _simCts.Token))
+            'Simulation im BusyRunner laufen lassen
+            Await BusyRunner.RunAsync(
+                _viewModel,
+                "Simulation läuft",
+                Sub(p, ct)
+
+                    'ct = BusyRunner-Token (hier normalerweise nie gecancelt, weil canCancel:=False)
+                    '_simCts.Token = Stop-Token
+                    Using linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _simCts.Token)
+                        RunSimulationLoop(dtYears, endYear, linkedCts.Token)
+                    End Using
+
+                End Sub, canCancel:=False, showOverlay:=False)
+        Catch es As OperationCanceledException
+            'Stop gedrückt
+            _viewModel.StatusText = "Simulation gestoppt"
         Catch ex As Exception
             'nur echte Fehler anzeigen
             MessageBox.Show($"Fehler in der Simulation: {ex.Message}", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
         Finally
             _viewModel.IsSimulationRunning = False
+            _viewModel.StatusText = "Simulation beendet"
         End Try
     End Sub
 
     Private Sub OnStopSimulationRequested(sender As Object, e As EventArgs)
         If _simCts IsNot Nothing AndAlso Not _simCts.IsCancellationRequested Then
             _simCts.Cancel()
+            _viewModel.StatusText = "Simulation gestoppt"
         End If
     End Sub
 
@@ -379,35 +397,50 @@ Class MainWindow
     End Sub
 
     Private Sub RunSimulationLoop(dtYears As Double, endYear As Double, token As CancellationToken)
+
         If _engine Is Nothing OrElse _engine.Model Is Nothing OrElse _engine.Grid Is Nothing Then Return
 
-        Dim uiUpdateInterval As Integer = 10 'Aktualisierungsrate der UI
-        Dim stepCounter As Integer = 0
+        'UI-Update z.B. alle ~75ms (fühlt sich live an, ohne die UI zu fluten)
+        Dim sw As Stopwatch = Stopwatch.StartNew()
+        Dim nextUiUpdateMs As Long = 0
 
         While _engine.CurrentYear < endYear AndAlso Not token.IsCancellationRequested
 
-            '1) Simulationsschritt ausführen (im Hintergrundthread, rein nummerisch
+            '1) Simulationsschritt ausführen
             _engine.StepSimulation(dtYears)
-            stepCounter += 1
+            If token.IsCancellationRequested Then Exit While
 
-            '2) in moderatem Rhythmus die UI aktualisieren
-            If stepCounter Mod uiUpdateInterval = 0 Then
-                Dispatcher.Invoke(
-                    Sub()
-                        UpdateSimTimeDisplay()
-                        UpdateCO2Display(_engine.Model.CO2ppm)
-                        RenderTemperatureLayer()
-                    End Sub)
+            '2) Zeitbasiert UI anstoßen (nicht blockieren!)
+            Dim nowMs As Long = sw.ElapsedMilliseconds
+            If nowMs >= nextUiUpdateMs Then
+                nextUiUpdateMs = nowMs + 75         '75ms-Schritte
+
+                'Wenn schon ein UI-Update queued ist: keins nachschieben (keine Warteschlange)
+                If Threading.Interlocked.CompareExchange(_uiUpdatePending, 1, 0) = 0 Then
+
+                    'InvokeAsync statt Invoke: blockiert Worker nicht
+                    Dispatcher.InvokeAsync(
+                        Sub()
+                            Try
+                                UpdateSimTimeDisplay()
+                                UpdateCO2Display(_engine.Model.CO2ppm)
+                                RenderTemperatureLayer()
+                            Finally
+                                Threading.Interlocked.Exchange(_uiUpdatePending, 0)
+                            End Try
+                        End Sub, DispatcherPriority.Background, CancellationToken.None)
+                End If
+
             End If
         End While
 
         'Am Ende final UI refresh
-        Dispatcher.Invoke(
+        Dispatcher.InvokeAsync(
             Sub()
                 UpdateSimTimeDisplay()
                 UpdateCO2Display(_engine.Model.CO2ppm)
                 RenderTemperatureLayer()
-            End Sub)
+            End Sub, DispatcherPriority.Background, CancellationToken.None).Task.Wait(0, CancellationToken.None)
     End Sub
 
     Private Sub RenderSurfaceLayer()
