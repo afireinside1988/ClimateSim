@@ -7,8 +7,10 @@
 Public Class EarthSurfaceCacheMeta
     Public Property CacheVersion As Integer = 1
 
-    'Identifiziert die Datenquelle (für Menschen + spätere Auswahl in UI)
+    'Identifiziert die Datenquellen und Layer (für Menschen + spätere Auswahl in UI)
     Public Property Source As String = "GEBCO_2025"
+    Public Property LandMaskSource As String = "HeightThreshold+Majority3x3"
+    Public Property LandMaskNotes As String = "v0.3: height>=0 then 3x3 hysteresis majority (6/3), 1 iter"
 
     'Raster-Definition
     Public Property CellSizeDeg As Double       '1.0 / 0.5 / 0.25

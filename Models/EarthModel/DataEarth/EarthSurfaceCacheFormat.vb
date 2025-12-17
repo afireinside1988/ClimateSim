@@ -46,7 +46,9 @@ Public NotInheritable Class EarthSurfaceCacheFormat
     ''' Speichert Cache als Binary-Datei.
     ''' Progress ist optional und wird throttled (nicht bei jedem Element).
     ''' </summary>
-    Public Shared Sub WriteCache(binPath As String, cache As EarthSurfaceCache, Optional progress As IProgress(Of ProgressInfo) = Nothing, Optional ct As CancellationToken = Nothing)
+    Public Shared Sub WriteCache(binPath As String, cache As EarthSurfaceCache,
+                                 Optional progress As IProgress(Of ProgressInfo) = Nothing,
+                                 Optional ct As CancellationToken = Nothing)
         If cache Is Nothing OrElse cache.Meta Is Nothing Then Throw New ArgumentNullException(NameOf(cache))
 
         Dim meta = cache.Meta
@@ -59,7 +61,7 @@ Public NotInheritable Class EarthSurfaceCacheFormat
             Throw New InvalidDataException("Tid-Array fehlt oder hat eine falsche Länge.")
         End If
         If meta.HasLandMask AndAlso (cache.LandMask Is Nothing OrElse cache.LandMask.Length <> expectedLen) Then
-            Throw New InvalidDataException("LandMask-Array fehlt oder hate eine falsche Länge.")
+            Throw New InvalidDataException("LandMask-Array fehlt oder hat eine falsche Länge.")
         End If
 
         Dim flags As CacheFlags = CacheFlags.None
