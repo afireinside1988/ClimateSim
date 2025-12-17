@@ -14,172 +14,179 @@
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <conv:BooleanNotConverter x:Key="NotConverter"/>
     </Window.Resources>
+
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/><!-- Menü -->
-            <RowDefinition Height="*"/><!-- Restlicher Inhalt -->
-        </Grid.RowDefinitions>
-        <Menu Grid.Row="0">
-            <MenuItem Header="_Simulation">
-                <MenuItem Header="_Konfiguration..." Command="{Binding SimulationConfigCommand}"/>
-                <MenuItem Header="_Verlauf..." Command="{Binding ShowHistoryCommand}"/>
-            </MenuItem>
-            <MenuItem Header="_Szenarien">
-                <MenuItem Header="_CO₂-Szenarien..." IsEnabled="False"/>
-                <MenuItem Header="_Ozon-Szenarien..." IsEnabled="False"/>
-            </MenuItem>
-        </Menu>
-
-    <Grid Grid.Row="1"  Margin="10">
-        
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="3*"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
-
-        <!-- Links: Karte mit Layern -->
-        <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="5">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <!-- Karte im ScrollViewer -->
-                <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-
-                    <!-- Grid als Container für mehrere Layer -->
-                    <Grid Background="Black">
-                        <!-- Basiskarte: Oberflächentyp -->
-                        <Image x:Name="ImgSurface" 
-                               Stretch="Uniform"
-                               RenderOptions.BitmapScalingMode="Fant"
-                               RenderOptions.EdgeMode="Aliased"
-                               Source="{Binding SurfaceImage}"/>
-
-                        <!-- Overlay: Temperatur -->
-                        <Image x:Name="ImgTemperature"
-                               Stretch="Uniform"
-                               RenderOptions.BitmapScalingMode="Fant"
-                               RenderOptions.EdgeMode="Aliased"
-                               Source="{Binding TemperatureImage}"
-                               Visibility="{Binding IsTemperatureLayerVisible, Converter={StaticResource BoolToVisibilityConverter}}"
-                               Opacity="{Binding TemperatureOpacity}"/>
-                    </Grid>
-                </ScrollViewer>
-
-                <!-- Statuszeile -->
-                <StatusBar Grid.Row="1">
-                    <StatusBarItem>
-                        <TextBlock Text="{Binding StatusLatText}"/>
-                    </StatusBarItem>
-                    <StatusBarItem>
-                        <TextBlock Text="{Binding StatusLonText}"/>
-                    </StatusBarItem>
-                    <StatusBarItem>
-                        <TextBlock Text="{Binding StatusTempText}"/>
-                    </StatusBarItem>
-                    <StatusBarItem>
-                        <TextBlock Text="{Binding StatusSurfaceText}" Margin="0,0,50,0"/>
-                    </StatusBarItem>
-                    <StatusBarItem HorizontalAlignment="Right">
-                        <TextBlock Text="{Binding StatusText}"/>
-                    </StatusBarItem>
-                </StatusBar>
-            </Grid>
-        </Border>
-
-        <!-- Rechts: Steuerungselemente -->
-        <StackPanel Grid.Column="1" Margin="10" VerticalAlignment="Stretch">
-            <TextBlock FontSize="20" FontWeight="Bold" Margin="0,0,0,10" HorizontalAlignment="Center" Text="{Binding ProductName}"/>
-            <TextBlock Text="Gitternetz-Auflösung:" FontWeight="SemiBold" />
-            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
-                <TextBlock Text="Breite (Lon):"/>
-                    <TextBlock Margin="5,0,0,0" FontFamily="Consolas" MinWidth="50" VerticalAlignment="Bottom" Text="{Binding CurrentConfig.GridWidth}"/>
-                    <TextBlock Text="Höhe (Lat):"/>
-                    <TextBlock Margin="5,0,0,0" FontFamily="Consolas" MinWidth="50" VerticalAlignment="Bottom" Text="{Binding CurrentConfig.GridHeight}"/>
-                </StackPanel>
-
-            <StackPanel Orientation="Vertical" Margin="0,5,0,5" HorizontalAlignment="Left">
-                <TextBlock Text="Layer:" Margin="0,0,0,2"/>
-                <ListBox Width="270">
-                    <ListBoxItem>
-                        <CheckBox x:Name="ChkBaseLayer" Content="Erdoberfläche" IsChecked="True" IsEnabled="False"/>
-                    </ListBoxItem>
-                    <ListBoxItem>
-                        <Grid Width="250">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <CheckBox x:Name="ChkShowTemperature" Grid.Column="0" Content="Temperatur" VerticalAlignment="Center" IsChecked="{Binding IsTemperatureLayerVisible, Mode=TwoWay}" IsEnabled="{Binding AreLayerControlsEnabled}"/>
-                            <Slider x:Name="SldTemperatureOpacity" Grid.Column="1" Minimum="0.0" Maximum="1.0" Width="80" TickFrequency="0.1" IsSnapToTickEnabled="False" VerticalAlignment="Center" HorizontalAlignment="Right" Value="{Binding TemperatureOpacity, Mode=TwoWay}" IsEnabled="{Binding AreLayerControlsEnabled}"/>
-                        </Grid>
-
-                    </ListBoxItem>
-                </ListBox>
-            </StackPanel>
-
-            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
-                    <TextBlock Text="Startjahr der Simulation:" FontWeight="SemiBold"/>
-                    <TextBlock Margin="5,0,0,0" FontFamily="Consolas" Text="{Binding CurrentConfig.StartYear}"/>
-                </StackPanel>
-
-            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
-                    <TextBlock Text="Endjahr der Simulation:" FontWeight="SemiBold"/>
-                    <TextBlock Margin="5,0,0,0" FontFamily="Consolas" Text="{Binding CurrentConfig.EndYear}"/>
-                </StackPanel>
-
-            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
-                <TextBlock Text="Aktuelles Jahr:" FontWeight="SemiBold" Margin="0,0,0,0"/>
-                <TextBlock Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom" Text="{Binding CurrentYearText}"/>
-            </StackPanel>
-
-            <TextBlock Text="Simulationsteuerung:" FontWeight="SemiBold" Margin="0,10,0,0" />
-            <Button x:Name="BtnConfig" Content="Konfiguration..." Height="35" Margin="0,5,0,0" Command="{Binding SimulationConfigCommand}"/>
-                    
-            <Button x:Name="BtnSpinUp" Content="Spin-Up und initialisieren" Height="35" Margin="0,5,0,0" Command="{Binding SpinUpCommand}"/>
-            <Button x:Name="BtnStep" Content="1 Simulationsschritt" Height="35" Margin="0,10,0,0" Command="{Binding StepCommand}"/>
-
-            <TextBlock Text="Automatische Simulation:" FontWeight="SemiBold" Margin="0,20,0,5" />
             
-            <!-- Zeitschritt-Slider -->
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Simulationsschritt:"/>
-                    <TextBlock Margin="5,0,0,10" FontFamily="Consolas" VerticalAlignment="Bottom" Text="{Binding CurrentConfig.TimeStepDescription}"/>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/><!-- Menü -->
+                <RowDefinition Height="*"/><!-- Restlicher Inhalt -->
+            </Grid.RowDefinitions>
+            <Menu Grid.Row="0">
+                <MenuItem Header="_Simulation">
+                    <MenuItem Header="_Konfiguration..." Command="{Binding SimulationConfigCommand}"/>
+                    <MenuItem Header="_Verlauf..." Command="{Binding ShowHistoryCommand}"/>
+                </MenuItem>
+                <MenuItem Header="_Szenarien">
+                    <MenuItem Header="_CO₂-Szenarien..." IsEnabled="False"/>
+                    <MenuItem Header="_Ozon-Szenarien..." IsEnabled="False"/>
+                </MenuItem>
+            </Menu>
+
+        <Grid Grid.Row="1"  Margin="10">
+        
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Links: Karte mit Layern -->
+            <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="5">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Karte im ScrollViewer -->
+                    <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+
+                        <!-- Grid als Container für mehrere Layer -->
+                        <Grid Background="Black">
+                            <!-- Basiskarte: Oberflächentyp -->
+                            <Image x:Name="ImgSurface" 
+                                   Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="Fant"
+                                   RenderOptions.EdgeMode="Aliased"
+                                   Source="{Binding SurfaceImage}"/>
+
+                            <!-- Overlay: Temperatur -->
+                            <Image x:Name="ImgTemperature"
+                                   Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="Fant"
+                                   RenderOptions.EdgeMode="Aliased"
+                                   Source="{Binding TemperatureImage}"
+                                   Visibility="{Binding IsTemperatureLayerVisible, Converter={StaticResource BoolToVisibilityConverter}}"
+                                   Opacity="{Binding TemperatureOpacity}"/>
+                        </Grid>
+                    </ScrollViewer>
+
+                    <!-- Statuszeile -->
+                    <StatusBar Grid.Row="1">
+                        <StatusBarItem>
+                            <TextBlock Text="{Binding StatusLatText}"/>
+                        </StatusBarItem>
+                        <StatusBarItem>
+                            <TextBlock Text="{Binding StatusLonText}"/>
+                        </StatusBarItem>
+                        <StatusBarItem>
+                            <TextBlock Text="{Binding StatusTempText}"/>
+                        </StatusBarItem>
+                        <StatusBarItem>
+                            <TextBlock Text="{Binding StatusSurfaceText}" Margin="0,0,50,0"/>
+                        </StatusBarItem>
+                        <StatusBarItem HorizontalAlignment="Right">
+                            <TextBlock Text="{Binding StatusText}"/>
+                        </StatusBarItem>
+                    </StatusBar>
+                </Grid>
+            </Border>
+
+            <!-- Rechts: Steuerungselemente -->
+            <StackPanel Grid.Column="1" Margin="10" VerticalAlignment="Stretch">
+                <TextBlock FontSize="20" FontWeight="Bold" Margin="0,0,0,10" HorizontalAlignment="Center" Text="{Binding ProductName}"/>
+                <TextBlock Text="Gitternetz-Auflösung:" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                    <TextBlock Text="Breite (Lon):"/>
+                        <TextBlock Margin="5,0,0,0" FontFamily="Consolas" MinWidth="50" VerticalAlignment="Bottom" Text="{Binding CurrentConfig.GridWidth}"/>
+                        <TextBlock Text="Höhe (Lat):"/>
+                        <TextBlock Margin="5,0,0,0" FontFamily="Consolas" MinWidth="50" VerticalAlignment="Bottom" Text="{Binding CurrentConfig.GridHeight}"/>
+                    </StackPanel>
+
+                <StackPanel Orientation="Vertical" Margin="0,5,0,5" HorizontalAlignment="Left">
+                    <TextBlock Text="Layer:" Margin="0,0,0,2"/>
+                    <ListBox Width="270">
+                        <ListBoxItem>
+                            <CheckBox x:Name="ChkBaseLayer" Content="Erdoberfläche" IsChecked="True" IsEnabled="False"/>
+                        </ListBoxItem>
+                        <ListBoxItem>
+                            <Grid Width="250">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <CheckBox x:Name="ChkShowTemperature" Grid.Column="0" Content="Temperatur" VerticalAlignment="Center" IsChecked="{Binding IsTemperatureLayerVisible, Mode=TwoWay}" IsEnabled="{Binding AreLayerControlsEnabled}"/>
+                                <Slider x:Name="SldTemperatureOpacity" Grid.Column="1" Minimum="0.0" Maximum="1.0" Width="80" TickFrequency="0.1" IsSnapToTickEnabled="False" VerticalAlignment="Center" HorizontalAlignment="Right" Value="{Binding TemperatureOpacity, Mode=TwoWay}" IsEnabled="{Binding AreLayerControlsEnabled}"/>
+                            </Grid>
+
+                        </ListBoxItem>
+                    </ListBox>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                        <TextBlock Text="Startjahr der Simulation:" FontWeight="SemiBold"/>
+                        <TextBlock Margin="5,0,0,0" FontFamily="Consolas" Text="{Binding CurrentConfig.StartYear}"/>
+                    </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                        <TextBlock Text="Endjahr der Simulation:" FontWeight="SemiBold"/>
+                        <TextBlock Margin="5,0,0,0" FontFamily="Consolas" Text="{Binding CurrentConfig.EndYear}"/>
+                    </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                    <TextBlock Text="Aktuelles Jahr:" FontWeight="SemiBold" Margin="0,0,0,0"/>
+                    <TextBlock Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom" Text="{Binding CurrentYearText}"/>
+                </StackPanel>
+
+                <TextBlock Text="Simulationsteuerung:" FontWeight="SemiBold" Margin="0,10,0,0" />
+                <Button x:Name="BtnConfig" Content="Konfiguration..." Height="35" Margin="0,5,0,0" Command="{Binding SimulationConfigCommand}"/>
+                    
+                <Button x:Name="BtnSpinUp" Content="Spin-Up und initialisieren" Height="35" Margin="0,5,0,0" Command="{Binding SpinUpCommand}"/>
+                <Button x:Name="BtnStep" Content="1 Simulationsschritt" Height="35" Margin="0,10,0,0" Command="{Binding StepCommand}"/>
+
+                <TextBlock Text="Automatische Simulation:" FontWeight="SemiBold" Margin="0,20,0,5" />
+            
+                <!-- Zeitschritt-Slider -->
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Simulationsschritt:"/>
+                        <TextBlock Margin="5,0,0,10" FontFamily="Consolas" VerticalAlignment="Bottom" Text="{Binding CurrentConfig.TimeStepDescription}"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <Button x:Name="BtnStart" Content="Start" Width="80" Height="30" Margin="0,0,10,0" Command="{Binding StartCommand}"/>
+                    <Button x:Name="BtnStop" Content="Stop" Width="80" Height="30" Command="{Binding StopCommand}"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                <Button x:Name="BtnStart" Content="Start" Width="80" Height="30" Margin="0,0,10,0" Command="{Binding StartCommand}"/>
-                <Button x:Name="BtnStop" Content="Stop" Width="80" Height="30" Command="{Binding StopCommand}"/>
-            </StackPanel>
-
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                <TextBlock Text="Simulationszeit:" FontWeight="SemiBold" Margin="0,0,0,0" />
-                <TextBlock Text="{Binding SimTimeText}" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
-            </StackPanel>
-
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                <TextBlock Text="Globale Mitteltemperatur:" FontWeight="SemiBold" Margin="0,0,0,0" />
-                <TextBlock Text="{Binding GlobalMeanText}" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
-            </StackPanel>
-
-            <TextBlock Text="CO₂-Forcing:" FontWeight="SemiBold" Margin="0,20,0,5"/>
-            <TextBlock Text="CO₂-Konzentration [ppm]:"/>
-
-            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
-                <Slider x:Name="SldCO2" Minimum="280" Maximum="1000" Width="150" TickFrequency="20" IsSnapToTickEnabled="True" IsEnabled="False" Value="{Binding CO2Value, Mode=TwoWay}"/>
-                <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" FontFamily="Consolas" Text="{Binding CO2Value, StringFormat={}{0:F0} ppm}"/>
-            </StackPanel>
-
-            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
-                    <TextBlock Text="Klimasensitivität λ [K/(W/m²)]:"/>
-                    <TextBlock Margin="5,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom" Text="{Binding CurrentConfig.Lambda, StringFormat=0.0}"/>
+                    <TextBlock Text="Simulationszeit:" FontWeight="SemiBold" Margin="0,0,0,0" />
+                    <TextBlock Text="{Binding SimTimeText}" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
                 </StackPanel>
 
-            <Button x:Name="BtnShowHistory" Content="Verlauf anzeigen..." Height="30" Margin="0,20,0,0" Command="{Binding ShowHistoryCommand}"/>
-                <Button x:Name="BtnTestCache" Content="Test-Cache" Margin="0,10,0,0" Click="BtnTestCache_Click"/>
-            </StackPanel>
-    </Grid>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <TextBlock Text="Globale Mitteltemperatur:" FontWeight="SemiBold" Margin="0,0,0,0" />
+                    <TextBlock Text="{Binding GlobalMeanText}" Margin="2,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom"/>
+                </StackPanel>
+
+                <TextBlock Text="CO₂-Forcing:" FontWeight="SemiBold" Margin="0,20,0,5"/>
+                <TextBlock Text="CO₂-Konzentration [ppm]:"/>
+
+                <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                    <Slider x:Name="SldCO2" Minimum="280" Maximum="1000" Width="150" TickFrequency="20" IsSnapToTickEnabled="True" IsEnabled="False" Value="{Binding CO2Value, Mode=TwoWay}"/>
+                    <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" FontFamily="Consolas" Text="{Binding CO2Value, StringFormat={}{0:F0} ppm}"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                        <TextBlock Text="Klimasensitivität λ [K/(W/m²)]:"/>
+                        <TextBlock Margin="5,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom" Text="{Binding CurrentConfig.Lambda, StringFormat=0.0}"/>
+                    </StackPanel>
+
+                <Button x:Name="BtnShowHistory" Content="Verlauf anzeigen..." Height="30" Margin="0,20,0,0" Command="{Binding ShowHistoryCommand}"/>
+                    <Button x:Name="BtnTestCache" Content="Test-Cache" Margin="0,10,0,0" Click="BtnTestCache_Click"/>
+                </StackPanel>
+        </Grid>
+        </Grid>
+        
+        <!-- Overlay -->
+        <climatesim:ProgressOverlay Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibilityConverter}}"/>
     </Grid>
 </Window>

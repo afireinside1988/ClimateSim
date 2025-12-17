@@ -1,0 +1,59 @@
+﻿<UserControl x:Class="ProgressOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:ClimateSim"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="800">
+    
+    <!-- Das Control selbst ist "nur" das Overlay.
+         Es wird im Window über den restlichen Inhalt gelegt. -->
+    
+    <Grid Background="#7F000000"> <!-- halbtransparent schwarz -->
+        <Border Width="460"
+                Padding="18"
+                CornerRadius="10"
+                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+                BorderBrush="#33000000"
+                BorderThickness="1"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+
+            <StackPanel>
+
+                <TextBlock Text="{Binding BusyTitle}"
+                           FontWeight="Bold"
+                           FontSize="16"
+                           Margin="0,0,0,8"/>
+
+                <TextBlock Text="{Binding BusyMessage}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,12"/>
+
+                <ProgressBar Height="18"
+                             Minimum="0"
+                             Maximum="100"
+                             Value="{Binding BusyPercent}"
+                             IsIndeterminate="{Binding BusyIsIndeterminate}"
+                             Margin="0,0,0,10"/>
+
+                <DockPanel LastChildFill="False">
+                    <TextBlock DockPanel.Dock="Left"
+                               VerticalAlignment="Center"
+                               FontFamily="Consolas"
+                               Text="{Binding BusyPercent, StringFormat={}{0:0}%}"/>
+
+                    <Button DockPanel.Dock="Right"
+                            Width="110"
+                            Height="28"
+                            Margin="10,0,0,0"
+                            Content="Abbrechen"
+                            Command="{Binding CancelBusyCommand}"
+                            IsEnabled="{Binding BusyCanCancel}"/>
+                </DockPanel>
+
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

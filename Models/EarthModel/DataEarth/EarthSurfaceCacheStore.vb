@@ -56,7 +56,7 @@ Public Class EarthSurfaceCacheStore
             Return False
         End If
 
-        Dim meta As EarthSurfaceCacheMeta = Nothing
+        Dim meta As EarthSurfaceCacheMeta
 
         '1) Meta laden
         Try

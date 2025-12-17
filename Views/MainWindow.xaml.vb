@@ -564,6 +564,7 @@ Class MainWindow
     End Sub
 
     Private Sub BtnTestCache_Click()
+
         'TEST: Dummy-Cache erzeugen, speichern, laden
         Dim source = "GEBCO_2025"
         Dim cellSize = 1.0
@@ -599,7 +600,7 @@ Class MainWindow
 
         Dim loaded As EarthSurfaceCache = Nothing
         Dim kind As CacheOpenErrorKind
-        Dim msg As String
+        Dim msg As String = Nothing
 
         If EarthSurfaceCacheStore.TryOpenCache(source, cellSize, resampling, loaded, kind, msg) Then
             Debug.WriteLine($"Cache geladen: {loaded.Meta.Source}, {loaded.Meta.CellSizeDeg}°, n={loaded.Meta.LatCount * loaded.Meta.LonCount}")
