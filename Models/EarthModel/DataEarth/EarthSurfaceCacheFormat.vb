@@ -1,5 +1,6 @@
 ﻿Imports System.IO
 Imports System.Text
+Imports System.Threading
 
 ''' <summary>
 ''' Binärformat für EarthSurface-Cache.
@@ -38,7 +39,11 @@ Public NotInheritable Class EarthSurfaceCacheFormat
 
     End Sub
 
-    Public Shared Sub WriteCache(binPath As String, cache As EarthSurfaceCache)
+    ''' <summary>
+    ''' Speichert Cache als Binary-Datei.
+    ''' Progress ist optional und wird throttled (nicht bei jedem Element).
+    ''' </summary>
+    Public Shared Sub WriteCache(binPath As String, cache As EarthSurfaceCache, Optional progress As IProgress(Of ProgressInfo) = Nothing, Optional ct As CancellationToken = Nothing)
         If cache Is Nothing OrElse cache.Meta Is Nothing Then Throw New ArgumentNullException(NameOf(cache))
 
         Dim meta = cache.Meta
@@ -56,6 +61,8 @@ Public NotInheritable Class EarthSurfaceCacheFormat
         If meta.HasTid Then flags = flags Or CacheFlags.HasTid
 
         Directory.CreateDirectory(Path.GetDirectoryName(binPath))
+
+        'TODO----
 
         'Atomisch schreiben: temp -> replace
         Dim tmp As String = binPath & ".tmp"
@@ -137,7 +144,7 @@ Public NotInheritable Class EarthSurfaceCacheFormat
 
                 If flags.HasFlag(CacheFlags.HasTid) Then
                     tid = New Single(n - 1) {}
-                    For i As Integer = 0 To i - 1
+                    For i As Integer = 0 To n - 1
                         tid(i) = br.ReadSingle()
                     Next
                 End If

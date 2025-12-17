@@ -604,8 +604,10 @@ Class MainWindow
         If EarthSurfaceCacheStore.TryOpenCache(source, cellSize, resampling, loaded, kind, msg) Then
             Debug.WriteLine($"Cache geladen: {loaded.Meta.Source}, {loaded.Meta.CellSizeDeg}°, n={loaded.Meta.LatCount * loaded.Meta.LonCount}")
             Debug.WriteLine($"Sample Height(0)={loaded.HeightM(0)}, TID(0)={loaded.Tid(0)}")
+            Debug.Flush()
         Else
             Debug.WriteLine($"Cache konnte nicht geöffnet werden: {kind} - {msg}")
+            Debug.Flush()
         End If
     End Sub
 
