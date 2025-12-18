@@ -5,7 +5,7 @@ Public Module EarthSurfacePaths
     Public ReadOnly Property CacheDirectory As String = Path.Combine(RootDirectory, "Cache")
 
     'Raw-Dateien (aktuelle Namen)
-    Public ReadOnly Property RawTidPath As String = Path.Combine(RawDirectory, "GEBCO_2025_TID.nc")
-    Public ReadOnly Property RawSubIceTopoPath As String = Path.Combine(RawDirectory, "GEBCO_2025_sub_ice.nc")
+    Public ReadOnly Property RawTidPath As String = Path.Combine(RawDirectory, "gebco_2025_tid_ascii.zip")
+    Public ReadOnly Property RawSubIceTopoPath As String = Path.Combine(RawDirectory, "gebco_2025_sub_ice_ascii.zip")
 
 End Module

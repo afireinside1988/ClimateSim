@@ -1,4 +1,5 @@
-﻿
+﻿#Disable Warning IDE0028 ' Initialisierung der Sammlung vereinfachen
+
 Public Class ToyEarthSurfaceProvider
     Implements IEarthSurfaceProvider
 
@@ -39,7 +40,7 @@ Public Class ToyEarthSurfaceProvider
 
     End Function
 
-    Private Sub ApplyPatches(info As SurfaceInfo,
+    Private Shared Sub ApplyPatches(info As SurfaceInfo,
                               lat As Double, lon As Double,
                               patches As List(Of SurfacePatch))
 
@@ -51,7 +52,7 @@ Public Class ToyEarthSurfaceProvider
             End If
         Next
     End Sub
-    Private Sub ApplyBiomes(info As SurfaceInfo,
+    Private Shared Sub ApplyBiomes(info As SurfaceInfo,
                              lat As Double, lon As Double,
                              patches As List(Of SurfacePatch))
 
@@ -71,7 +72,9 @@ Public Class ToyEarthSurfaceProvider
     End Sub
 
     Private Shared Function CreateBaseLandPatches() As List(Of SurfacePatch)
+
         Dim list As New List(Of SurfacePatch)
+
 
         '--- Nordamerika ---
         'Westküste & Kernland
@@ -162,7 +165,7 @@ Public Class ToyEarthSurfaceProvider
         Return list
     End Function
 
-    Private Sub ApplyIce(info As SurfaceInfo, lat As Double, lon As Double)
+    Private Shared Sub ApplyIce(info As SurfaceInfo, lat As Double, lon As Double)
 
         'Arktisches Meereis (nur dort, wo vorher Ozean war)
         If info.Surface = SurfaceType.Ocean AndAlso lat > 70 Then
@@ -190,3 +193,5 @@ Public Class ToyEarthSurfaceProvider
         End If
     End Sub
 End Class
+
+#Enable Warning IDE0028 ' Initialisierung der Sammlung vereinfachen

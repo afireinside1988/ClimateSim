@@ -29,6 +29,8 @@
                     <MenuItem Header="_Verlauf..." Command="{Binding ShowHistoryCommand}"/>
                 </MenuItem>
                 <MenuItem Header="_Szenarien">
+                    <MenuItem Header="Erdoberfläche" Command="{Binding ShowEarthSurfaceWindowCommand}"/>
+                    <Separator/>
                     <MenuItem Header="_CO₂-Szenarien..." IsEnabled="False"/>
                     <MenuItem Header="_Ozon-Szenarien..." IsEnabled="False"/>
                 </MenuItem>

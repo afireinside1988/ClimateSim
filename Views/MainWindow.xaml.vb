@@ -56,6 +56,7 @@ Class MainWindow
         AddHandler _viewModel.SpinUpRequested, AddressOf OnSpinUpRequested
         AddHandler _viewModel.StepRequested, AddressOf OnStepRequested
         AddHandler _viewModel.ShowHistoryRequested, AddressOf OnShowHistoryRequested
+        AddHandler _viewModel.ShowEarthSurfaceWindowRequested, AddressOf OnShowEarthSurfaceWindowRequested
         AddHandler _viewModel.SimulationConfigRequested, AddressOf OnSimulationConfigRequested
 
         'Mouseovers
@@ -271,6 +272,12 @@ Class MainWindow
         End If
 
         Dim wnd As New HistoryWindow(_engine, _viewModel.CurrentConfig.TimeStepMode)
+        wnd.Owner = Me
+        wnd.Show()
+    End Sub
+
+    Private Sub OnShowEarthSurfaceWindowRequested(sender As Object, e As EventArgs)
+        Dim wnd As New EarthSurfaceWindow()
         wnd.Owner = Me
         wnd.Show()
     End Sub
