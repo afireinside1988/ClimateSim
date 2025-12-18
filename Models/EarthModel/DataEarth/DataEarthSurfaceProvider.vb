@@ -47,7 +47,7 @@ Public Class DataEarthSurfaceProvider
 
         progress?.Report(New ProgressInfo("EarthSurface: Öffne Cache...", 0))
 
-        If Not EarthSurfaceCacheStore.TryOpenCache(source, cellSizeDeg, resampling, loaded, kind, msg, progress, ct) Then
+        If Not EarthSurfaceCacheStore.TryOpenCache(source, cellSizeDeg, resampling, loaded, kind, msg,, progress, ct) Then
             Throw New InvalidOperationException($"EarthSurface-Cache konnte nicht geöffnet werden: {kind} - {msg}")
         End If
 

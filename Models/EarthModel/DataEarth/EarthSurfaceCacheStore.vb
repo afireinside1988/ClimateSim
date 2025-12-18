@@ -28,14 +28,22 @@ Public Class EarthSurfaceCacheStore
     ''' <param name="cellSizeDeg"></param>
     ''' <param name="resampling"></param>
     ''' <returns></returns>
-    Public Shared Function BuildCacheBaseName(source As String, cellSizeDeg As Double, resampling As String) As String
+    Public Shared Function BuildCacheBaseName(source As String, cellSizeDeg As Double, resampling As String,
+                                              Optional landMaskVariant As String = Nothing) As String
         Dim cs As String = cellSizeDeg.ToString("0.##", Globalization.CultureInfo.InvariantCulture)
-        Return $"{source}_{cs}deg_{resampling}".Replace(" ", "")
+
+        Dim lm As String = NormalizeNamePart(landMaskVariant)
+        Dim lmPart As String = If(String.IsNullOrWhiteSpace(lm), "", "_" & lm)
+
+        Return $"{source}_{cs}deg_{resampling}{lmPart}".Replace(" ", "")
     End Function
 
-    Public Shared Function GetCachePaths(source As String, cellSizeDeg As Double, resampling As String) As (binPath As String, metaPath As String)
+    Public Shared Function GetCachePaths(source As String, cellSizeDeg As Double, resampling As String,
+                                         Optional landMaskVariant As String = Nothing) As (binPath As String, metaPath As String)
+
         Directory.CreateDirectory(CacheDir)
-        Dim baseName As String = BuildCacheBaseName(source, cellSizeDeg, resampling)
+
+        Dim baseName As String = BuildCacheBaseName(source, cellSizeDeg, resampling, landMaskVariant)
         Dim binPath As String = Path.Combine(CacheDir, baseName & ".bin")
         Dim metaPath As String = Path.Combine(CacheDir, baseName & ".meta.json")
         Return (binPath, metaPath)
@@ -45,6 +53,7 @@ Public Class EarthSurfaceCacheStore
                                         ByRef cache As EarthSurfaceCache,
                                         ByRef errorKind As CacheOpenErrorKind,
                                         ByRef errorMessage As String,
+                                        Optional landMaskVariant As String = Nothing,
                                         Optional progress As IProgress(Of ProgressInfo) = Nothing,
                                         Optional ct As CancellationToken = Nothing) As Boolean
 
@@ -52,7 +61,7 @@ Public Class EarthSurfaceCacheStore
         errorKind = CacheOpenErrorKind.None
         errorMessage = Nothing
 
-        Dim paths As (binPath As String, metaPath As String) = GetCachePaths(source, cellSizeDeg, resampling)
+        Dim paths As (binPath As String, metaPath As String) = GetCachePaths(source, cellSizeDeg, resampling, landMaskVariant)
         Dim binPath As String = paths.binPath
         Dim metaPath As String = paths.metaPath
 
@@ -153,12 +162,13 @@ Public Class EarthSurfaceCacheStore
     End Function
 
     Public Shared Sub SaveCache(source As String, cellSizeDeg As Double, resampling As String, cache As EarthSurfaceCache,
+                                Optional landMaskVariant As String = Nothing,
                                 Optional progress As IProgress(Of ProgressInfo) = Nothing,
                                 Optional ct As CancellationToken = Nothing)
 
         If cache Is Nothing OrElse cache.Meta Is Nothing Then Throw New ArgumentNullException(NameOf(cache))
 
-        Dim paths As (binPath As String, metaPath As String) = GetCachePaths(source, cellSizeDeg, resampling)
+        Dim paths As (binPath As String, metaPath As String) = GetCachePaths(source, cellSizeDeg, resampling, landMaskVariant)
 
         '1) Binär
         progress?.Report(New ProgressInfo("Cache speichern: Binärdaten...", 0))
@@ -173,6 +183,9 @@ Public Class EarthSurfaceCacheStore
 
         progress?.Report(New ProgressInfo("Cache gespeichert.", 100))
     End Sub
+
+
+#Region "Helper"
 
     Private Shared Sub WriteTextAtomic(savePath As String, content As String, Optional ct As CancellationToken = Nothing)
 
@@ -190,4 +203,22 @@ Public Class EarthSurfaceCacheStore
             File.Move(tmp, savePath)
         End If
     End Sub
+
+    Private Shared Function NormalizeNamePart(part As String) As String
+
+        If String.IsNullOrWhiteSpace(part) Then Return Nothing
+
+        Dim s As String = part.Trim()
+
+        'Erlaubt: a-zA-Z0-9 _ - .
+        For Each c In Path.GetInvalidFileNameChars()
+            s = s.Replace(c, "_"c)
+        Next
+
+        s = s.Replace(" ", "_")
+
+        Return s
+    End Function
+
+#End Region
 End Class
