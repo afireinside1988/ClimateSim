@@ -41,8 +41,18 @@
                 <DockPanel LastChildFill="False">
                     <TextBlock DockPanel.Dock="Left"
                                VerticalAlignment="Center"
-                               FontFamily="Consolas"
-                               Text="{Binding BusyPercent, StringFormat={}{0:0}%}"/>
+                               FontFamily="Consolas">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="{Binding BusyPercent, StringFormat={}{0:0}%}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding BusyIsIndeterminate}" Value="True">
+                                        <Setter Property="Text" Value=""/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
 
                     <Button DockPanel.Dock="Right"
                             Width="110"
