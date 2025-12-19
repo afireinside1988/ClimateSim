@@ -111,7 +111,7 @@ Public NotInheritable Class LandMaskBuilder
                     Dim idx As Integer = lat * lonCount + lon
 
                     '1) Land-Zellen in 3x3 zählen
-                    Dim landCount As Integer = CountLandin3x3(src, lat, lon, latCount, lonCount)
+                    Dim landCount As Integer = CountLandIn3x3(src, lat, lon, latCount, lonCount)
 
                     '2) Hysterese-Entscheidung
                     If landCount >= landThreshold Then

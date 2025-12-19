@@ -16,15 +16,15 @@
         <conv:EnumToBooleanConverter x:Key="EnumToBool"/>
         <conv:BooleanAndToVisibilityConverter x:Key="AndToVis"/>
     </Window.Resources>
-    
+
     <Grid>
         <!-- 2 Spalten: links Preview, rechts Settings -->
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="420"/>
         </Grid.ColumnDefinitions>
-        
-        
+
+
         <!-- LEFT: PREVIEW -->
         <Border Grid.Column="0"
                 Margin="12"
@@ -92,25 +92,25 @@
                         </TextBlock>
                     </Grid>
                 </Border>
-                
-                  <!-- Hover / Info -->
-            <TextBlock Grid.Row="2" Margin="0,10,0,0"
+
+                <!-- Hover / Info -->
+                <TextBlock Grid.Row="2" Margin="0,10,0,0"
                        Text="{Binding HoverText}"
                        FontFamily="Consolas"
                        TextWrapping="Wrap"
                        Opacity="0.85"/>
-                
+
             </Grid>
         </Border>
-        
-          
-        
+
+
+
         <!-- RIGHT: SETTINGS -->
         <ScrollViewer Grid.Column="1"
                       Margin="12,12,12,12"
                       Padding="0,0,5,0"
                       VerticalScrollBarVisibility="Auto">
-            
+
             <StackPanel>
 
                 <TextBlock Text="Einstellungen"
@@ -153,6 +153,8 @@
                         <StackPanel Margin="0,4,0,0" Orientation="Vertical">
                             <RadioButton Content="Aus Höhe ableiten (LandMask-Builder)"
                                          IsChecked="{Binding SelectedLandMaskMode, Converter={StaticResource EnumToBool}, ConverterParameter=FromHeight}"/>
+                            <RadioButton Content="Aus TID auslesen"
+                                         IsChecked="{Binding SelectedLandMaskMode, Converter={StaticResource EnumToBool}, ConverterParameter=FromTid0}"/>
                             <RadioButton Content="Aus externer LandMask-Datei (nicht implementiert)"
                                          IsChecked="{Binding SelectedLandMaskMode, Converter={StaticResource EnumToBool}, ConverterParameter=ExternalSource}"/>
                         </StackPanel>
@@ -243,7 +245,7 @@
                          VerticalScrollBarVisibility="Auto"/>
             </StackPanel>
         </ScrollViewer>
-        
+
         <!-- Overlay -->
         <climatesim:ProgressOverlay Panel.ZIndex="999">
             <climatesim:ProgressOverlay.Visibility>
@@ -255,4 +257,5 @@
         </climatesim:ProgressOverlay>
 
     </Grid>
+
 </Window>

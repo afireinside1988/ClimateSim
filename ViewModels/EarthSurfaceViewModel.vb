@@ -1,26 +1,10 @@
 ﻿Imports System.IO
+Imports System.Security.Cryptography
 Imports System.Text
 Imports System.Threading
 Imports System.Windows
 Imports System.Windows.Media
 Imports Microsoft.Win32
-
-Public Enum ResamplingMode
-    Nearest
-    Bilinear
-End Enum
-
-Public Enum CellSizePreset
-    Deg1
-    Deg0_5
-    Deg0_25
-End Enum
-
-Public Enum LandMaskMode
-    FromHeight
-    FromTid0
-    ExternalSource
-End Enum
 
 Public Class EarthSurfaceViewModel
     Inherits ViewModelBase
@@ -297,7 +281,7 @@ Public Class EarthSurfaceViewModel
 
         GenerateCacheCommand = New RelayCommand(Of Object)(
             Async Sub(o)
-                Await RunSmokeTestAsync()
+                Await GenerateCacheAsync()
             End Sub, Function(o) CanGenerateCache AndAlso Not IsBusy)
 
         OpenCacheFolderCommand = New RelayCommand(Of Object)(
@@ -403,5 +387,153 @@ Public Class EarthSurfaceViewModel
         Catch ex As Exception
             LastReport = "Fehler: " & ex.Message
         End Try
+    End Function
+
+    'Etappe B3: Real-Cache-Builder aus ESRI ASCII
+    Private Async Function GenerateCacheAsync() As Task(Of String)
+
+        Try
+            Dim result As String = Await BusyRunner.RunAsync(Of String)(
+                Me,
+                "EarthSurface: Cache generieren",
+                Async Function(progress, ct)
+
+                    ct.ThrowIfCancellationRequested()
+
+                    '------------------------------
+                    'A) BuildOptions aus VM-Zustand
+                    '------------------------------
+
+                    Dim opts As New EarthSurfaceCacheBuilder.BuildOptions With {
+                        .SourceName = Me.SourceName,
+                        .HeightZipPath = Me.RawHeightFile,
+                        .TidZipPath = If(String.IsNullOrWhiteSpace(Me.RawTidFile), Nothing, Me.RawTidFile),
+                        .CellSizeDeg = Me.CellSizeDeg,
+                        .Resampling = "nearest", 'B3: erstmal fix
+                        .LandMaskMode = Me.SelectedLandMaskMode,
+                        .UseHysteresis = Me.UseHysteresis,
+                        .HysteresisIterations = Me.HysteresisIterations,
+                        .LandMaskVariant = Me.LandMaskVariantTag
+                    }
+
+                    '---------------
+                    'B) Build & Save
+                    '---------------
+
+                    progress?.Report(New ProgressInfo("Starte Cache-Builder (Nearest)...", 0))
+                    Dim buildReport As String = EarthSurfaceCacheBuilder.BuildAndSaveNearest(opts, progress, ct)
+
+                    ct.ThrowIfCancellationRequested()
+
+                    '-------------------------------
+                    'C) TryOpenCache + 3 Stichproben
+                    '-------------------------------
+                    progress?.Report(New ProgressInfo("Öffne Cache zur Validierung...", 95))
+
+                    Dim cache As EarthSurfaceCache = Nothing
+                    Dim ek As CacheOpenErrorKind
+                    Dim em As String = Nothing
+
+                    Dim ok As Boolean = EarthSurfaceCacheStore.TryOpenCache(
+                        source:=opts.SourceName,
+                        cellSizeDeg:=opts.CellSizeDeg,
+                        resampling:="nearest",
+                        cache:=cache,
+                        errorKind:=ek,
+                        errorMessage:=em,
+                        landMaskVariant:=opts.LandMaskVariant,
+                        progress:=progress,
+                        ct:=ct)
+
+                    If Not ok OrElse cache Is Nothing Then
+                        Throw New InvalidDataException($"Cache konnte nicht wieder geöffnet werden: {ek} - {em}")
+                    End If
+
+                    'DEBUG
+                    Dim bmp = EarthSurfacePreviewRenderer.BuildLandOceanBitmapFromHeight(cache)
+                    EarthSurfacePreviewRenderer.SavePng(bmp, CacheDirectory & "\preview.bmp")
+
+                    ct.ThrowIfCancellationRequested()
+
+                    Dim sampleReport As String = BuildSampleReport(cache)
+                    progress?.Report(New ProgressInfo("Fertig.", 100))
+
+                    Return buildReport & Environment.NewLine & Environment.NewLine & sampleReport
+
+                End Function,
+                canCancel:=True,
+                showOverlay:=True,
+                runInBackground:=True)
+
+            LastReport = result
+
+        Catch ex As OperationCanceledException
+            LastReport = "Abgebrochen."
+            Return LastReport
+        Catch ex As Exception
+            LastReport = "Fehler: " & ex.Message
+            Return LastReport
+        End Try
+        Return "Fehler!!!"
+    End Function
+
+    Private Function BuildSampleReport(cache As EarthSurfaceCache) As String
+
+        Dim m = cache.Meta
+        Dim latCount As Integer = m.LatCount
+        Dim lonCount As Integer = m.LonCount
+
+        Dim hasTid As Boolean = (m.HasTid AndAlso cache.Tid IsNot Nothing AndAlso cache.Tid.Length = latCount * lonCount)
+        Dim hasLm As Boolean = (m.HasLandMask AndAlso cache.LandMask IsNot Nothing AndAlso cache.LandMask.Length = latCount * lonCount)
+
+        Dim sb As New StringBuilder()
+        sb.AppendLine("=== Cache Stichproben ===")
+        sb.AppendLine($"Raster: {latCount} x {lonCount}  cell={m.CellSizeDeg}°")
+        sb.AppendLine($"HasTid={m.HasTid}, HasLandMask={m.HasLandMask}")
+        sb.AppendLine()
+
+        '3 Samples: (0,0), Mitte, (lat-1,lon-1)
+        Dim samples = New(name As String, lat As Integer, lon As Integer)() {
+            ("NW (0,0)", 0, 0),
+            ("Center", latCount \ 2, lonCount \ 2),
+            ("SE (last,last)", latCount - 1, lonCount - 1)
+        }
+
+        For Each s In samples
+            Dim idx As Integer = s.lat * lonCount + s.lon
+
+            Dim h As Single = cache.HeightM(idx)
+            Dim hStr As String = If(Single.IsNaN(h), "NaN(Void)", h.ToString("0.##", Globalization.CultureInfo.InvariantCulture))
+
+            Dim tidStr As String = "(n/a)"
+            If hasTid Then
+                tidStr = cache.Tid(idx).ToString("0", Globalization.CultureInfo.InvariantCulture)
+            End If
+
+            Dim lmStr As String = "(n/a)"
+            If hasLm Then
+                lmStr = cache.LandMask(idx).ToString()
+            End If
+
+            Dim latDeg As Double = LatCenterDeg(s.lat, latCount, m.CellSizeDeg)
+            Dim lonDeg As Double = LonCenterDeg(s.lon, lonCount, m.CellSizeDeg)
+
+            sb.AppendLine($"{s.name}: latIdx={s.lat}, lonIdx={s.lon}  =>  lat={latDeg:0.###}°, lon={lonDeg:0.###}°")
+            sb.AppendLine($"  Height={hStr}m")
+            sb.AppendLine($"  TID={tidStr}")
+            sb.AppendLine($"  LandMask={lmStr} (0=ocean, 1 =land)")
+        Next
+
+        Return sb.ToString()
+    End Function
+
+    Private Function LatCenterDeg(latIndex As Integer, latCount As Integer, cellSizeDeg As Double) As Double
+        'latIndex 0 = Nord (oben)
+        Return 90.0 - (latIndex + 0.5) * cellSizeDeg
+    End Function
+
+    Private Function LonCenterDeg(lonIndex As Integer, lonCount As Integer, cellSizeDeg As Double) As Double
+        'lonIndex 0 = West (links)
+        Return -180 + (lonIndex + 0.5) * cellSizeDeg
     End Function
 End Class
