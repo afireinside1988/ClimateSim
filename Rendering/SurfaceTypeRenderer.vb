@@ -8,7 +8,7 @@ Public Class SurfaceTypeRenderer
         Dim width As Integer = grid.Width
         Dim height As Integer = grid.Height
 
-        Dim dpi = 96.0 'Auflösung des Renderings
+        Dim dpi = 200.0 'Auflösung des Renderings
         Dim bmp As New WriteableBitmap(width, height, dpi, dpi, PixelFormats.Bgra32, Nothing)
 
         Dim pixels(width * height - 1) As Integer

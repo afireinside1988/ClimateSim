@@ -13,7 +13,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         Public Property HeightZipPath As String
         Public Property TidZipPath As String
         Public Property CellSizeDeg As Double
-        Public Property Resampling As String = "nearest"
+        Public Property Resampling As String = "nearest"        ' "nearest" oder "bilinear"
         Public Property LandMaskMode As LandMaskMode
 
         Public Property UseHysteresis As Boolean
@@ -28,7 +28,369 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
 
     End Class
 
+    ''' <summary>
+    ''' Baut und speichert den EarthSurface-Cache.
+    ''' Height-Tiles: resamplet nearest oder bilinear (je nach BuildOption)
+    ''' TID:          wird immer nearest resampled (falls TID vorhanden ist)
+    ''' </summary>
+    Public Shared Function BuildAndSave(opts As BuildOptions, progress As IProgress(Of ProgressInfo), ct As CancellationToken) As String
+
+        '-------------
+        '0) Validation
+        '-------------
+
+        ArgumentNullException.ThrowIfNull(opts)
+
+        If String.IsNullOrWhiteSpace(opts.SourceName) Then Throw New ArgumentException("SourceName fehlt.")
+        If String.IsNullOrWhiteSpace(opts.HeightZipPath) OrElse Not File.Exists(opts.HeightZipPath) Then
+            Throw New FileNotFoundException("Height-ZIP nicht gefunden.", opts.HeightZipPath)
+        End If
+        If opts.CellSizeDeg <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(opts.CellSizeDeg))
+
+        Dim resampling As String = If(opts.Resampling, "nearest").Trim().ToLowerInvariant()
+        If resampling <> "nearest" AndAlso resampling <> "bilinear" Then
+            Throw New ArgumentException($"Unbekanntes Resampling '{opts.Resampling}'. Erlaubt sind 'nearest' und 'bilinear'.")
+        End If
+
+        ct.ThrowIfCancellationRequested()
+
+        Dim sb As New StringBuilder()
+
+        '---------------------------------------------
+        'A) Tiles listen und deterministisch sortieren
+        '---------------------------------------------
+
+        progress?.Report(New ProgressInfo("Scanne Height-ZIP nach Tiles...", ProgressInfo.Indeterminate))
+        Dim heightTiles As List(Of GebcoTileInfo) = GebcoZipCatalog.ListAscTiles(opts.HeightZipPath)
+        If heightTiles Is Nothing OrElse heightTiles.Count = 0 Then Throw New InvalidDataException("Keine .asc Tiles im Height-ZIP gefunden.")
+
+        Dim hasTid As Boolean = (Not String.IsNullOrWhiteSpace(opts.TidZipPath) AndAlso File.Exists(opts.TidZipPath))
+        Dim tidTiles As List(Of GebcoTileInfo) = Nothing
+
+        If hasTid Then
+            progress?.Report(New ProgressInfo("Scanne TID-ZIP nach Tiles...", ProgressInfo.Indeterminate))
+            tidTiles = GebcoZipCatalog.ListAscTiles(opts.TidZipPath)
+            If tidTiles Is Nothing OrElse tidTiles.Count = 0 Then hasTid = False
+        End If
+
+        'Sanity: TID-Files müssen "gleich geschnitten" und gleich sortiert sein
+        If hasTid Then
+            If tidTiles.Count <> heightTiles.Count Then
+                Throw New InvalidDataException("TID-Tileanzahl passt nicht zu Height-Tiles.")
+            End If
+
+            For i As Integer = 0 To heightTiles.Count - 1
+                Dim a As GebcoTileInfo = heightTiles(i)
+                Dim b As GebcoTileInfo = tidTiles(i)
+
+                If a.North <> b.North OrElse a.South <> b.South OrElse a.West <> b.West OrElse a.East <> b.East Then
+                    Throw New InvalidDataException("TID-Tiles sind anders sortiert/geschnitten als Height-Tiles.")
+                End If
+            Next
+        End If
+
+        '----------------------
+        'B) Zielraster ableiten
+        '----------------------
+
+        Dim latCount As Integer = CInt(Math.Round(180.0 / opts.CellSizeDeg))
+        Dim lonCount As Integer = CInt(Math.Round(360.0 / opts.CellSizeDeg))
+        Dim n As Integer = latCount * lonCount
+
+        '------------------------
+        'C) Output-Arrays anlegen
+        '------------------------
+
+        Dim heightOut As Single() = New Single(n - 1) {}
+        Array.Fill(heightOut, Single.NaN)
+
+        Dim tidOut As Single() = If(hasTid, New Single(n - 1) {}, Nothing)
+        Dim landMaskOut As Byte() = New Byte(n - 1) {}
+
+        '------------------------
+        'D) Progress-Meilensteine
+        '------------------------
+
+        Dim mapStart As Integer = 0
+        Dim mapEnd As Integer = 2
+
+        Dim heightStart As Integer = mapEnd
+        Dim heightEnd As Integer = If(hasTid, 48, 94)
+
+        Dim tidStart As Integer = heightEnd
+        Dim tidEnd As Integer = 94
+
+        Dim lmStart As Integer = If(hasTid, tidEnd, heightEnd)
+        Dim lmEnd As Integer = 96
+
+        Dim metaStart As Integer = lmEnd
+        Dim metaEnd As Integer = 98
+
+        Dim saveStart As Integer = metaEnd
+        Dim saveEnd As Integer = 100
+
+        '---------------------
+        'E) Requests erstellen
+        '---------------------
+
+        Dim pReq As New ProgressSlice(progress, mapStart, mapEnd, "GEBCO: ")
+
+        'TID bleibt immer Nearest -> diese Request brauchen wir ggf. später
+        Dim reqNearestByTile As List(Of GebcoNearestRequestBuilder.TileRowRequests) = Nothing
+
+        If hasTid OrElse resampling = "nearest" Then
+            pReq.Report(New ProgressInfo("Baue Nearest-Mapping...", 0))
+            reqNearestByTile = GebcoNearestRequestBuilder.BuildRequests(heightTiles, opts.CellSizeDeg, latCount, lonCount)
+        Else
+            pReq.Report(New ProgressInfo("Baue Bilinear-Mapping...", 0))
+        End If
+
+        'Height-Requests je nach Resampling
+        Dim reqBilinearByTile As List(Of GebcoBilinearRequestBuilder.TileRowRequest) = Nothing
+
+        If resampling = "bilinear" Then
+            reqBilinearByTile = GebcoBilinearRequestBuilder.BuildRequests(heightTiles, opts.CellSizeDeg, latCount, lonCount)
+        End If
+
+        ct.ThrowIfCancellationRequested()
+
+        '------------------------
+        'F) Height Tiles streamen
+        '------------------------
+
+        Dim tileCount As Integer = heightTiles.Count
+
+        If resampling = "nearest" Then
+
+            'NEAREST-Resampling
+
+            If reqNearestByTile Is Nothing OrElse reqNearestByTile.Count <> tileCount Then Throw New InvalidOperationException("Interner Fehler: Nearest-Requests fehlen oder passen nicht zur Tile-Anzahl.")
+
+            For t As Integer = 0 To tileCount - 1
+
+                ct.ThrowIfCancellationRequested()
+
+                Dim tile As GebcoTileInfo = heightTiles(t)
+
+                Dim ts, te As Integer
+                GetTileSlice(t, tileCount, heightStart, heightEnd, ts, te)
+
+                Dim pTile As New ProgressSlice(progress, ts, te, "GEBCO: ")
+                pTile.Report(New ProgressInfo($"HEIGHT: Tile {t + 1}/{tileCount}: {Path.GetFileName(tile.EntryName)}", 0))
+
+                GebcoTileProcessor.ProcessHeightTileNearest(
+                    opts.HeightZipPath, tile, reqNearestByTile(t), heightOut,
+                    pTile, ct, progressPrefix:=$"HEIGHT {t + 1}/{tileCount}")
+
+            Next
+
+        Else
+            'BILINEAR-Resampling
+
+            If reqBilinearByTile Is Nothing OrElse reqBilinearByTile.Count <> tileCount Then Throw New InvalidOperationException("Interner Fehler: Bilinear-Requests fehlen oder passen nicht zur Tile-Anzahl.")
+
+            'Scratch einmalig allokieren (wird pro Tile wiederverwendet)
+            Dim row0Buf As Single() = New Single(n - 1) {}
+            Dim row1Buf As Single() = New Single(n - 1) {}
+
+            Dim row0Set As Byte() = New Byte(n - 1) {}
+            Dim row1Set As Byte() = New Byte(n - 1) {}
+
+            Dim touched As New List(Of Integer)(capacity:=Math.Min(n, 200000))
+            For t As Integer = 0 To tileCount - 1
+
+                ct.ThrowIfCancellationRequested()
+
+                Dim tile As GebcoTileInfo = heightTiles(t)
+
+                Dim ts, te As Integer
+                GetTileSlice(t, tileCount, heightStart, heightEnd, ts, te)
+
+                Dim pTile As New ProgressSlice(progress, ts, te, "GEBCO: ")
+                pTile.Report(New ProgressInfo($"HEIGHT: Tile {t + 1}/{tileCount}: {Path.GetFileName(tile.EntryName)}", 0))
+
+                GebcoTileProcessor.ProcessHeightTileBilinear(
+                    opts.HeightZipPath, tile, reqBilinearByTile(t), heightOut,
+                    row0Buf, row1Buf,
+                    row0Set, row1Set,
+                    touched,
+                    pTile, ct, progressPrefix:=$"HEIGHT {t + 1}/{tileCount}")
+
+            Next
+
+        End If
+
+        '-------------------------------------
+        'G) TID Tiles streamen (immer Nearest)
+        '-------------------------------------
+
+        If hasTid Then
+
+            Const UnknownTid As Byte = 255
+
+            If tidTiles Is Nothing OrElse tidTiles.Count = 0 Then Throw New InvalidDataException("TID-ZIP ist vorhanden, aber es wurden keine TID-Tiles gefunden.")
+            If tidTiles.Count <> tileCount Then Throw New InvalidDataException($"Inkonsistente Tile-Anzahl: Height-Tiles={tileCount}, TID-Tiles={tidTiles.Count}.")
+
+            If reqNearestByTile Is Nothing OrElse reqNearestByTile.Count <> tileCount Then
+                'Falls Resampling=bilinear und wir oben aus irgendeinem Grund reqNearestByTile nicht gebaut hätten:
+                ' -> aber wir bauen es bereits, sobald hasTid True ist.
+                Throw New InvalidOperationException("Interner Fehler: Nearest-Requests für TID fehlen.")
+            End If
+
+            'Zur RAM-Optimierung werden TIDs während des Processing als Byte gespeichert und erst am Ende in Single konvertiert
+            Dim tmpByte As Byte() = New Byte(n - 1) {}
+            Array.Fill(tmpByte, UnknownTid)
+
+            For t As Integer = 0 To tileCount - 1
+
+                ct.ThrowIfCancellationRequested()
+
+                Dim tile As GebcoTileInfo = tidTiles(t)
+
+                Dim ts, te As Integer
+                GetTileSlice(t, tileCount, tidStart, tidEnd, ts, te)
+
+                Dim pTile As New ProgressSlice(progress, ts, te, "GEBCO: ")
+                pTile.Report(New ProgressInfo($"TID TIle: {t + 1}/{tileCount}: {Path.GetFileName(tile.EntryName)}", 0))
+
+                GebcoTileProcessor.ProcessTidTile(
+                    opts.TidZipPath, tile, reqNearestByTile(t), tmpByte,
+                    pTile, ct, progressPrefix:=$"TID: {t + 1}/{tileCount}")
+            Next
+
+            If tidOut Is Nothing OrElse tidOut.Length <> n Then Throw New InvalidOperationException($"Interner Fehler: tidOut ist Nothing oder hat eine falsche Länge. Erwartet={n}, ist={(If(tidOut Is Nothing, 0, tidOut.Length))}.")
+
+            'Tid-Bytes in Tid-Singles umwandeln
+            For i As Integer = 0 To n - 1
+                tidOut(i) = CSng(tmpByte(i))
+            Next
+        End If
+
+        ct.ThrowIfCancellationRequested()
+
+        '-----------------
+        'H) LandMask bauen
+        '-----------------
+
+        Dim plm As New ProgressSlice(progress, lmStart, lmEnd, "GEBCO: ")
+        plm.Report(New ProgressInfo("Erzeuge LandMask...", 0))
+
+        Select Case opts.LandMaskMode
+
+            Case LandMaskMode.FromHeight
+                landMaskOut = LandMaskBuilder.BuildLandMaskFromHeight(
+                    heightOut, latCount, lonCount,
+                    applyMajorityFilter:=opts.UseHysteresis,
+                    iterations:=opts.HysteresisIterations,
+                    landThreshold:=opts.LandThreshold,
+                    oceanThreshold:=opts.OceanThreshold)
+
+            Case LandMaskMode.FromTid0
+                If Not hasTid OrElse tidOut Is Nothing Then Throw New InvalidOperationException("LandMaskMode=FromTid0, aber kein TID verarbeitet.")
+
+                For i As Integer = 0 To n - 1
+
+                    Dim tidVal As Integer = CInt(Math.Round(tidOut(i)))
+
+                    If tidVal = 255 Then
+                        landMaskOut(i) = 2          'Unknown
+                    ElseIf tidVal = 0 Then
+                        landMaskOut(i) = 1          'Land
+                    ElseIf Not Single.IsNaN(heightOut(i)) AndAlso heightOut(i) >= 0.0F Then
+                        landMaskOut(i) = 1          'Fallback: Land aus Höhe >= 0
+                    Else
+                        landMaskOut(i) = 0          'Ocean
+                    End If
+                Next
+
+            Case Else
+                Throw New NotSupportedException("ExternalSource ist noch nicht implementiert.")
+
+        End Select
+
+        plm.Report(New ProgressInfo("LandMask OK.", 100))
+
+        ct.ThrowIfCancellationRequested()
+
+        '----------------------
+        'I) Meta + Cache-Objekt
+        '----------------------
+
+        Dim pMeta As New ProgressSlice(progress, metaStart, metaEnd, "GEBCO: ")
+        pMeta.Report(New ProgressInfo("Erzeuge Cache-Meta...", 0))
+
+        Dim meta As New EarthSurfaceCacheMeta With {
+            .CacheVersion = EarthSurfaceCacheFormat.CurrentVersion,
+            .Source = opts.SourceName,
+            .CellSizeDeg = opts.CellSizeDeg,
+            .LatCount = latCount,
+            .LonCount = lonCount,
+            .Resampling = resampling,
+            .HasHeight = True,
+            .HasTid = hasTid,
+            .HasLandMask = True,
+            .CreateUtc = DateTime.UtcNow,
+            .RawSubIceTopoFile = opts.HeightZipPath,
+            .RawTidFile = If(hasTid, opts.TidZipPath, Nothing)
+        }
+
+        Select Case opts.LandMaskMode
+
+            Case LandMaskMode.FromHeight
+                meta.LandMaskSource = "FromHeight"
+                meta.LandMaskNotes = $"height>=0 -> Land; NaN(Void) -> Ocean; hysteresis={opts.UseHysteresis}; it={opts.HysteresisIterations}; landThr={opts.LandThreshold}; oceanThr={opts.OceanThreshold}"
+
+            Case LandMaskMode.FromTid0
+                meta.LandMaskSource = "FromTid0"
+                meta.LandMaskNotes = "tid==0 -> Land; tid<>0 => FromHeight (height>=0 -> Land)"
+
+            Case Else
+                meta.LandMaskSource = "ExternalSource"
+                meta.LandMaskNotes = "not implemented"
+        End Select
+
+        Dim cache As New EarthSurfaceCache(meta, heightOut, tidOut, landMaskOut)
+
+        pMeta.Report(New ProgressInfo("Meta OK.", 100))
+
+        ct.ThrowIfCancellationRequested()
+
+        '-------------
+        'J) Save Cache
+        '-------------
+
+        Dim pSave As New ProgressSlice(progress, saveStart, saveEnd, "GEBCO: ")
+
+        EarthSurfaceCacheStore.SaveCache(
+            opts.SourceName,
+            opts.CellSizeDeg,
+            resampling,
+            cache,
+            landMaskVariant:=opts.LandMaskVariant,
+            progress:=pSave,
+            ct:=ct)
+
+        '---------
+        'K) Report
+        '---------
+
+        sb.AppendLine($"ErathSurface Cache Build ({resampling})")
+        sb.AppendLine($"Source: {opts.SourceName}")
+        sb.AppendLine($"CellSize: {opts.CellSizeDeg}°  LatCount={latCount}  LonCount={lonCount}")
+        sb.AppendLine($"Height-ZIP: {opts.HeightZipPath}")
+        sb.AppendLine($"TID-ZIP: {(If(hasTid, opts.TidZipPath, "(none)"))}")
+        sb.AppendLine($"LandMaskMode: {opts.LandMaskMode}")
+        sb.AppendLine($"LandMaskVariant: {opts.LandMaskVariant}")
+        sb.AppendLine($"Cache-Verzeichnis: {EarthSurfaceCacheStore.CacheDir}")
+
+        Return sb.ToString()
+
+    End Function
+
+
+    <Obsolete("Alter Cache-Builder, der nur Nearest-Resampling unterstützt")>
     Public Shared Function BuildAndSaveNearest(opts As BuildOptions, progress As IProgress(Of ProgressInfo), ct As CancellationToken) As String
+
 
         ArgumentNullException.ThrowIfNull(opts)
         If String.IsNullOrWhiteSpace(opts.SourceName) Then Throw New ArgumentException("SourceName fehlt")
@@ -96,7 +458,30 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         '------------------------------
         'D) Nearest-Request vorbereiten
         '------------------------------
-        Dim pReq As New ProgressSlice(progress, 0, 5, "GEBCO: ")
+
+        'D.1) Progress-Meilensteine festlegen
+
+        Dim mapStart As Integer = 0
+        Dim mapEnd As Integer = 2
+
+        Dim heightStart As Integer = mapEnd
+        Dim heightEnd As Integer = If(hasTid, 48, 94)
+
+        Dim tidStart As Integer = heightEnd
+        Dim tidEnd As Integer = 94
+
+        Dim lmStart As Integer = If(hasTid, tidEnd, heightEnd)
+        Dim lmEnd As Integer = 96
+
+        Dim metaStart As Integer = lmEnd
+        Dim metaEnd As Integer = 98
+
+        Dim saveStart As Integer = metaEnd
+        Dim saveEnd As Integer = 100
+
+        'D.2) Nearest-Requests erstellen
+
+        Dim pReq As New ProgressSlice(progress, mapStart, mapEnd, "GEBCO: ")
         pReq.Report(New ProgressInfo("Baue Nearest-Mapping...", 0))
 
         Dim reqByTile = GebcoNearestRequestBuilder.BuildRequests(heightTiles, opts.CellSizeDeg, latCount, lonCount)
@@ -104,19 +489,26 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         ct.ThrowIfCancellationRequested()
 
         '------------------------
-        'E) HEIGHT Tiles streamen (5..55)
+        'E) HEIGHT Tiles streamen (5..55 wenn TID verarbeitet wird, sonst 5..85)
         '------------------------
-        Dim pHeight As New ProgressSlice(progress, 5, 55, "GEBCO: ")
+
         Dim tileCount As Integer = heightTiles.Count
 
         For t As Integer = 0 To tileCount - 1
             ct.ThrowIfCancellationRequested()
 
             Dim tile As GebcoTileInfo = heightTiles(t)
-            pHeight.Report(New ProgressInfo($"HEIGHT Tile {t + 1}/{tileCount}: {Path.GetFileName(tile.EntryName)}", CInt((t / Math.Max(1.0, tileCount)) * 100.0)))
+
+            Dim ts As Integer, te As Integer
+            GetTileSlice(t, tileCount, heightStart, heightEnd, ts, te)
+
+            Dim pTile As New ProgressSlice(progress, ts, te, "GEBCO: ")
+            pTile.Report(New ProgressInfo($"HEIGHT: Tile {t + 1}/{tileCount}: {Path.GetFileName(tile.EntryName)}", 0))
 
             'TileProcessor schreibt direkt ins Zielarray (NaN für NODATA)
-            GebcoTileProcessor.ProcessHeightTile(opts.HeightZipPath, tile, reqByTile(t), heightOut, pHeight, ct, progressPrefix:=$"HEIGHT {t + 1}/{tileCount}")
+            GebcoTileProcessor.ProcessHeightTileNearest(
+                opts.HeightZipPath, tile, reqByTile(t), heightOut,
+                pTile, ct, progressPrefix:=$"HEIGHT {t + 1}/{tileCount}")
 
         Next
 
@@ -126,27 +518,54 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
 
         If hasTid Then
 
-            Dim pTid As New ProgressSlice(progress, 55, 75, "GEBCO: ")
+            Const UnknownTid As Byte = 255
+
+            'Sanity: wir müssen hier einen 1:1 TargetGrid-Buffer haben
+            If tidTiles Is Nothing OrElse tidTiles.Count = 0 Then Throw New InvalidDataException("TID-ZIP ist vorhanden, aber es wurden keine TID-Tiles gefunden.")
+
+            If tidTiles.Count <> tileCount Then Throw New InvalidDataException($"Inkonsistente Tileanzahl: Height-Tiles={heightTiles.Count}, TID-Tiles={tidTiles.Count}.")
+
+            'Requests müssen ebenfalls zur Height-Tile-Anzahl passen (Index t ist tileIndex)
+            If reqByTile Is Nothing OrElse reqByTile.Count <> tileCount Then Throw New InvalidOperationException($"Interner Fehler: Nearest-Request-Liste ist ungültig.  Erwartet={tileCount}, ist={(If(reqByTile Is Nothing, 0, reqByTile.Count))}.")
+
+            'TargetGrid-Buffer für TID (Byte), wird per TargetIndex beschrieben
+            Dim tmpByte As Byte() = New Byte(n - 1) {}
+
+            'WICHTIG: Default muss Unknown sein, NICHT 0.
+            'Denn 0 ist ein valider GEBCO-TID-Wert (=Land). Nicht gesetzte Zellen würden sonst fälschlich als Land erscheinen.
+            Array.Fill(tmpByte, UnknownTid)
+
+            'Zusätzliche Guard: Wenn UnknownTid nicht korrekt gesetzt wurde, stimmt was Grundsätzliches nicht.
+            'Das ist extrem unwahrscheinlich, aber schützt vor "zufällig" falschen Defaults
+            If tmpByte(0) <> UnknownTid Then Throw New InvalidOperationException("Interner Fehler: TID-Buffer konnte nicht mit Unknown (255) initialisiert werden.")
 
             For t As Integer = 0 To tileCount - 1
 
                 ct.ThrowIfCancellationRequested()
 
                 Dim tile As GebcoTileInfo = tidTiles(t)
-                pTid.Report(New ProgressInfo($"TID Tile {t + 1}/{tileCount}: {Path.GetFileName(tile.EntryName)}", CInt((t / Math.Max(1.0, tileCount)) * 100.0)))
 
-                'Wir lesen Byte-weise, aber speichern in Single() (Cache-Format erwartet Single für TID
-                '=> kleiner Adapter: temporär Byte[] wäre möglich, aber wir sparen uns den extra RAM und konvertieren on the fly.
-                Dim tmpByte As Byte() = New Byte(n - 1) {} 'falls du 0 extra RAM willst: siehe Hinweis unten
-                GebcoTileProcessor.ProcessTidTile(opts.TidZipPath, tile, reqByTile(t), tmpByte, pTid, ct, progressPrefix:=$"TID: {t + 1}/{tileCount}")
+                Dim ts As Integer, te As Integer
+                GetTileSlice(t, tileCount, tidStart, tidEnd, ts, te)
 
-                'Konvertiere nur die tatsächlich gesetzten Werte? -> schwierig ohne extra Tracking
-                'Wir nehmen hier die pragmatische Lösung: 1x Konvert am Ende ODER tileweise wie hier:
-                For i As Integer = 0 To n - 1
-                    tidOut(i) = CSng(tmpByte(i))
-                Next
+                Dim pTile As New ProgressSlice(progress, ts, te, "GEBCO: ")
+                pTile.Report(New ProgressInfo($"TID Tile {t + 1}/{tileCount}: {Path.GetFileName(tile.EntryName)}", 0))
+
+
+                'Schreibt nur die angeforderten Zielzellen in tmpByte (TargetIndex-basiert)
+                GebcoTileProcessor.ProcessTidTile(
+                    opts.TidZipPath, tile, reqByTile(t), tmpByte,
+                    pTile, ct, progressPrefix:=$"TID: {t + 1}/{tileCount}")
 
             Next
+
+            'Einmalig konvertieren nach Single() (Cache-Format)
+            If tidOut Is Nothing OrElse tidOut.Length <> n Then Throw New InvalidOperationException($"Interner Fehler: tidOut ist Nothing oder hat eine falsche Länge. Erwartet={n}, ist={(If(tidOut Is Nothing, 0, tidOut.Length))}.")
+
+            For i As Integer = 0 To n - 1
+                tidOut(i) = CSng(tmpByte(i))
+            Next
+
         End If
 
         ct.ThrowIfCancellationRequested()
@@ -155,7 +574,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         'G) LandMask bauen (75..88)
         '--------------------------
 
-        Dim plm As New ProgressSlice(progress, 75, 88, "GEBCO: ")
+        Dim plm As New ProgressSlice(progress, lmStart, lmEnd, "GEBCO: ")
         plm.Report(New ProgressInfo("Erzeuge LandMask...", 0))
 
         Select Case opts.LandMaskMode
@@ -175,7 +594,18 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
                 End If
 
                 For i As Integer = 0 To n - 1
-                    landMaskOut(i) = If(CInt(tidOut(i)) = 0, CByte(1), CByte(0))
+
+                    Dim tidVal As Integer = CInt(Math.Round(tidOut(i)))
+
+                    If tidVal = 255 Then
+                        landMaskOut(i) = 2          'Unknown
+                    ElseIf tidVal = 0 Then
+                        landMaskOut(i) = 1          'Land
+                    ElseIf Not Single.IsNaN(heightOut(i)) AndAlso heightOut(i) >= 0.0F Then
+                        landMaskOut(i) = 1          'Fallback: Land aus Höhe >= 0
+                    Else
+                        landMaskOut(i) = 0          'Ocean
+                    End If
                 Next
             Case Else
                 Throw New NotSupportedException("ExternalSource ist noch nicht implementiert.")
@@ -189,7 +619,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         'H) Meta + Cache-Objekt (88..92)
         '-------------------------------
 
-        Dim pMeta As New ProgressSlice(progress, 88, 92, "GEBCO: ")
+        Dim pMeta As New ProgressSlice(progress, metaStart, metaEnd, "GEBCO: ")
         pMeta.Report(New ProgressInfo("Erzeuge Cache-Meta...", 0))
 
         Dim meta As New EarthSurfaceCacheMeta With {
@@ -226,10 +656,10 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         ct.ThrowIfCancellationRequested()
 
         '------------------------------------------------------------------------
-        'I) Speichern (92..109) - SaveCache hat eigenen Progress 0..100 -> slice!
+        'I) Speichern (92..100) - SaveCache hat eigenen Progress 0..100 -> slice!
         '------------------------------------------------------------------------
 
-        Dim pSave As New ProgressSlice(progress, 92, 100, "GEBCO: ")
+        Dim pSave As New ProgressSlice(progress, saveStart, saveEnd, "GEBCO: ")
 
         EarthSurfaceCacheStore.SaveCache(
             opts.SourceName,
@@ -255,4 +685,26 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
 
         Return sb.ToString()
     End Function
+
+    Private Shared Sub GetTileSlice(t As Integer, tileCount As Integer, blockStart As Integer, blockEnd As Integer,
+                                    ByRef tileStart As Integer, ByRef tileEnd As Integer)
+
+        Dim span As Integer = blockEnd - blockStart
+
+        'Floor (Int) statt CInt, sonst "Banker's Rounding"-Artefakte
+
+        tileStart = blockStart + CInt(Int((t / CDbl(tileCount)) * span))
+
+        If t = tileCount - 1 Then
+            tileEnd = blockEnd          'letztes Tile endet immer exakt auf blockEnd
+        Else
+            tileEnd = blockStart + CInt(Int(((t + 1) / CDbl(tileCount)) * span))
+        End If
+
+        'Sicherheitsnetz (nie rückwärts / nie out of range)
+        If tileEnd < tileStart Then tileEnd = tileStart
+        If tileStart < blockStart Then tileStart = blockStart
+        If tileEnd > blockEnd Then tileEnd = blockEnd
+
+    End Sub
 End Class

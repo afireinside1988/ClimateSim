@@ -1,4 +1,5 @@
-﻿Imports System.IO
+﻿Imports System.Drawing.Drawing2D
+Imports System.IO
 Imports System.Security.Cryptography
 Imports System.Text
 Imports System.Threading
@@ -337,58 +338,6 @@ Public Class EarthSurfaceViewModel
         End If
     End Sub
 
-    'Etappe A: Dummy-Generate, nur zum Test von BusyOverlay + Cancel + UI-Fluss
-    Private Async Function DummyGenerateAsync() As Task
-        Await BusyRunner.RunAsync(Me, "EarthSurface Cache", Sub(progress, ct)
-                                                                progress?.Report(New ProgressInfo("Vorbereitung...", ProgressInfo.Indeterminate))
-                                                                Thread.Sleep(300)
-
-                                                                For i As Integer = 0 To 100 Step 5
-                                                                    ct.ThrowIfCancellationRequested()
-                                                                    progress?.Report(New ProgressInfo($"Dummy-Generate... {i}%", i))
-                                                                    Thread.Sleep(50)
-                                                                Next
-
-                                                                progress?.Report(New ProgressInfo("Fertig (Dummy).", 100))
-                                                            End Sub, canCancel:=True, showOverlay:=True)
-
-        LastReport = $"Dummy fertig. Variante={LandMaskVariantTag}, {CellSizeDeg}°, {ResamplingKey}"
-    End Function
-
-    'Etappe B: Smoke-Test mit ESRI ASCII
-    Private Async Function RunSmokeTestAsync() As Task(Of String)
-
-        Try
-            Dim result As String = Await BusyRunner.RunAsync(Of String)(
-                Me, "EarthSurface: Smoke-Test",
-                    Async Function(progress, ct)
-                        'Height ist Pflicht
-                        Dim sb As New StringBuilder()
-
-                        sb.AppendLine(GebcoSmokeTest.RunZipSmokeTest(RawHeightFile, "HEIGHT", progress, ct))
-                        sb.AppendLine()
-
-                        'TID optional
-                        If Not String.IsNullOrWhiteSpace(RawTidFile) AndAlso File.Exists(RawTidFile) Then
-                            sb.AppendLine(GebcoSmokeTest.RunZipSmokeTest(RawTidFile, "TID", progress, ct))
-                        Else
-                            sb.AppendLine("[TID] Kein ZIP gewählt - übersprungen.")
-                        End If
-
-                        Return sb.ToString()
-                    End Function,
-                    canCancel:=True,
-                    showOverlay:=True,
-                    runInBackground:=True)
-
-            LastReport = result
-        Catch ex As OperationCanceledException
-            LastReport = "Abgebrochen."
-        Catch ex As Exception
-            LastReport = "Fehler: " & ex.Message
-        End Try
-    End Function
-
     'Etappe B3: Real-Cache-Builder aus ESRI ASCII
     Private Async Function GenerateCacheAsync() As Task(Of String)
 
@@ -409,7 +358,7 @@ Public Class EarthSurfaceViewModel
                         .HeightZipPath = Me.RawHeightFile,
                         .TidZipPath = If(String.IsNullOrWhiteSpace(Me.RawTidFile), Nothing, Me.RawTidFile),
                         .CellSizeDeg = Me.CellSizeDeg,
-                        .Resampling = "nearest", 'B3: erstmal fix
+                        .Resampling = Me.ResamplingKey,
                         .LandMaskMode = Me.SelectedLandMaskMode,
                         .UseHysteresis = Me.UseHysteresis,
                         .HysteresisIterations = Me.HysteresisIterations,
@@ -420,8 +369,8 @@ Public Class EarthSurfaceViewModel
                     'B) Build & Save
                     '---------------
 
-                    progress?.Report(New ProgressInfo("Starte Cache-Builder (Nearest)...", 0))
-                    Dim buildReport As String = EarthSurfaceCacheBuilder.BuildAndSaveNearest(opts, progress, ct)
+                    progress?.Report(New ProgressInfo("Starte Cache-Builder...", 0))
+                    Dim buildReport As String = EarthSurfaceCacheBuilder.BuildAndSave(opts, progress, ct)
 
                     ct.ThrowIfCancellationRequested()
 
@@ -477,7 +426,7 @@ Public Class EarthSurfaceViewModel
         Return "Fehler!!!"
     End Function
 
-    Private Function BuildSampleReport(cache As EarthSurfaceCache) As String
+    Private Shared Function BuildSampleReport(cache As EarthSurfaceCache) As String
 
         Dim m = cache.Meta
         Dim latCount As Integer = m.LatCount
@@ -491,6 +440,43 @@ Public Class EarthSurfaceViewModel
         sb.AppendLine($"Raster: {latCount} x {lonCount}  cell={m.CellSizeDeg}°")
         sb.AppendLine($"HasTid={m.HasTid}, HasLandMask={m.HasLandMask}")
         sb.AppendLine()
+
+        If hasTid Then
+            Dim minTid As Integer = Integer.MaxValue
+            Dim maxTid As Integer = Integer.MinValue
+            Dim cntUnknown As Integer = 0
+            Dim cntLand0 As Integer = 0
+            Dim cntOther As Integer = 0
+
+            For i As Integer = 0 To latCount * lonCount - 1
+                Dim t As Single = cache.Tid(i)
+                If Single.IsNaN(t) Then Continue For
+
+                Dim v As Integer = CInt(Math.Round(t))      'Tid ist als Single gespeichert, aber kommt aus Byte
+
+                If v < minTid Then minTid = v
+                If v > maxTid Then maxTid = v
+
+                If v = 255 Then
+                    cntUnknown += 1
+                ElseIf v = 0 Then
+                    cntLand0 += 1
+                Else
+                    cntOther += 1
+                End If
+            Next
+
+            If minTid = Integer.MaxValue Then minTid = 0
+            If maxTid = Integer.MinValue Then maxTid = 0
+
+            sb.AppendLine()
+            sb.AppendLine("=== TID Statistik ===")
+            sb.AppendLine($"  Unknown (255): {cntUnknown:N0}")
+            sb.AppendLine($"  Land (0):      {cntLand0:N0}")
+            sb.AppendLine($"  Other:         {cntOther:N0}")
+            sb.AppendLine($"  Min/Max:       {minTid} / {maxTid}")
+            sb.AppendLine()
+        End If
 
         '3 Samples: (0,0), Mitte, (lat-1,lon-1)
         Dim samples = New(name As String, lat As Integer, lon As Integer)() {
@@ -515,8 +501,8 @@ Public Class EarthSurfaceViewModel
                 lmStr = cache.LandMask(idx).ToString()
             End If
 
-            Dim latDeg As Double = LatCenterDeg(s.lat, latCount, m.CellSizeDeg)
-            Dim lonDeg As Double = LonCenterDeg(s.lon, lonCount, m.CellSizeDeg)
+            Dim latDeg As Double = LatCenterDeg(s.lat, m.CellSizeDeg)
+            Dim lonDeg As Double = LonCenterDeg(s.lon, m.CellSizeDeg)
 
             sb.AppendLine($"{s.name}: latIdx={s.lat}, lonIdx={s.lon}  =>  lat={latDeg:0.###}°, lon={lonDeg:0.###}°")
             sb.AppendLine($"  Height={hStr}m")
@@ -527,12 +513,12 @@ Public Class EarthSurfaceViewModel
         Return sb.ToString()
     End Function
 
-    Private Function LatCenterDeg(latIndex As Integer, latCount As Integer, cellSizeDeg As Double) As Double
+    Private Shared Function LatCenterDeg(latIndex As Integer, cellSizeDeg As Double) As Double
         'latIndex 0 = Nord (oben)
         Return 90.0 - (latIndex + 0.5) * cellSizeDeg
     End Function
 
-    Private Function LonCenterDeg(lonIndex As Integer, lonCount As Integer, cellSizeDeg As Double) As Double
+    Private Shared Function LonCenterDeg(lonIndex As Integer, cellSizeDeg As Double) As Double
         'lonIndex 0 = West (links)
         Return -180 + (lonIndex + 0.5) * cellSizeDeg
     End Function
