@@ -114,6 +114,11 @@ Class MainWindow
         '5) Engine initialisieren mit spinUpStartYear
         _engine.Initialize(width, height, spinUpStartYear)
 
+        'DEBUG:
+        Dim gate = SurfaceTypeDebugGate.Run(_engine.EarthSurfaceProvider, _engine.Grid)
+
+        Debug.WriteLine($"SurfaceType DebugGate: {gate.DifferentPixelCount}/{gate.TotalPixelCount} ({gate.DifferentPercent:F4}%) verschieden")
+
         'Config ins Model übernehmen
         ApplyConfigToModel()
 
