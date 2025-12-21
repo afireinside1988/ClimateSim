@@ -18,10 +18,10 @@ Public Class EarthSurfaceCacheMeta
     Public Property LonCount As Integer          'z.B. 360 bei 1°
 
     'Bounds (wir speichern hier die theoretischen Grenzen; Mapping/Wrap macht später der Provider)
-    Public Property LatMin As Double = -90.0
-    Public Property LatMax As Double = 90.0
-    Public Property LonMin As Double = -180.0
-    Public Property LonMax As Double = 180.0
+    Public Property LatMin As Double = -89.5
+    Public Property LatMax As Double = 89.5
+    Public Property LonMin As Double = -179.5
+    Public Property LonMax As Double = 179.5
 
     'Welche Interpolation wurde beim Resamlping benutzt (wichtig für Reproduzierbarkeit)
     Public Property Resampling As String = "nearest"        'nearest|bilinear
@@ -36,6 +36,6 @@ Public Class EarthSurfaceCacheMeta
 
     'Optional: Infos zu Rohdaten (für spätere Validierung / UI)
     Public Property RawTidFile As String
-    Public Property RawSubIceTopoFile As String
+    Public Property RawHeightFile As String
 
 End Class

@@ -1,7 +1,11 @@
-﻿Imports System.IO
+﻿Imports System.Drawing.Imaging
+Imports System.IO
+Imports System.Linq.Expressions
+Imports System.Net.Http.Headers
 Imports System.Text
 Imports System.Text.Json
 Imports System.Threading
+Imports System.Windows.Media.Converters
 
 Public Enum CacheOpenErrorKind
     None = 0
@@ -49,7 +53,7 @@ Public Class EarthSurfaceCacheStore
         Return (binPath, metaPath)
     End Function
 
-    Public Shared Function TryOpenCache(source As String, cellSizeDeg As Double, resampling As String,
+    Public Shared Function TryOpenCacheFromSourceName(source As String, cellSizeDeg As Double, resampling As String,
                                         ByRef cache As EarthSurfaceCache,
                                         ByRef errorKind As CacheOpenErrorKind,
                                         ByRef errorMessage As String,
@@ -159,6 +163,95 @@ Public Class EarthSurfaceCacheStore
             errorMessage = $"Fehler beim Lesen der Binärdatei: {ex.Message}"
             Return False
         End Try
+    End Function
+
+    Public Shared Function TryOpenCacheFromFiles(metaPath As String,
+                                                 ByRef cache As EarthSurfaceCache,
+                                                 ByRef errorKind As CacheOpenErrorKind,
+                                                 ByRef errorMessage As String,
+                                                 Optional progress As IProgress(Of ProgressInfo) = Nothing,
+                                                 Optional ct As CancellationToken = Nothing) As Boolean
+
+        cache = Nothing
+        errorKind = CacheOpenErrorKind.None
+        errorMessage = Nothing
+
+        If String.IsNullOrWhiteSpace(metaPath) OrElse Not File.Exists(metaPath) Then
+            errorKind = CacheOpenErrorKind.NotFound
+            errorMessage = "Meta-Datei fehlt."
+            Return False
+        End If
+
+        Dim binPath As String = Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), "bin")
+        If Not File.Exists(binPath) Then
+            errorKind = CacheOpenErrorKind.NotFound
+            errorMessage = "Cache-Datei fehlt."
+            Return False
+        End If
+
+        '1) Meta lesen
+        Dim meta As EarthSurfaceCacheMeta
+
+        Try
+
+            progress?.Report(New ProgressInfo("Cache öffnen: Meta prüfen...", 0))
+            ct.ThrowIfCancellationRequested()
+
+            Dim metaJson = File.ReadAllText(metaPath, Encoding.UTF8)
+            meta = JsonSerializer.Deserialize(Of EarthSurfaceCacheMeta)(metaJson, ConfigStore.JsonOptions)
+
+        Catch ex As Exception
+
+            errorKind = CacheOpenErrorKind.MetaJsonInvalid
+            errorMessage = $"Meta-Datei ist beschädigt oder kein gültiges JSON: {ex.Message}"
+            Return False
+        End Try
+
+        If meta Is Nothing Then
+            errorKind = CacheOpenErrorKind.MetaJsonInvalid
+            errorMessage = "Meta-Datei konnte nicht interpretiert werden."
+            Return False
+        End If
+
+        '2) Version prüfen
+        If meta.CacheVersion <> EarthSurfaceCacheFormat.CurrentVersion Then
+            errorKind = CacheOpenErrorKind.IncompatibleSchema
+            errorMessage = $"Inkompatible Cache-Version: {meta.CacheVersion} (erwartet: {EarthSurfaceCacheFormat.CurrentVersion})."
+            Return False
+        End If
+
+        '3) Binär lesen + Cross-Checks
+        Try
+
+            Dim r = EarthSurfaceCacheFormat.ReadCache(binPath, progress, ct)
+
+            If r.latCount <> meta.LatCount OrElse r.lonCount <> meta.LonCount Then
+                errorKind = CacheOpenErrorKind.BinaryInvalid
+                errorMessage = "Binärdatei passt nicht zu Meta (Dimensionen stimmen nicht)."
+                Return False
+            End If
+
+            Dim hasHeightBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasHeight)
+            Dim hasTidBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasTid)
+            Dim hasLandMask As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasLandMask)
+
+            If hasHeightBin <> meta.HasHeight OrElse hasTidBin <> meta.HasTid OrElse hasLandMask <> meta.HasLandMask Then
+                errorKind = CacheOpenErrorKind.BinaryInvalid
+                errorMessage = "Binärdatei passt nicht zu Meta (Layer-Flags stimmen nicht)."
+                Return False
+            End If
+
+            cache = New EarthSurfaceCache(meta, r.height, r.tid, r.landMask)
+            Return True
+
+        Catch ex As Exception
+
+            errorKind = CacheOpenErrorKind.BinaryInvalid
+            errorMessage = $"Fehler beim Lesen der Binärdatei: {ex.Message}"
+            Return False
+
+        End Try
+
     End Function
 
     Public Shared Sub SaveCache(source As String, cellSizeDeg As Double, resampling As String, cache As EarthSurfaceCache,

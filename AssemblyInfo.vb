@@ -16,5 +16,5 @@ Imports System.Windows
 <Assembly: AssemblyDescription("Ein vereinfachtes gekoppeltes Ozean-Atmosphären-Zirkulations-Klimamodell für Heim-Anwender")>
 <Assembly: AssemblyCompany("Robin Harazim")>
 
-<Assembly: AssemblyVersion("0.3.1.*")>
-<Assembly: AssemblyFileVersion("0.3.1.0")>
+<Assembly: AssemblyVersion("0.3.2.*")>
+<Assembly: AssemblyFileVersion("0.3.2.0")>

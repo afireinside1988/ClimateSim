@@ -35,7 +35,7 @@ Public Class DataEarthSurfaceProvider
         End If
     End Sub
 
-    Public Shared Function CreateAsync(source As String, cellSizeDeg As Double, resampling As String,
+    Public Shared Function CreateFromSourceNameAsync(source As String, cellSizeDeg As Double, resampling As String,
                                              Optional progress As IProgress(Of ProgressInfo) = Nothing,
                                              Optional ct As CancellationToken = Nothing) As Task(Of DataEarthSurfaceProvider)
 
@@ -47,7 +47,7 @@ Public Class DataEarthSurfaceProvider
 
         progress?.Report(New ProgressInfo("EarthSurface: Öffne Cache...", 0))
 
-        If Not EarthSurfaceCacheStore.TryOpenCache(source, cellSizeDeg, resampling, loaded, kind, msg,, progress, ct) Then
+        If Not EarthSurfaceCacheStore.TryOpenCacheFromSourceName(source, cellSizeDeg, resampling, loaded, kind, msg,, progress, ct) Then
             Throw New InvalidOperationException($"EarthSurface-Cache konnte nicht geöffnet werden: {kind} - {msg}")
         End If
 
@@ -55,6 +55,20 @@ Public Class DataEarthSurfaceProvider
 
         Dim provider As DataEarthSurfaceProvider = New DataEarthSurfaceProvider(source, cellSizeDeg, resampling, loaded)
         Return Task.FromResult(provider)
+    End Function
+
+    Public Shared Function CreateFromCache(cache As EarthSurfaceCache) As DataEarthSurfaceProvider
+
+        If cache Is Nothing OrElse cache.Meta Is Nothing Then
+            Throw New ArgumentException("Cache oder Cache.Meta fehlt.", NameOf(cache))
+        End If
+
+        'Quelle/CellSize/Resampling kommen aus Meta -> genau das, was geladen wurde
+        Return New DataEarthSurfaceProvider(
+            source:=cache.Meta.Source,
+            cellSizeDeg:=cache.Meta.CellSizeDeg,
+            resampling:=cache.Meta.Resampling, cache:=cache)
+
     End Function
 
     Public Function GetSurfaceInfo(latitudeDeg As Double, longitudeDeg As Double) As SurfaceInfo Implements IEarthSurfaceProvider.GetSurfaceInfo
@@ -68,10 +82,12 @@ Public Class DataEarthSurfaceProvider
         Dim idx As Integer = latIdx * _cache.Meta.LonCount + lonIdx
 
         Dim landMaskAvailable As Boolean = (_cache.LandMask IsNot Nothing AndAlso _cache.LandMask.Length > idx)
-        Dim isLand As Boolean = False
+        Dim isLand As Boolean
 
         If landMaskAvailable Then
-            isLand = (_cache.LandMask(idx) <> 0)
+            Dim lm As Byte = _cache.LandMask(idx)
+            isLand = (lm = 1)
+            Dim isUnknown As Boolean = (lm = 2)
         End If
 
         Dim h As Double = 0.0
@@ -80,24 +96,6 @@ Public Class DataEarthSurfaceProvider
         End If
 
         Dim surface As SurfaceType = SurfaceTypeFromMaskOrHeight(landMaskAvailable, isLand, h)
-
-        '--- LandIce-Regeln (grob) ---
-        If IsAntarctica(lat) Then
-            surface = SurfaceType.LandIce
-            'Höhe bei LandIce: wir nehmen erstmal eine pauschale Eisdicke/Topografie-Höhe
-            h = Math.Max(h, 2500.0)
-        ElseIf IsGreenland(lat, lon) Then
-            surface = SurfaceType.LandIce
-            h = Math.Max(h, 2500.0)
-        End If
-
-        '--- SeaIce-Regel (nur wenn "Ocean") ---
-        If surface = SurfaceType.Ocean Then
-            If lat >= _seaIceNorthLatDeg OrElse lat <= _seaIceSouthLatDeg Then
-                surface = SurfaceType.SeaIce
-                h = 0.0
-            End If
-        End If
 
         Dim info As New SurfaceInfo With {
             .Surface = surface,
@@ -125,6 +123,7 @@ Public Class DataEarthSurfaceProvider
         'Fallback: alte Caches ohne LandMask
         Return SurfaceTypeFromHeight(heightM)
     End Function
+
     Private Shared Function SurfaceTypeFromHeight(heightM As Double) As SurfaceType
         If heightM < 0.0 Then
             Return SurfaceType.Ocean
@@ -140,12 +139,12 @@ Public Class DataEarthSurfaceProvider
 
     ''' <summary>
     ''' Erwartet Zellzentren-Raster:
-    ''' Lat-Zentren laufen von (-90 + cell/2) bis (+90 - cell/2).
+    ''' Lat-Zentren laufen von (90 - cell/2) bis (-90 + cell/2).
     ''' </summary>
     Private Shared Function LatToIndex(latDeg As Double, latCount As Integer, cellSizeDeg As Double) As Integer
-        Dim baseCenter As Double = -90.0 + (cellSizeDeg / 2.0)
+        Dim baseCenter As Double = 90.0 - (cellSizeDeg / 2.0)
 
-        Dim x As Double = (latDeg - baseCenter) / cellSizeDeg
+        Dim x As Double = (baseCenter - latDeg) / cellSizeDeg
         Dim i As Integer = CInt(Math.Floor(x + 0.0000000001)) 'kleiner Epsilon gegen Rundungsgrenzen
 
         If i < 0 Then i = 0
@@ -183,17 +182,6 @@ Public Class DataEarthSurfaceProvider
         If x > hi Then Return hi
         Return x
     End Function
-
-    Private Function IsAntarctica(latDeg As Double) As Boolean
-        Return latDeg <= _antarcticaLatDeg
-    End Function
-
-    Private Function IsGreenland(latDeg As Double, lonDeg As Double) As Boolean
-        Return (latDeg >= _greenlandLatMin AndAlso latDeg <= _greenlandLatMax AndAlso
-                lonDeg >= _greenlandLonMin AndAlso lonDeg <= _greenlandLonMax)
-    End Function
-
-
 
 #End Region
 End Class

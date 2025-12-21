@@ -18,15 +18,30 @@
     </Window.Resources>
 
     <Grid>
-        <!-- 2 Spalten: links Preview, rechts Settings -->
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="420"/>
-        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <!-- Menü -->
+
+        <Menu Grid.Row="0">
+            <MenuItem Header="_Cache">
+                <MenuItem Header="Cache _laden" Command="{Binding LoadCacheCommand}"/>
+                <Separator/>
+                <MenuItem Header="Cache _generieren" Command="{Binding GenerateCacheCommand}" IsEnabled="{Binding CanGenerateCache}"/>
+            </MenuItem>
+        </Menu>
+
+        <Grid Grid.Row="1">
+            <!-- 2 Spalten: links Preview, rechts Settings -->
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="420"/>
+            </Grid.ColumnDefinitions>
 
 
-        <!-- LEFT: PREVIEW -->
-        <Border Grid.Column="0"
+            <!-- LEFT: PREVIEW -->
+            <Border Grid.Column="0"
                 Margin="12"
                 Padding="12"
                 CornerRadius="10"
@@ -34,29 +49,29 @@
                 BorderThickness="1"
                 Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}">
 
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <!-- Header -->
-                    <RowDefinition Height="*"/>
-                    <!-- Preview -->
-                    <RowDefinition Height="Auto"/>
-                    <!-- Hover -->
-                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <!-- Header -->
+                        <RowDefinition Height="*"/>
+                        <!-- Preview -->
+                        <RowDefinition Height="Auto"/>
+                        <!-- Hover -->
+                    </Grid.RowDefinitions>
 
-                <!-- Header + Layer-Toggles -->
-                <StackPanel Grid.Row="0" Margin="0,0,0,10">
-                    <TextBlock Text="Vorschau" FontSize="16" FontWeight="Bold" Margin="0,0,0,0"/>
+                    <!-- Header + Layer-Toggles -->
+                    <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                        <TextBlock Text="Vorschau" FontSize="16" FontWeight="Bold" Margin="0,0,0,0"/>
 
-                    <WrapPanel>
-                        <CheckBox Content="Höhen-Relief" IsChecked="{Binding ShowLayerHeight}" Margin="0,0,12,0"/>
-                        <CheckBox Content="Land-Maske" IsChecked="{Binding ShowLayerLandMask}" Margin="0,0,12,0"/>
-                        <CheckBox Content="TID (Quell-Info)" IsChecked="{Binding ShowLayerTid}"/>
-                    </WrapPanel>
-                </StackPanel>
+                        <WrapPanel>
+                            <CheckBox Content="Höhen-Relief" IsChecked="{Binding ShowLayerHeight}" Margin="0,0,12,0"/>
+                            <CheckBox Content="Land-Maske" IsChecked="{Binding ShowLayerLandMask}" Margin="0,0,12,0"/>
+                            <CheckBox Content="TID (Quell-Info)" IsChecked="{Binding ShowLayerTid}"/>
+                        </WrapPanel>
+                    </StackPanel>
 
-                <!-- Preview Image -->
-                <Border Grid.Row="1"
+                    <!-- Preview Image -->
+                    <Border Grid.Row="1"
                         CornerRadius="8"
                         BorderBrush="#33000000"
                         BorderThickness="1"
@@ -64,205 +79,204 @@
                         HorizontalAlignment="Stretch"
                         VerticalAlignment="Stretch">
 
-                    <Grid>
+                        <Grid>
 
-                        <Image Source="{Binding PreviewImage}"
+                            <Image Source="{Binding PreviewImage}"
                                Stretch="Uniform"
                                HorizontalAlignment="Stretch"
                                VerticalAlignment="Stretch"
                                SnapsToDevicePixels="True"
                                RenderOptions.BitmapScalingMode="NearestNeighbor"/>
 
-                        <TextBlock Text="Noch keine Vorschau - Cache generieren oder laden."
+                            <TextBlock Text="Noch keine Vorschau - Cache generieren oder laden."
                                    VerticalAlignment="Center"
                                    Foreground="#AAFFFFFF"
                                    FontSize="16"
                                    TextWrapping="Wrap"
                                    TextAlignment="Center">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Grid>
-                </Border>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </Border>
 
-                <!-- Hover / Info -->
-                <TextBlock Grid.Row="2" Margin="0,10,0,0"
+                    <!-- Hover / Info -->
+                    <TextBlock Grid.Row="2" Margin="0,10,0,0"
                        Text="{Binding HoverText}"
                        FontFamily="Consolas"
                        TextWrapping="Wrap"
                        Opacity="0.85"/>
 
-            </Grid>
-        </Border>
+                </Grid>
+            </Border>
 
 
 
-        <!-- RIGHT: SETTINGS -->
-        <ScrollViewer Grid.Column="1"
+            <!-- RIGHT: SETTINGS -->
+            <ScrollViewer Grid.Column="1"
                       Margin="12,12,12,12"
                       Padding="0,0,5,0"
                       VerticalScrollBarVisibility="Auto">
 
-            <StackPanel>
+                <StackPanel>
 
-                <TextBlock Text="Einstellungen"
+                    <TextBlock Text="Einstellungen"
                            FontSize="16"
                            FontWeight="Bold"
                            Margin="0,0,0,10"/>
 
-                <!-- Rohdaten -->
-                <GroupBox Header="Rohdaten" Margin="0,0,0,10">
-                    <StackPanel Margin="10">
+                    <!-- Rohdaten -->
+                    <GroupBox Header="Rohdaten" Margin="0,0,0,10">
+                        <StackPanel Margin="10">
 
-                        <TextBlock Text="Quelle (Name)" Opacity="0.8"/>
-                        <TextBox Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,10" />
+                            <TextBlock Text="Quelle (Name)" Opacity="0.8"/>
+                            <TextBox Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,10" />
 
-                        <TextBlock Text="GEBCO Height (Pfad)" Opacity="0.8"/>
-                        <Grid Margin="0,4,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox Grid.Column="0"
+                            <TextBlock Text="GEBCO Height (Pfad)" Opacity="0.8"/>
+                            <Grid Margin="0,4,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
                                      Text="{Binding RawHeightFile, UpdateSourceTrigger=PropertyChanged}"
                                      VerticalContentAlignment="Center" Margin="0,0,8,0" IsReadOnly="True"/>
-                            <Button Grid.Column="1" Content="..." Width="34" Command="{Binding BrowseHeightCommand}"/>
-                        </Grid>
-                        <TextBlock Text="TID (optional)" Opacity="0.8"/>
+                                <Button Grid.Column="1" Content="..." Width="34" Command="{Binding BrowseHeightCommand}"/>
+                            </Grid>
+                            <TextBlock Text="TID (optional)" Opacity="0.8"/>
 
-                        <Grid Margin="0,4,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox Grid.Column="0"
+                            <Grid Margin="0,4,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
                                      Text="{Binding RawTidFile, UpdateSourceTrigger=PropertyChanged}"
                                      VerticalContentAlignment="Center" Margin="0,0,8,0" IsReadOnly="True"/>
-                            <Button Grid.Column="1" Content="..." Width="34" Command="{Binding BrowseTidCommand}"/>
-                        </Grid>
+                                <Button Grid.Column="1" Content="..." Width="34" Command="{Binding BrowseTidCommand}"/>
+                            </Grid>
 
-                        <TextBlock Text="Land-Maske" Opacity="0.8"/>
-                        <StackPanel Margin="0,4,0,0" Orientation="Vertical">
-                            <RadioButton Content="Aus Höhe ableiten (LandMask-Builder)"
+                            <TextBlock Text="Land-Maske" Opacity="0.8"/>
+                            <StackPanel Margin="0,4,0,0" Orientation="Vertical">
+                                <RadioButton Content="Aus Höhe ableiten (LandMask-Builder)"
                                          IsChecked="{Binding SelectedLandMaskMode, Converter={StaticResource EnumToBool}, ConverterParameter=FromHeight}"/>
-                            <RadioButton Content="Aus TID auslesen"
+                                <RadioButton Content="Aus TID auslesen"
                                          IsChecked="{Binding SelectedLandMaskMode, Converter={StaticResource EnumToBool}, ConverterParameter=FromTid0}"/>
-                            <RadioButton Content="Aus externer LandMask-Datei (nicht implementiert)"
+                                <RadioButton Content="Aus externer LandMask-Datei (nicht implementiert)"
                                          IsChecked="{Binding SelectedLandMaskMode, Converter={StaticResource EnumToBool}, ConverterParameter=ExternalSource}"/>
-                        </StackPanel>
+                            </StackPanel>
 
-                        <!-- External LandMask Path (aktuell nicht implementiert -->
-                        <Grid Margin="0,10,0,0" Opacity="0.55" IsEnabled="False">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox Grid.Column="0"
+                            <!-- External LandMask Path (aktuell nicht implementiert -->
+                            <Grid Margin="0,10,0,0" Opacity="0.55" IsEnabled="False">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
                                      Text="{Binding RawLandMaskFile, UpdateSourceTrigger=PropertyChanged}"
                                      VerticalContentAlignment="Center" Margin="0,0,8,0" IsReadOnly="True"/>
-                            <Button Grid.Column="1" Content="..." Width="34" Command="{Binding BrowseLandMaskCommand}"/>
-                        </Grid>
-                    </StackPanel>
-                </GroupBox>
+                                <Button Grid.Column="1" Content="..." Width="34" Command="{Binding BrowseLandMaskCommand}"/>
+                            </Grid>
+                        </StackPanel>
+                    </GroupBox>
 
-                <!-- Zielraster -->
-                <GroupBox Header="Zielraster" Margin="0,0,0,10">
-                    <StackPanel Margin="10">
+                    <!-- Zielraster -->
+                    <GroupBox Header="Zielraster" Margin="0,0,0,10">
+                        <StackPanel Margin="10">
 
-                        <TextBlock Text="Auflösung" Opacity="0.8"/>
-                        <StackPanel Orientation="Vertical" Margin="0,4,0,10">
-                            <RadioButton Content="1°"
+                            <TextBlock Text="Auflösung" Opacity="0.8"/>
+                            <StackPanel Orientation="Vertical" Margin="0,4,0,10">
+                                <RadioButton Content="1°"
                                          IsChecked="{Binding SelectedCellSize, Converter={StaticResource EnumToBool}, ConverterParameter=Deg1}"
                                          Margin="0,0,0,4"/>
-                            <RadioButton Content="0,5°"
+                                <RadioButton Content="0,5°"
                                          IsChecked="{Binding SelectedCellSize, Converter={StaticResource EnumToBool}, ConverterParameter=Deg0_5}"
                                          Margin="0,0,0,4"/>
-                            <RadioButton Content="0,25°"
+                                <RadioButton Content="0,25°"
                                          IsChecked="{Binding SelectedCellSize, Converter={StaticResource EnumToBool}, ConverterParameter=Deg0_25}"/>
-                        </StackPanel>
+                            </StackPanel>
 
-                        <TextBlock Text="Resampling" Opacity="0.8"/>
-                        <StackPanel Orientation="Vertical" Margin="0,4,0,0">
-                            <RadioButton Content="Nearest"
+                            <TextBlock Text="Resampling" Opacity="0.8"/>
+                            <StackPanel Orientation="Vertical" Margin="0,4,0,0">
+                                <RadioButton Content="Nearest"
                                          IsChecked="{Binding SelectedResampling, Converter={StaticResource EnumToBool}, ConverterParameter=Nearest}"
                                          Margin="0,0,0,4"/>
-                            <RadioButton Content="Bilinear"
+                                <RadioButton Content="Bilinear"
                                          IsChecked="{Binding SelectedResampling, Converter={StaticResource EnumToBool}, ConverterParameter=Bilinear}"/>
+                            </StackPanel>
                         </StackPanel>
-                    </StackPanel>
-                </GroupBox>
+                    </GroupBox>
 
-                <!-- LandMask-Builder -->
-                <GroupBox Header="LandMask-Builder" Margin="0,0,0,10">
-                    <StackPanel Margin="10">
+                    <!-- LandMask-Builder -->
+                    <GroupBox Header="LandMask-Builder" Margin="0,0,0,10">
+                        <StackPanel Margin="10">
 
-                        <CheckBox Content="Hysterese-Filter aktivieren"
+                            <CheckBox Content="Hysterese-Filter aktivieren"
                                   IsChecked="{Binding UseHysteresis}"
                                   IsEnabled="{Binding IsLandMaskBuilderEnabled}"/>
-                        <Grid Margin="0,10,0,0" IsEnabled="{Binding IsHysteresisIterationsEnabled}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Iterationen:" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <Slider Grid.Column="1"
+                            <Grid Margin="0,10,0,0" IsEnabled="{Binding IsHysteresisIterationsEnabled}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Iterationen:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <Slider Grid.Column="1"
                                     Minimum="0" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True"
                                     Value="{Binding HysteresisIterations}"/>
-                            <TextBlock Grid.Column="2" Width="40" Margin="10,0,0,0" VerticalAlignment="Center" HorizontalAlignment="Right"
+                                <TextBlock Grid.Column="2" Width="40" Margin="10,0,0,0" VerticalAlignment="Center" HorizontalAlignment="Right"
                                        Text="{Binding HysteresisIterations}"/>
-                        </Grid>
+                            </Grid>
 
-                        <TextBlock Margin="0,10,0,0" Opacity="0.8"
+                            <TextBlock Margin="0,10,0,0" Opacity="0.8"
                                    Text="{Binding LandMaskVariantTag, StringFormat=Cache-Variante: {0}}"/>
-                    </StackPanel>
-                </GroupBox>
+                        </StackPanel>
+                    </GroupBox>
 
-                <!-- Actions -->
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="Cache generieren"
+                    <!-- Actions -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Cache generieren"
                             Width="140" Height="32" Margin="0,0,8,0"
                             Command="{Binding GenerateCacheCommand}"
                             IsEnabled="{Binding CanGenerateCache}"/>
-                    <Button Content="Cache-Ordner"
+                        <Button Content="Cache-Ordner"
                             Width="110" Height="32"
                             Command="{Binding OpenCacheFolderCommand}"/>
-                </StackPanel>
+                    </StackPanel>
 
-                <!-- Status -->
-                <TextBox Margin="0,12,0,0" Height="110"
+                    <!-- Status -->
+                    <TextBox Margin="0,12,0,0" Height="110"
                          Text="{Binding LastReport}"
                          IsReadOnly="True"
                          TextWrapping="Wrap"
                          VerticalScrollBarVisibility="Auto"/>
-            </StackPanel>
-        </ScrollViewer>
+                </StackPanel>
+            </ScrollViewer>
 
+            
+        </Grid>
+        
         <!-- Overlay -->
-        <climatesim:ProgressOverlay Panel.ZIndex="999"
-                                    Grid.Column="0"
-                                    Grid.ColumnSpan="2"
+            <climatesim:ProgressOverlay Panel.ZIndex="999"
                                     Grid.Row="0"
-                                    Grid.RowSpan="1"
+                                    Grid.RowSpan="2"
                                     HorizontalAlignment="Stretch"
                                     VerticalAlignment="Stretch">
-            
-            <climatesim:ProgressOverlay.Visibility>
-                <MultiBinding Converter="{StaticResource AndToVis}">
-                    <Binding Path="IsBusy"/>
-                    <Binding Path="BusyShowOverlay"/>
-                </MultiBinding>
-            </climatesim:ProgressOverlay.Visibility>
-        </climatesim:ProgressOverlay>
 
+                <climatesim:ProgressOverlay.Visibility>
+                    <MultiBinding Converter="{StaticResource AndToVis}">
+                        <Binding Path="IsBusy"/>
+                        <Binding Path="BusyShowOverlay"/>
+                    </MultiBinding>
+                </climatesim:ProgressOverlay.Visibility>
+            </climatesim:ProgressOverlay>
     </Grid>
-
 </Window>

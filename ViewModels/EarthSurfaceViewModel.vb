@@ -61,6 +61,16 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
+    Private _loadedCache As EarthSurfaceCache
+    Public Property LoadedCache As EarthSurfaceCache
+        Get
+            Return _loadedCache
+        End Get
+        Set(value As EarthSurfaceCache)
+            SetProperty(_loadedCache, value)
+        End Set
+    End Property
+
 #End Region
 
 #Region "Raster / Resampling"
@@ -262,6 +272,13 @@ Public Class EarthSurfaceViewModel
         End Get
     End Property
 
+    Public ReadOnly Property CanLoadCache As Boolean
+        Get
+            If String.IsNullOrWhiteSpace(SourceName) Then Return False
+            Return True
+        End Get
+    End Property
+
 #End Region
 
 #Region "Commands"
@@ -271,6 +288,7 @@ Public Class EarthSurfaceViewModel
     Public ReadOnly Property BrowseLandMaskCommand As ICommand
     Public ReadOnly Property GenerateCacheCommand As ICommand
     Public ReadOnly Property OpenCacheFolderCommand As ICommand
+    Public ReadOnly Property LoadCacheCommand As ICommand
 
 #End Region
 
@@ -295,6 +313,13 @@ Public Class EarthSurfaceViewModel
                     MessageBox.Show(ex.Message, "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
                 End Try
             End Sub)
+
+        LoadCacheCommand = New RelayCommand(Of Object)(
+            Async Sub(o)
+                Await LoadCacheAsync()
+            End Sub,
+            Function(o) Not IsBusy)
+
     End Sub
 
     Private Sub BrowseHeight()
@@ -336,6 +361,105 @@ Public Class EarthSurfaceViewModel
             RawLandMaskFile = dlg.FileName
             LastReport = $"LandMask gewählt: {RawLandMaskFile}"
         End If
+    End Sub
+
+    Private Async Function LoadCacheAsync() As Task(Of String)
+
+        Dim dlg As New OpenFileDialog With {
+            .Title = "EarthSurface-Cache laden",
+            .Filter = "EarthSurface Meta-Datei (*.meta.json)|*.meta.json",
+            .InitialDirectory = EarthSurfacePaths.CacheDirectory,
+            .CheckFileExists = True,
+            .Multiselect = False
+        }
+
+        If dlg.ShowDialog() <> True Then Return "Datei nicht gefunden."
+
+        Dim metaPath As String = dlg.FileName
+
+        Try
+
+            Dim result As String = Await BusyRunner.RunAsync(Of String)(
+                Me,
+                "EarthSurface: Cache laden",
+                Async Function(progress, ct)
+
+                    Dim cache As EarthSurfaceCache = Nothing
+                    Dim ek As CacheOpenErrorKind
+                    Dim em As String = Nothing
+
+                    Dim ok As Boolean = EarthSurfaceCacheStore.TryOpenCacheFromFiles(metaPath, cache, ek, em, progress, ct)
+                    If Not ok OrElse cache Is Nothing Then
+                        Throw New InvalidDataException($"Cache konnte nicht gelesen werden: {ek} - {em}")
+                    End If
+
+                    'Meta -> VM spiegeln
+                    ApplyLoadedMetaToViewModel(cache.Meta)
+
+                    'Cache merken
+                    LoadedCache = cache
+
+                    Return $"Cache geladen: {Path.GetFileName(Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), Nothing))}"
+                End Function,
+                canCancel:=True,
+                showOverlay:=True,
+                runInBackground:=True)
+
+            LastReport = result
+
+            'Nach dem Laden: Preview neu rendern
+            RenderPreviewFromCache()
+
+            Return "Cache geladen."
+
+        Catch ex As OperationCanceledException
+            LastReport = "Abgebrochen."
+            Return "Abgebrochen"
+        Catch ex As Exception
+            LastReport = $"Fehler: {ex.Message}"
+            Return $"Fehler: {ex.Message}"
+        End Try
+
+    End Function
+
+    Private Sub ApplyLoadedMetaToViewModel(meta As EarthSurfaceCacheMeta)
+
+        If meta Is Nothing Then Return
+
+        SourceName = meta.Source
+
+        'CellSizePreset aus meta.CellSizeDeg
+        SelectedCellSize = CellSizePresetFromDeg(meta.CellSizeDeg)
+
+    End Sub
+
+    Private Shared Function CellSizePresetFromDeg(cellSizeDeg As Double) As CellSizePreset
+        Const eps As Double = 0.0000001
+
+        If Math.Abs(cellSizeDeg - 1.0) < eps Then
+            Return CellSizePreset.Deg1
+        ElseIf Math.Abs(cellSizeDeg - 0.5) < eps Then
+            Return CellSizePreset.Deg0_5
+        ElseIf Math.Abs(cellSizeDeg - 0.25) < eps Then
+            Return CellSizePreset.Deg0_25
+        End If
+
+        Throw New InvalidDataException($"Uunbekannte CellSizeDeg in Meta: {cellSizeDeg}. Erwarten: 1.0, 0.5 oder 0.25.")
+    End Function
+
+    Private Sub RenderPreviewFromCache()
+
+        If LoadedCache Is Nothing Then
+            PreviewImage = Nothing
+            Return
+        End If
+
+        Dim provider As DataEarthSurfaceProvider = DataEarthSurfaceProvider.CreateFromCache(LoadedCache)
+
+        'Beispiel: 720x360px Preview
+        Dim bmp As WriteableBitmap = EarthSurfaceRenderer.RenderSurfaceTypeWorld(provider, 720, 360)
+        PreviewImage = bmp
+
     End Sub
 
     'Etappe B3: Real-Cache-Builder aus ESRI ASCII
@@ -383,10 +507,10 @@ Public Class EarthSurfaceViewModel
                     Dim ek As CacheOpenErrorKind
                     Dim em As String = Nothing
 
-                    Dim ok As Boolean = EarthSurfaceCacheStore.TryOpenCache(
+                    Dim ok As Boolean = EarthSurfaceCacheStore.TryOpenCacheFromSourceName(
                         source:=opts.SourceName,
                         cellSizeDeg:=opts.CellSizeDeg,
-                        resampling:="nearest",
+                        resampling:=opts.Resampling,
                         cache:=cache,
                         errorKind:=ek,
                         errorMessage:=em,
@@ -400,7 +524,7 @@ Public Class EarthSurfaceViewModel
 
                     'DEBUG
                     Dim bmp = EarthSurfacePreviewRenderer.BuildLandOceanBitmapFromHeight(cache)
-                    EarthSurfacePreviewRenderer.SavePng(bmp, CacheDirectory & "\preview.bmp")
+                    EarthSurfacePreviewRenderer.SavePng(bmp, EarthSurfacePaths.CacheDirectory & "\preview.png")
 
                     ct.ThrowIfCancellationRequested()
 

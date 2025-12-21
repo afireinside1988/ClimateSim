@@ -119,6 +119,8 @@ Class MainWindow
 
         Debug.WriteLine($"SurfaceType DebugGate: {gate.DifferentPixelCount}/{gate.TotalPixelCount} ({gate.DifferentPercent:F4}%) verschieden")
 
+
+
         'Config ins Model übernehmen
         ApplyConfigToModel()
 
@@ -579,7 +581,7 @@ Class MainWindow
             .HasTid = True,
             .HasLandMask = True,
             .RawTidFile = EarthSurfacePaths.RawTidPath,
-            .RawSubIceTopoFile = EarthSurfacePaths.RawSubIceTopoPath
+            .RawHeightFile = EarthSurfacePaths.RawHeightPath
         }
 
         Dim height(n - 1) As Single
@@ -600,7 +602,7 @@ Class MainWindow
         Dim kind As CacheOpenErrorKind
         Dim msg As String = Nothing
 
-        If EarthSurfaceCacheStore.TryOpenCache(source, cellSize, resampling, loaded, kind, msg) Then
+        If EarthSurfaceCacheStore.TryOpenCacheFromSourceName(source, cellSize, resampling, loaded, kind, msg) Then
             Debug.WriteLine($"Cache geladen: {loaded.Meta.Source}, {loaded.Meta.CellSizeDeg}°, n={loaded.Meta.LatCount * loaded.Meta.LonCount}")
             Debug.WriteLine($"Sample Height(0)={loaded.HeightM(0)}, TID(0)={loaded.Tid(0)}, LandMask(0)={loaded.LandMask(0)}")
             Debug.Flush()

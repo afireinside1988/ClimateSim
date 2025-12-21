@@ -330,7 +330,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
             .HasTid = hasTid,
             .HasLandMask = True,
             .CreateUtc = DateTime.UtcNow,
-            .RawSubIceTopoFile = opts.HeightZipPath,
+            .RawHeightFile = opts.HeightZipPath,
             .RawTidFile = If(hasTid, opts.TidZipPath, Nothing)
         }
 
@@ -342,7 +342,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
 
             Case LandMaskMode.FromTid0
                 meta.LandMaskSource = "FromTid0"
-                meta.LandMaskNotes = "tid==0 -> Land; tid<>0 => FromHeight (height>=0 -> Land)"
+                meta.LandMaskNotes = $"tid==0 -> Land; tid<>>0 => FromHeight (height>=0 -> Land)"
 
             Case Else
                 meta.LandMaskSource = "ExternalSource"
@@ -633,7 +633,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
             .HasTid = hasTid,
             .HasLandMask = True,
             .CreateUtc = DateTime.UtcNow,
-            .RawSubIceTopoFile = opts.HeightZipPath,
+            .RawHeightFile = opts.HeightZipPath,
             .RawTidFile = If(hasTid, opts.TidZipPath, Nothing)
         }
 
