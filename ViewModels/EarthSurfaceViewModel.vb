@@ -1,4 +1,5 @@
-﻿Imports System.Drawing.Drawing2D
+﻿Imports System.DirectoryServices.ActiveDirectory
+Imports System.Drawing.Drawing2D
 Imports System.IO
 Imports System.Security.Cryptography
 Imports System.Text
@@ -71,6 +72,8 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
+    Private _provider As DataEarthSurfaceProvider
+
 #End Region
 
 #Region "Raster / Resampling"
@@ -129,6 +132,13 @@ Public Class EarthSurfaceViewModel
         End Get
         Set(value As LandMaskMode)
             If SetProperty(_selectedLandMaskMode, value) Then
+
+                If value = LandMaskMode.FromHeight Then
+                    UseHysteresis = True
+                Else
+                    UseHysteresis = False
+                End If
+
                 OnPropertyChanged(NameOf(IsLandMaskBuilderEnabled))
                 OnPropertyChanged(NameOf(IsHysteresisIterationsEnabled))
                 OnPropertyChanged(NameOf(CanGenerateCache))
@@ -195,47 +205,148 @@ Public Class EarthSurfaceViewModel
 
 #Region "Preview"
 
-    Private _previewImage As ImageSource
-    Public Property PreviewImage As ImageSource
+    Private _camera As New CameraState With {
+        .CenterLat = 0.0,
+        .CenterLon = 0.0,
+        .SpanLat = 180.0,
+        .SpanLon = 360.0
+    }
+    Public Property Camera As CameraState
         Get
-            Return _previewImage
+            Return _camera
+        End Get
+        Set(value As CameraState)
+            SetProperty(_camera, value)
+        End Set
+    End Property
+
+    Private _zoom As Double = 1.0
+    Public Property Zoom As Double
+        Get
+            Return _zoom
+        End Get
+        Set(value As Double)
+            SetProperty(_zoom, Math.Max(0.1, Math.Min(50.0, value)))
+        End Set
+    End Property
+
+    Private _isPanning As Boolean
+    Private _panStartMouse As Point
+    Private _panStartX As Double
+    Private _panStartY As Double
+
+    Private _lastViewportW As Double = 0
+    Private _lastViewportH As Double = 0
+    Private _pendingFitToViewport As Boolean = False
+
+    Private _contentWidth As Double
+    Public Property ContentWidth As Double
+        Get
+            Return _contentWidth
+        End Get
+        Set(value As Double)
+            SetProperty(_contentWidth, value)
+        End Set
+    End Property
+
+    Private _contentHeight As Double
+    Public Property ContentHeight As Double
+        Get
+            Return _contentHeight
+        End Get
+        Set(value As Double)
+            SetProperty(_contentHeight, value)
+        End Set
+    End Property
+
+    Private _panX As Double = 0.0
+    Public Property PanX As Double
+        Get
+            Return _panX
+        End Get
+        Set(value As Double)
+            SetProperty(_panX, value)
+        End Set
+    End Property
+
+    Private _panY As Double = 0.0
+    Public Property PanY As Double
+        Get
+            Return _panY
+        End Get
+        Set(value As Double)
+            SetProperty(_panY, value)
+        End Set
+    End Property
+
+    Private _surfaceLayer As ImageSource
+    Public Property SurfaceLayer As ImageSource
+        Get
+            Return _surfaceLayer
         End Get
         Set(value As ImageSource)
-            SetProperty(_previewImage, value)
+            SetProperty(_surfaceLayer, value)
         End Set
     End Property
 
-    Private _showLayerHeight As Boolean = True
-    Public Property ShowLayerHeight As Boolean
+    Private _showReliefLayer As Boolean = True
+    Public Property ShowReliefLayer As Boolean
         Get
-            Return _showLayerHeight
+            Return _showReliefLayer
         End Get
         Set(value As Boolean)
-            SetProperty(_showLayerHeight, value)
+            If SetProperty(_showReliefLayer, value) Then
+
+                If value = False Then
+                    UseHillShading = False
+                End If
+
+                OnPropertyChanged(NameOf(UseHillShading))
+            End If
         End Set
     End Property
 
-    Private _showLayerLandMask As Boolean = True
-    Public Property ShowLayerLandMask As Boolean
+    Private _useHillShading As Boolean = True
+    Public Property UseHillShading As Boolean
         Get
-            Return _showLayerLandMask
+            Return _useHillShading
         End Get
         Set(value As Boolean)
-            SetProperty(_showLayerLandMask, value)
+            SetProperty(_useHillShading, value)
         End Set
     End Property
 
-    Private _showLayerTid As Boolean = False
-    Public Property ShowLayerTid As Boolean
+    Private _showLandMaskLayer As Boolean = False
+    Public Property ShowLandMaskLayer As Boolean
         Get
-            Return _showLayerTid
+            Return _showLandMaskLayer
         End Get
         Set(value As Boolean)
-            SetProperty(_showLayerTid, value)
+            SetProperty(_showLandMaskLayer, value)
         End Set
     End Property
 
-    Private _hoverText As String = ""
+    Private _showTidLayer As Boolean = False
+    Public Property ShowTidLayer As Boolean
+        Get
+            Return _showTidLayer
+        End Get
+        Set(value As Boolean)
+            SetProperty(_showTidLayer, value)
+        End Set
+    End Property
+
+    Private _showGridLayer As Boolean = False
+    Public Property ShowGridLayer As Boolean
+        Get
+            Return _showGridLayer
+        End Get
+        Set(value As Boolean)
+            SetProperty(_showGridLayer, value)
+        End Set
+    End Property
+
+    Private _hoverText As String = "Keine Vorschau..."
     Public Property HoverText As String
         Get
             Return _hoverText
@@ -286,9 +397,19 @@ Public Class EarthSurfaceViewModel
     Public ReadOnly Property BrowseHeightCommand As ICommand
     Public ReadOnly Property BrowseTidCommand As ICommand
     Public ReadOnly Property BrowseLandMaskCommand As ICommand
+
     Public ReadOnly Property GenerateCacheCommand As ICommand
     Public ReadOnly Property OpenCacheFolderCommand As ICommand
     Public ReadOnly Property LoadCacheCommand As ICommand
+
+    Public ReadOnly Property MapMouseMoveCommand As ICommand
+    Public ReadOnly Property MapMouseLeaveCommand As ICommand
+
+    Public ReadOnly Property BeginPanCommand As ICommand
+    Public ReadOnly Property PanCommand As ICommand
+    Public ReadOnly Property EndPanCommand As ICommand
+    Public ReadOnly Property ZoomCommand As ICommand
+    Public ReadOnly Property ViewportChangedCommand As ICommand
 
 #End Region
 
@@ -297,6 +418,15 @@ Public Class EarthSurfaceViewModel
         BrowseHeightCommand = New RelayCommand(Of Object)(Sub(o) BrowseHeight())
         BrowseTidCommand = New RelayCommand(Of Object)(Sub(o) BrowseTid())
         BrowseLandMaskCommand = New RelayCommand(Of Object)(Sub(o) BrowseLandMask())
+
+        MapMouseMoveCommand = New RelayCommand(Of Object)(Sub(p) OnMapMouseMove(p), Function(p) LoadedCache IsNot Nothing)
+        MapMouseLeaveCommand = New RelayCommand(Of Object)(Sub(p) OnMapMouseLeave())
+
+        BeginPanCommand = New RelayCommand(Of PanRequest)(Sub(p) BeginPan(p))
+        PanCommand = New RelayCommand(Of PanRequest)(Sub(p) UpdatePan(p))
+        EndPanCommand = New RelayCommand(Of Object)(Sub(p) EndPan())
+        ZoomCommand = New RelayCommand(Of ZoomRequest)(Sub(z) ZoomAt(z))
+        ViewportChangedCommand = New RelayCommand(Of ViewportChangedRequest)(Sub(r) OnViewportChanged(r))
 
         GenerateCacheCommand = New RelayCommand(Of Object)(
             Async Sub(o)
@@ -321,6 +451,9 @@ Public Class EarthSurfaceViewModel
             Function(o) Not IsBusy)
 
     End Sub
+
+
+#Region "Filepicker"
 
     Private Sub BrowseHeight()
         Dim dlg As New OpenFileDialog With {
@@ -363,6 +496,10 @@ Public Class EarthSurfaceViewModel
         End If
     End Sub
 
+#End Region
+
+#Region "Cache Laden"
+
     Private Async Function LoadCacheAsync() As Task(Of String)
 
         Dim dlg As New OpenFileDialog With {
@@ -382,7 +519,7 @@ Public Class EarthSurfaceViewModel
             Dim result As String = Await BusyRunner.RunAsync(Of String)(
                 Me,
                 "EarthSurface: Cache laden",
-                Async Function(progress, ct)
+                Function(progress, ct)
 
                     Dim cache As EarthSurfaceCache = Nothing
                     Dim ek As CacheOpenErrorKind
@@ -399,11 +536,11 @@ Public Class EarthSurfaceViewModel
                     'Cache merken
                     LoadedCache = cache
 
-                    Return $"Cache geladen: {Path.GetFileName(Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), Nothing))}"
+                    Dim msg As String = $"Cache geladen: {Path.GetFileName(Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), Nothing))}"
+                    Return msg
                 End Function,
                 canCancel:=True,
-                showOverlay:=True,
-                runInBackground:=True)
+                showOverlay:=True)
 
             LastReport = result
 
@@ -431,45 +568,203 @@ Public Class EarthSurfaceViewModel
         'CellSizePreset aus meta.CellSizeDeg
         SelectedCellSize = CellSizePresetFromDeg(meta.CellSizeDeg)
 
-    End Sub
-
-    Private Shared Function CellSizePresetFromDeg(cellSizeDeg As Double) As CellSizePreset
-        Const eps As Double = 0.0000001
-
-        If Math.Abs(cellSizeDeg - 1.0) < eps Then
-            Return CellSizePreset.Deg1
-        ElseIf Math.Abs(cellSizeDeg - 0.5) < eps Then
-            Return CellSizePreset.Deg0_5
-        ElseIf Math.Abs(cellSizeDeg - 0.25) < eps Then
-            Return CellSizePreset.Deg0_25
+        If meta.HasHeight AndAlso File.Exists(meta.RawHeightFile) Then
+            RawHeightFile = meta.RawHeightFile
+        Else
+            RawHeightFile = Nothing
         End If
 
-        Throw New InvalidDataException($"Uunbekannte CellSizeDeg in Meta: {cellSizeDeg}. Erwarten: 1.0, 0.5 oder 0.25.")
-    End Function
+        If meta.HasTid AndAlso File.Exists(meta.RawTidFile) Then
+            RawTidFile = meta.RawTidFile
+        Else
+            RawTidFile = Nothing
+        End If
+
+        If meta.HasLandMask Then
+            Select Case meta.LandMaskSource
+                Case LandMaskMode.FromHeight.ToString()
+                    SelectedLandMaskMode = LandMaskMode.FromHeight
+                Case LandMaskMode.FromTid0.ToString()
+                    SelectedLandMaskMode = LandMaskMode.FromTid0
+                Case Else
+                    SelectedLandMaskMode = LandMaskMode.ExternalSource
+            End Select
+        End If
+
+        Select Case meta.Resampling
+            Case "nearest"
+                SelectedResampling = ResamplingMode.Nearest
+            Case "bilinear"
+                SelectedResampling = ResamplingMode.Bilinear
+            Case Else
+                SelectedResampling = Nothing
+        End Select
+
+        If meta.LandMaskSource = LandMaskMode.FromHeight.ToString() Then
+            UseHysteresis = meta.UseHysteresis
+            HysteresisIterations = meta.HysteresisIterations
+        End If
+
+    End Sub
+
+#End Region
+
+#Region "Rendering"
 
     Private Sub RenderPreviewFromCache()
 
         If LoadedCache Is Nothing Then
-            PreviewImage = Nothing
+            SurfaceLayer = Nothing
+            _provider = Nothing
             Return
         End If
 
-        Dim provider As DataEarthSurfaceProvider = DataEarthSurfaceProvider.CreateFromCache(LoadedCache)
 
-        'Beispiel: 720x360px Preview
-        Dim bmp As WriteableBitmap = EarthSurfaceRenderer.RenderSurfaceTypeWorld(provider, 720, 360)
-        PreviewImage = bmp
+        _provider = DataEarthSurfaceProvider.CreateFromCache(LoadedCache)
+
+        Dim width As Integer = LoadedCache.Meta.LonCount
+        Dim height As Integer = LoadedCache.Meta.LatCount
+
+        'Beispiel: Preview in voller Auflösung
+        Dim bmp As WriteableBitmap = EarthSurfaceRenderer.RenderSurfaceTypeCamera(_provider, width, height, Camera)
+        SurfaceLayer = bmp
+
+        ContentWidth = width
+        ContentHeight = height
+
+        _pendingFitToViewport = True
+
+        If _lastViewportW > 0 AndAlso _lastViewportH > 0 Then
+            FitToViewport(_lastViewportW, _lastViewportH)
+            _pendingFitToViewport = False
+        Else
+
+            Zoom = 1.0
+            PanX = 0
+            PanY = 0
+
+        End If
 
     End Sub
 
-    'Etappe B3: Real-Cache-Builder aus ESRI ASCII
-    Private Async Function GenerateCacheAsync() As Task(Of String)
+    Private Sub OnMapMouseMove(param As Object)
+
+        If LoadedCache Is Nothing Then
+            HoverText = ""
+            Return
+        End If
+
+        Dim r As HoverRequest = TryCast(param, HoverRequest)
+        If r Is Nothing Then Return
+
+        RememberViewportSize(r.ViewPortSize)
+
+        Dim viewportSize As Size = r.ViewPortSize
+        Dim contentSize As New Size(LoadedCache.Meta.LonCount, LoadedCache.Meta.LatCount)
+
+        Dim geo = ScreenToGeo(r.MousePos, viewportSize, contentSize, Camera, Zoom, PanX, PanY)
+        If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then
+            HoverText = ""
+            Return
+        End If
+
+        Dim info As SurfaceInfo = _provider.GetSurfaceInfo(geo.Lat, geo.Lon)
+
+        'Optional: Index bestimmen (falls wir mal latIdx/lonIdx zeigen wollen)
+        'Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / LoadedCache.Meta.CellSizeDeg))
+        'Dim lonIdx As Integer = CInt(Math.Floor((180.0 - geo.Lon) / LoadedCache.Meta.CellSizeDeg))
+
+        HoverText = $"lat={geo.Lat:0.###}°, lon={geo.Lon:0.###}°   Surface={info.Surface}    Height={info.HeightM:0.##}m"
+
+    End Sub
+
+    Private Sub OnMapMouseLeave()
+        HoverText = ""
+    End Sub
+
+    Private Sub OnViewportChanged(r As ViewportChangedRequest)
+
+        If r Is Nothing Then Return
+
+        _lastViewportW = r.ViewPortSize.Width
+        _lastViewportH = r.ViewPortSize.Height
+
+        If LoadedCache Is Nothing Then Return
+
+        If _pendingFitToViewport Then
+            FitToViewport(_lastViewportW, _lastViewportH)
+            _pendingFitToViewport = False
+        Else
+            'bei Resize nur clampen/zentrieren
+            ClampPan(_lastViewportW, _lastViewportH)
+        End If
+
+    End Sub
+
+    Public Sub BeginPan(r As PanRequest)
+
+        _isPanning = True
+        _panStartMouse = r.MousePos
+        _panStartX = PanX
+        _panStartY = PanY
+
+    End Sub
+
+    Public Sub UpdatePan(r As PanRequest)
+
+        If Not _isPanning Then Return
+
+        Dim dx As Double = r.MousePos.X - _panStartMouse.X
+        Dim dy As Double = r.MousePos.Y - _panStartMouse.Y
+
+        PanX = _panStartX + dx
+        PanY = _panStartY + dy
+
+        ClampPan(r.ViewPortSize.Width, r.ViewPortSize.Height)
+
+    End Sub
+
+    Public Sub EndPan()
+
+        _isPanning = False
+
+    End Sub
+
+    Public Sub ZoomAt(z As ZoomRequest)
+
+        Dim zoomFactor As Double = If(z.Delta > 0, 1.1, 1 / 1.1)
+
+        Dim oldZoom As Double = Zoom
+        Dim newZoom As Double = Clamp(oldZoom * zoomFactor, 0.25, 20.0)
+
+        If Math.Abs(newZoom - oldZoom) < 0.0000001 Then Return
+
+        'Cursor in Content Space (vor Zoom)
+        Dim cx As Double = (z.MousePos.X - PanX) / oldZoom
+        Dim cy As Double = (z.MousePos.Y - PanY) / oldZoom
+
+        'Zoom setzen
+        Zoom = newZoom
+
+        'Pan so korrigieren, dass (cx,cy) unter Cursor bleibt
+        PanX = z.MousePos.X - cx * newZoom
+        PanY = z.MousePos.Y - cy * newZoom
+
+        ClampPan(z.ViewportSize.Width, z.ViewportSize.Height)
+    End Sub
+#End Region
+
+
+#Region "Cache erstellen"
+
+    Private Async Function GenerateCacheAsync() As Task(Of EarthSurfaceCache)
 
         Try
-            Dim result As String = Await BusyRunner.RunAsync(Of String)(
+            Dim resultTuple As Tuple(Of EarthSurfaceCache, String) =
+                Await BusyRunner.RunAsync(Of Tuple(Of EarthSurfaceCache, String))(
                 Me,
                 "EarthSurface: Cache generieren",
-                Async Function(progress, ct)
+                Function(progress, ct)
 
                     ct.ThrowIfCancellationRequested()
 
@@ -503,7 +798,7 @@ Public Class EarthSurfaceViewModel
                     '-------------------------------
                     progress?.Report(New ProgressInfo("Öffne Cache zur Validierung...", 95))
 
-                    Dim cache As EarthSurfaceCache = Nothing
+                    Dim opened As EarthSurfaceCache = Nothing
                     Dim ek As CacheOpenErrorKind
                     Dim em As String = Nothing
 
@@ -511,46 +806,55 @@ Public Class EarthSurfaceViewModel
                         source:=opts.SourceName,
                         cellSizeDeg:=opts.CellSizeDeg,
                         resampling:=opts.Resampling,
-                        cache:=cache,
+                        cache:=opened,
                         errorKind:=ek,
                         errorMessage:=em,
                         landMaskVariant:=opts.LandMaskVariant,
                         progress:=progress,
                         ct:=ct)
 
-                    If Not ok OrElse cache Is Nothing Then
+                    If Not ok OrElse opened Is Nothing Then
                         Throw New InvalidDataException($"Cache konnte nicht wieder geöffnet werden: {ek} - {em}")
                     End If
 
                     'DEBUG
-                    Dim bmp = EarthSurfacePreviewRenderer.BuildLandOceanBitmapFromHeight(cache)
+                    Dim bmp = EarthSurfacePreviewRenderer.BuildLandOceanBitmapFromHeight(opened)
                     EarthSurfacePreviewRenderer.SavePng(bmp, EarthSurfacePaths.CacheDirectory & "\preview.png")
 
                     ct.ThrowIfCancellationRequested()
 
-                    Dim sampleReport As String = BuildSampleReport(cache)
+                    Dim sampleReport As String = BuildGenerateReport(opened)
+
+
+
+                    Dim reportStr As String = buildReport & Environment.NewLine & Environment.NewLine & sampleReport
                     progress?.Report(New ProgressInfo("Fertig.", 100))
 
-                    Return buildReport & Environment.NewLine & Environment.NewLine & sampleReport
+                    Return Tuple.Create(opened, reportStr)
 
                 End Function,
                 canCancel:=True,
-                showOverlay:=True,
-                runInBackground:=True)
+                showOverlay:=True)
 
-            LastReport = result
+            Dim cache As EarthSurfaceCache = resultTuple.Item1
+            Dim report As String = resultTuple.Item2
+
+            LoadedCache = cache
+            LastReport = report
+
+            Return cache
 
         Catch ex As OperationCanceledException
             LastReport = "Abgebrochen."
-            Return LastReport
+            Return Nothing
         Catch ex As Exception
             LastReport = "Fehler: " & ex.Message
-            Return LastReport
+            Return Nothing
         End Try
-        Return "Fehler!!!"
+
     End Function
 
-    Private Shared Function BuildSampleReport(cache As EarthSurfaceCache) As String
+    Private Shared Function BuildGenerateReport(cache As EarthSurfaceCache) As String
 
         Dim m = cache.Meta
         Dim latCount As Integer = m.LatCount
@@ -637,6 +941,10 @@ Public Class EarthSurfaceViewModel
         Return sb.ToString()
     End Function
 
+#End Region
+
+#Region "Helper"
+
     Private Shared Function LatCenterDeg(latIndex As Integer, cellSizeDeg As Double) As Double
         'latIndex 0 = Nord (oben)
         Return 90.0 - (latIndex + 0.5) * cellSizeDeg
@@ -646,4 +954,119 @@ Public Class EarthSurfaceViewModel
         'lonIndex 0 = West (links)
         Return -180 + (lonIndex + 0.5) * cellSizeDeg
     End Function
+
+    Private Shared Function CellSizePresetFromDeg(cellSizeDeg As Double) As CellSizePreset
+        Const eps As Double = 0.0000001
+
+        If Math.Abs(cellSizeDeg - 1.0) < eps Then
+            Return CellSizePreset.Deg1
+        ElseIf Math.Abs(cellSizeDeg - 0.5) < eps Then
+            Return CellSizePreset.Deg0_5
+        ElseIf Math.Abs(cellSizeDeg - 0.25) < eps Then
+            Return CellSizePreset.Deg0_25
+        End If
+
+        Throw New InvalidDataException($"Uunbekannte CellSizeDeg in Meta: {cellSizeDeg}. Erwarten: 1.0, 0.5 oder 0.25.")
+    End Function
+
+    Public Shared Function ScreenToGeo(mousePos As Point,
+                                       viewPortSize As Size,
+                                       contentSize As Size,
+                                       camera As CameraState,
+                                       zoom As Double,
+                                       panX As Double,
+                                       panY As Double) As (Lat As Double, Lon As Double)
+
+        If viewPortSize.Width <= 0 OrElse viewPortSize.Height <= 0 Then
+            Return (Double.NaN, Double.NaN)
+        End If
+
+        If contentSize.Width <= 0 OrElse contentSize.Height <= 0 Then
+            Return (Double.NaN, Double.NaN)
+        End If
+        If zoom <= 0 Then Return (Double.NaN, Double.NaN)
+
+        'Mausposition in "Content Space" zurückrechnen (Inverse des RenderTransforms)
+        Dim xContent As Double = (mousePos.X - panX) / zoom
+        Dim yContent As Double = (mousePos.Y - panY) / zoom
+
+        If xContent < 0 OrElse xContent >= contentSize.Width OrElse yContent < 0 OrElse yContent >= contentSize.Height Then
+            Return (Double.NaN, Double.NaN)
+        End If
+
+        'Normierte Koordinaten
+        Dim xNorm As Double = xContent / contentSize.Width
+        Dim yNorm As Double = yContent / contentSize.Height
+
+        'Geo berechnen (inverse Render-Formel)
+        Dim lon As Double = camera.CenterLon + (xNorm - 0.5) * camera.SpanLon
+        Dim lat As Double = camera.CenterLat + (0.5 - yNorm) * camera.SpanLat
+
+        'Clamp/Wrap
+        lat = Clamp(lat, -90.0, 90.0)
+        lon = WrapLon180(lon)
+
+        Return (lat, lon)
+
+    End Function
+
+    Private Sub ClampPan(viewportW As Double, viewportH As Double)
+
+        If LoadedCache Is Nothing Then Return
+
+        Dim contentW As Double = LoadedCache.Meta.LonCount
+        Dim contentH As Double = LoadedCache.Meta.LatCount
+
+        Dim scaledW As Double = contentW * Zoom
+        Dim scaledH As Double = contentH * Zoom
+
+        'Wenn Content kleiner als Viewport: zentrieren (statt oben links lassen)
+        If scaledW <= viewportW Then
+            PanX = (viewportW - scaledW) / 2.0
+        Else
+            Dim minX As Double = viewportW - scaledW
+            PanX = Clamp(PanX, minX, 0)
+        End If
+
+        If scaledH <= viewportH Then
+            PanY = (viewportH - scaledH) / 2.0
+        Else
+            Dim minY As Double = viewportH - scaledH
+            PanY = Clamp(PanY, minY, 0)
+        End If
+
+    End Sub
+
+    Private Sub FitToViewport(viewPortW As Double, viewPortH As Double)
+
+        If LoadedCache Is Nothing Then Return
+        If viewPortH <= 0 OrElse viewPortW <= 0 Then Return
+
+        Dim contentW As Double = LoadedCache.Meta.LonCount
+        Dim contentH As Double = LoadedCache.Meta.LatCount
+        If contentW <= 0 OrElse contentH <= 0 Then Return
+
+        Dim fitZoom As Double = Math.Min(viewPortW / contentW, viewPortH / contentH)
+
+        'Optional: nicht größer als 1 hochskalieren
+        fitZoom = Math.Min(fitZoom, 1.0)
+
+        Zoom = Clamp(fitZoom, 0.05, 20.0)
+
+        'Zentrieren
+        PanX = (viewPortW - contentW * Zoom) / 2.0
+        PanY = (viewPortH - contentH * Zoom) / 2.0
+
+        'Sicherheit
+        ClampPan(viewPortW, viewPortH)
+
+    End Sub
+
+    Private Sub RememberViewportSize(vp As Size)
+        If vp.Width > 0 Then _lastViewportW = vp.Width
+        If vp.Height > 0 Then _lastViewportH = vp.Height
+    End Sub
+
+#End Region
+
 End Class

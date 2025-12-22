@@ -45,7 +45,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         If String.IsNullOrWhiteSpace(opts.HeightZipPath) OrElse Not File.Exists(opts.HeightZipPath) Then
             Throw New FileNotFoundException("Height-ZIP nicht gefunden.", opts.HeightZipPath)
         End If
-        If opts.CellSizeDeg <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(opts.CellSizeDeg))
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(opts.CellSizeDeg)
 
         Dim resampling As String = If(opts.Resampling, "nearest").Trim().ToLowerInvariant()
         If resampling <> "nearest" AndAlso resampling <> "bilinear" Then
@@ -337,15 +337,15 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         Select Case opts.LandMaskMode
 
             Case LandMaskMode.FromHeight
-                meta.LandMaskSource = "FromHeight"
+                meta.LandMaskSource = LandMaskMode.FromHeight.ToString()
                 meta.LandMaskNotes = $"height>=0 -> Land; NaN(Void) -> Ocean; hysteresis={opts.UseHysteresis}; it={opts.HysteresisIterations}; landThr={opts.LandThreshold}; oceanThr={opts.OceanThreshold}"
 
             Case LandMaskMode.FromTid0
-                meta.LandMaskSource = "FromTid0"
+                meta.LandMaskSource = LandMaskMode.FromTid0.ToString()
                 meta.LandMaskNotes = $"tid==0 -> Land; tid<>>0 => FromHeight (height>=0 -> Land)"
 
             Case Else
-                meta.LandMaskSource = "ExternalSource"
+                meta.LandMaskSource = LandMaskMode.ExternalSource.ToString()
                 meta.LandMaskNotes = "not implemented"
         End Select
 
@@ -397,7 +397,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         If String.IsNullOrWhiteSpace(opts.HeightZipPath) OrElse Not File.Exists(opts.HeightZipPath) Then
             Throw New FileNotFoundException("Height-Zip nicht gefunden.", opts.HeightZipPath)
         End If
-        If opts.CellSizeDeg <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(opts.CellSizeDeg))
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(opts.CellSizeDeg)
 
         ct.ThrowIfCancellationRequested()
 
@@ -625,6 +625,10 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         Dim meta As New EarthSurfaceCacheMeta With {
             .CacheVersion = EarthSurfaceCacheFormat.CurrentVersion,
             .Source = opts.SourceName,
+            .UseHysteresis = opts.UseHysteresis,
+            .HysteresisIterations = opts.HysteresisIterations,
+            .LandThreshold = opts.LandThreshold,
+            .OceanThreshold = opts.OceanThreshold,
             .CellSizeDeg = opts.CellSizeDeg,
             .LatCount = latCount,
             .LonCount = lonCount,

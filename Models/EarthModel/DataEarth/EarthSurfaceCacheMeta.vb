@@ -9,9 +9,12 @@ Public Class EarthSurfaceCacheMeta
 
     'Identifiziert die Datenquellen und Layer (für Menschen + spätere Auswahl in UI)
     Public Property Source As String = "GEBCO_2025"
-    Public Property LandMaskSource As String = "HeightThreshold+Majority3x3"
+    Public Property LandMaskSource As String = "FromHeight"
     Public Property LandMaskNotes As String = "v0.3: height>=0 then 3x3 hysteresis majority (6/3), 1 iter"
-
+    Public Property UseHysteresis As Boolean = True
+    Public Property HysteresisIterations As Integer = 1
+    Public Property LandThreshold As Integer = 6
+    Public Property OceanThreshold As Integer = 3
     'Raster-Definition
     Public Property CellSizeDeg As Double       '1.0 / 0.5 / 0.25
     Public Property LatCount As Integer          'z.B. 180 bei 1° (wenn -90...90 exkl. Pol-Kanten)

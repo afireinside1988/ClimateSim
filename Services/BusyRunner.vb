@@ -73,6 +73,28 @@ Public Module BusyRunner
         End Try
     End Function
 
+    Public Async Function RunAsync(Of T)(
+    vm As ViewModelBase,
+    title As String,
+    work As Func(Of IProgress(Of ProgressInfo), CancellationToken, T),
+    Optional canCancel As Boolean = True,
+    Optional showOverlay As Boolean = True
+) As Task(Of T)
+
+        ArgumentNullException.ThrowIfNull(vm)
+        ArgumentNullException.ThrowIfNull(work)
+
+        Dim cts As New CancellationTokenSource()
+        PrepareBusy(vm, title, canCancel, showOverlay, cts)
+        Dim prog As IProgress(Of ProgressInfo) = CreateUiProgress(vm)
+
+        Try
+            Return Await Task.Run(Function() work(prog, cts.Token), cts.Token)
+        Finally
+            CleanupBusy(vm)
+        End Try
+    End Function
+
 #Region "Helper"
 
     Private Sub PrepareBusy(vm As ViewModelBase, title As String, canCancel As Boolean, showOverlay As Boolean, cts As CancellationTokenSource)

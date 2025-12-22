@@ -83,11 +83,12 @@ Public Class DataEarthSurfaceProvider
 
         Dim landMaskAvailable As Boolean = (_cache.LandMask IsNot Nothing AndAlso _cache.LandMask.Length > idx)
         Dim isLand As Boolean
+        Dim isUnknown As Boolean
 
         If landMaskAvailable Then
             Dim lm As Byte = _cache.LandMask(idx)
             isLand = (lm = 1)
-            Dim isUnknown As Boolean = (lm = 2)
+            isUnknown = (lm = 2)
         End If
 
         Dim h As Double = 0.0
@@ -95,7 +96,7 @@ Public Class DataEarthSurfaceProvider
             h = _cache.HeightM(idx)
         End If
 
-        Dim surface As SurfaceType = SurfaceTypeFromMaskOrHeight(landMaskAvailable, isLand, h)
+        Dim surface As SurfaceType = SurfaceTypeFromMaskOrHeight(landMaskAvailable, isLand, isUnknown, h)
 
         Dim info As New SurfaceInfo With {
             .Surface = surface,
@@ -110,13 +111,17 @@ Public Class DataEarthSurfaceProvider
 
 #Region "Mapping und Helfer"
 
-    Private Shared Function SurfaceTypeFromMaskOrHeight(isLandMaskAvailable As Boolean, isLand As Boolean, heightM As Double) As SurfaceType
+    Private Shared Function SurfaceTypeFromMaskOrHeight(isLandMaskAvailable As Boolean, isLand As Boolean, isUnknown As Boolean, heightM As Double) As SurfaceType
         If isLandMaskAvailable Then
             If Not isLand Then
-                Return SurfaceType.Ocean
+                If Not isUnknown Then
+                    Return SurfaceType.Ocean
+                Else
+                    Return SurfaceType.Unknown
+                End If
             End If
             'Land: Mountain/Plain weiterhin heuristisch über Höhe
-            If heightM >= 1500.0 Then Return SurfaceType.LandMountain
+            If heightM >= 2500.0 Then Return SurfaceType.LandMountain
             Return SurfaceType.LandPlain
         End If
 
@@ -130,7 +135,7 @@ Public Class DataEarthSurfaceProvider
         End If
 
         'Minimalheuristik (später: Biome/Mountain aus zusätzlichen Datensets)
-        If heightM >= 1500.0 Then
+        If heightM >= 2500.0 Then
             Return SurfaceType.LandMountain
         End If
 

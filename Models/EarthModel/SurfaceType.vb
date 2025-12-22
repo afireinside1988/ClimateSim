@@ -6,4 +6,5 @@
     LandForest
     LandDesert
     LandIce
+    Unknown
 End Enum

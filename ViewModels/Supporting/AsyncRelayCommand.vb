@@ -21,7 +21,7 @@ Public Class AsyncRelayCommand(Of T)
         End AddHandler
 
         RemoveHandler(value As EventHandler)
-            AddHandler CommandManager.RequerySuggested, value
+            RemoveHandler CommandManager.RequerySuggested, value
         End RemoveHandler
 
         RaiseEvent(sender As Object, e As EventArgs)
