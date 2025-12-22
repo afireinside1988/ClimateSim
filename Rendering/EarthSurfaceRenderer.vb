@@ -1,7 +1,4 @@
-﻿Imports System.Net.Security
-Imports System.Printing
-Imports System.Transactions
-
+﻿
 Public Structure GeoExtent
     Public Property LatMin As Double
     Public Property LatMax As Double

@@ -320,6 +320,36 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
+    Private _landMaskLayer As ImageSource
+    Public Property LandMaskLayer As ImageSource
+        Get
+            Return _landMaskLayer
+        End Get
+        Set(value As ImageSource)
+            SetProperty(_landMaskLayer, value)
+        End Set
+    End Property
+
+    Private _shoreLineLayer As ImageSource
+    Public Property ShoreLineLayer As ImageSource
+        Get
+            Return _shoreLineLayer
+        End Get
+        Set(value As ImageSource)
+            SetProperty(_shoreLineLayer, value)
+        End Set
+    End Property
+
+    Private _showShoreLines As Boolean = False
+    Public Property ShowShoreLines As Boolean
+        Get
+            Return _showShoreLines
+        End Get
+        Set(value As Boolean)
+            SetProperty(_showShoreLines, value)
+        End Set
+    End Property
+
     Private _showTidLayer As Boolean = False
     Public Property ShowTidLayer As Boolean
         Get
@@ -658,13 +688,21 @@ Public Class EarthSurfaceViewModel
         Dim height As Integer = LoadedCache.Meta.LatCount
 
         'Beispiel: Preview in voller Auflösung
-        Dim bmp As WriteableBitmap = EarthSurfaceRenderer.RenderSurfaceTypeCamera(_provider, width, height, Camera)
-        SurfaceLayer = bmp
+        SurfaceLayer = EarthSurfaceRenderer.RenderSurfaceTypeCamera(_provider, width, height, Camera)
+
+        'LandMask und ShoreLines einmalig rendern (wenn vorhanden)
+        If LoadedCache.Meta.HasLandMask AndAlso LoadedCache.LandMask IsNot Nothing Then
+            LandMaskLayer = LandMaskRenderer.RenderLandMask(LoadedCache, alpha:=200)
+            ShoreLineLayer = LandMaskRenderer.RenderShoreLines(LoadedCache, Colors.Cyan, alpha:=230)
+        Else
+            LandMaskLayer = Nothing
+            ShoreLineLayer = Nothing
+        End If
 
         ContentWidth = width
         ContentHeight = height
 
-        If LoadedCache IsNot Nothing AndAlso (_lastViewportH <= 0 OrElse _lastViewportW <= 0) Then
+        If _lastViewportH <= 0 OrElse _lastViewportW <= 0 Then
             _pendingFitToViewport = True
         End If
 
@@ -1083,7 +1121,7 @@ Public Class EarthSurfaceViewModel
 
     End Sub
 
-    Private Function SnapZoom(value As Double, wheelDelta As Integer, minZoom As Double, maxZoom As Double) As Double
+    Private Shared Function SnapZoom(value As Double, wheelDelta As Integer, minZoom As Double, maxZoom As Double) As Double
 
         value = Clamp(value, minZoom, maxZoom)
 
@@ -1100,7 +1138,7 @@ Public Class EarthSurfaceViewModel
         End If
     End Function
 
-    Private Function GetZoomStepSize(z As Double) As Double
+    Private Shared Function GetZoomStepSize(z As Double) As Double
         'Schrittweite je nach Zoom-Bereich (fühlt sich "dynamisch" an)
         If z < 0.75 Then Return 0.05
         If z < 1.5 Then Return 0.1

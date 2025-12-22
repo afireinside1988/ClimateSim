@@ -9,7 +9,7 @@
         xmlns:conv="clr-namespace:ClimateSim"
         mc:Ignorable="d"
         Title="Erdoberfläche (Cache-Generator)" 
-        Height="760" Width="1200"
+        Height="787" Width="1200"
         WindowStartupLocation="CenterOwner">
 
     <Window.Resources>
@@ -62,12 +62,13 @@
 
                     <!-- Header + Layer-Toggles -->
                     <StackPanel Grid.Row="0" Margin="0,0,0,10">
-                        <TextBlock Text="Vorschau" FontSize="16" FontWeight="Bold" Margin="0,0,0,0"/>
+                        <TextBlock Text="Vorschau" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
 
                         <WrapPanel>
                             <CheckBox Content="Höhen-Relief" IsChecked="{Binding ShowReliefLayer}" Margin="0,0,12,0" />
                             <CheckBox Content="Hill-Shading" IsChecked="{Binding UseHillShading}" Margin="0,0,12,0" IsEnabled="{Binding ShowReliefLayer}"/>
                             <CheckBox Content="Land-Maske" IsChecked="{Binding ShowLandMaskLayer}" Margin="0,0,12,0"/>
+                            <CheckBox Content="Küstenlinien" IsChecked="{Binding ShowShoreLines}" Margin="0,0,12,0" IsEnabled="{Binding ShowLandMaskLayer}"/>
                             <CheckBox Content="TID (Quell-Info)" IsChecked="{Binding ShowTidLayer}" Margin="0,0,12,0"/>
                             <CheckBox Content="Gitternetz" IsChecked="{Binding ShowGridLayer}" />
                         </WrapPanel>
@@ -116,7 +117,7 @@
                                   Width="{Binding ContentWidth}"
                                   Height="{Binding ContentHeight}"
                                   HorizontalAlignment="Left"
-                                  VerticalAlignment="Center"
+                                  VerticalAlignment="Top"
                                   SnapsToDevicePixels="True"
                                   UseLayoutRounding="True">
 
@@ -148,15 +149,19 @@
                                 <Image Source="{Binding ReliefLayer}"
                                    Visibility="{Binding ShowReliefLayer, Converter={StaticResource BoolToVis}}"/>
 
-                                <!-- Layer 3: LandMask (später) -->
+                                <!-- Layer 3: LandMask -->
                                 <Image Source="{Binding LandMaskLayer}"
                                    Visibility="{Binding ShowLandMaskLayer, Converter={StaticResource BoolToVis}}"/>
+                                
+                                <!-- Layer 4: Küstenlinien -->
+                                <Image Source="{Binding ShoreLineLayer}"
+                                       Visibility="{Binding ShowShoreLines, Converter={StaticResource BoolToVis}}"/>
 
-                                <!-- Layer 4: TID (später) -->
+                                <!-- Layer 5: TID (später) -->
                                 <Image Source="{Binding TidLayer}"
                                    Visibility="{Binding ShowTidLayer, Converter={StaticResource BoolToVis}}"/>
 
-                                <!-- Layer 5: Grid (später) -->
+                                <!-- Layer 6: Grid (später) -->
                                 <Image Source="{Binding GridLayer}"
                                    Visibility="{Binding ShowGridLayer, Converter={StaticResource BoolToVis}}"/>
 
