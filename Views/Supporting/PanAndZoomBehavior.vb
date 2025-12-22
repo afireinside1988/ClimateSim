@@ -4,6 +4,8 @@
 Public Class PanAndZoomBehavior
     Inherits Behavior(Of FrameworkElement)
 
+    Private _isPanning As Boolean
+
     Public Property HoverCommand As ICommand
         Get
             Return CType(GetValue(HoverCommandProperty), ICommand)
@@ -110,6 +112,7 @@ Public Class PanAndZoomBehavior
 
     Private Sub OnMouseDown(sender As Object, e As MouseButtonEventArgs)
 
+        _isPanning = True
 
         AssociatedObject.CaptureMouse()
 
@@ -156,6 +159,10 @@ Public Class PanAndZoomBehavior
 
     Private Sub OnMouseUp(sender As Object, e As MouseButtonEventArgs)
 
+        If Not _isPanning Then Return
+
+        _isPanning = False
+
         If AssociatedObject.IsMouseCaptured Then
             AssociatedObject.ReleaseMouseCapture()
         End If
@@ -184,13 +191,12 @@ Public Class PanAndZoomBehavior
 
     End Sub
 
-
     Private Sub FireViewportChanged()
 
         If ViewportChangedCommand Is Nothing Then Return
 
         Dim vp As New ViewportChangedRequest With {
-            .ViewPortSize = New Size(AssociatedObject.ActualWidth, AssociatedObject.ActualHeight)
+            .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height)
         }
 
         If ViewportChangedCommand.CanExecute(vp) Then ViewportChangedCommand.Execute(vp)

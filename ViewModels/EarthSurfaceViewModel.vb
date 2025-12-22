@@ -1,11 +1,5 @@
-﻿Imports System.DirectoryServices.ActiveDirectory
-Imports System.Drawing.Drawing2D
-Imports System.IO
-Imports System.Security.Cryptography
+﻿Imports System.IO
 Imports System.Text
-Imports System.Threading
-Imports System.Windows
-Imports System.Windows.Media
 Imports Microsoft.Win32
 
 Public Class EarthSurfaceViewModel
@@ -346,16 +340,55 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
-    Private _hoverText As String = "Keine Vorschau..."
-    Public Property HoverText As String
+    Private _statusLonText As String = "Lon: -"
+    Public Property StatusLonText As String
         Get
-            Return _hoverText
+            Return _statusLonText
         End Get
         Set(value As String)
-            SetProperty(_hoverText, value)
+            SetProperty(_statusLonText, value)
         End Set
     End Property
 
+    Private _statusLatText As String = "Lat: -"
+    Public Property StatusLatText As String
+        Get
+            Return _statusLatText
+        End Get
+        Set(value As String)
+            SetProperty(_statusLatText, value)
+        End Set
+    End Property
+
+    Private _statusHeightText As String = "Höhe: -"
+    Public Property StatusHeightText As String
+        Get
+            Return _statusHeightText
+        End Get
+        Set(value As String)
+            SetProperty(_statusHeightText, value)
+        End Set
+    End Property
+
+    Private _statusSurfaceText As String = "Surface: -"
+    Public Property StatusSurfaceText As String
+        Get
+            Return _statusSurfaceText
+        End Get
+        Set(value As String)
+            SetProperty(_statusSurfaceText, value)
+        End Set
+    End Property
+
+    Private _statusZoomText As String = "Zoom: -"
+    Public Property StatusZoomText As String
+        Get
+            Return _statusZoomText
+        End Get
+        Set(value As String)
+            SetProperty(_statusZoomText, value)
+        End Set
+    End Property
 #End Region
 
 #Region "Status"
@@ -451,7 +484,6 @@ Public Class EarthSurfaceViewModel
             Function(o) Not IsBusy)
 
     End Sub
-
 
 #Region "Filepicker"
 
@@ -632,7 +664,9 @@ Public Class EarthSurfaceViewModel
         ContentWidth = width
         ContentHeight = height
 
-        _pendingFitToViewport = True
+        If LoadedCache IsNot Nothing AndAlso (_lastViewportH <= 0 OrElse _lastViewportW <= 0) Then
+            _pendingFitToViewport = True
+        End If
 
         If _lastViewportW > 0 AndAlso _lastViewportH > 0 Then
             FitToViewport(_lastViewportW, _lastViewportH)
@@ -650,7 +684,7 @@ Public Class EarthSurfaceViewModel
     Private Sub OnMapMouseMove(param As Object)
 
         If LoadedCache Is Nothing Then
-            HoverText = ""
+            OnMapMouseLeave()
             Return
         End If
 
@@ -664,7 +698,7 @@ Public Class EarthSurfaceViewModel
 
         Dim geo = ScreenToGeo(r.MousePos, viewportSize, contentSize, Camera, Zoom, PanX, PanY)
         If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then
-            HoverText = ""
+            OnMapMouseLeave()
             Return
         End If
 
@@ -674,12 +708,13 @@ Public Class EarthSurfaceViewModel
         'Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / LoadedCache.Meta.CellSizeDeg))
         'Dim lonIdx As Integer = CInt(Math.Floor((180.0 - geo.Lon) / LoadedCache.Meta.CellSizeDeg))
 
-        HoverText = $"lat={geo.Lat:0.###}°, lon={geo.Lon:0.###}°   Surface={info.Surface}    Height={info.HeightM:0.##}m"
+        SetStatusBar(geo.Lat, geo.Lon, info.HeightM, info.Surface.ToString(), Zoom)
 
     End Sub
 
     Private Sub OnMapMouseLeave()
-        HoverText = ""
+        ClearStatusBar()
+        Return
     End Sub
 
     Private Sub OnViewportChanged(r As ViewportChangedRequest)
@@ -732,18 +767,26 @@ Public Class EarthSurfaceViewModel
 
     Public Sub ZoomAt(z As ZoomRequest)
 
-        Dim zoomFactor As Double = If(z.Delta > 0, 1.1, 1 / 1.1)
+        If LoadedCache Is Nothing Then Return
+
+        Const minZoom As Double = 0.25
+        Const maxZoom As Double = 20.0
 
         Dim oldZoom As Double = Zoom
-        Dim newZoom As Double = Clamp(oldZoom * zoomFactor, 0.25, 20.0)
+
+        'Dynamischer Zoom-Faktor, damit man sich nicht "totscrollt"
+        Dim zoomFactor As Double = If(z.Delta > 0, 1.1, 1 / 1.1)
+        Dim rawZoom As Double = Clamp(oldZoom * zoomFactor, minZoom, maxZoom)
+
+        'Snap auf "runde" Werte (in Scrollrichtung)
+        Dim newZoom As Double = SnapZoom(rawZoom, z.Delta, minZoom, maxZoom)
 
         If Math.Abs(newZoom - oldZoom) < 0.0000001 Then Return
 
-        'Cursor in Content Space (vor Zoom)
+        'Cursor in Content Space ermitteln (vor Zoom)
         Dim cx As Double = (z.MousePos.X - PanX) / oldZoom
         Dim cy As Double = (z.MousePos.Y - PanY) / oldZoom
 
-        'Zoom setzen
         Zoom = newZoom
 
         'Pan so korrigieren, dass (cx,cy) unter Cursor bleibt
@@ -751,9 +794,12 @@ Public Class EarthSurfaceViewModel
         PanY = z.MousePos.Y - cy * newZoom
 
         ClampPan(z.ViewportSize.Width, z.ViewportSize.Height)
-    End Sub
-#End Region
 
+        'Anzeige: wenn Zoom=1.0 -> 100%
+        StatusZoomText = $"Zoom: {Zoom * 100:0.##}%"
+    End Sub
+
+#End Region
 
 #Region "Cache erstellen"
 
@@ -966,7 +1012,7 @@ Public Class EarthSurfaceViewModel
             Return CellSizePreset.Deg0_25
         End If
 
-        Throw New InvalidDataException($"Uunbekannte CellSizeDeg in Meta: {cellSizeDeg}. Erwarten: 1.0, 0.5 oder 0.25.")
+        Throw New InvalidDataException($"Unbekannte CellSizeDeg in Meta: {cellSizeDeg}. Erwarten: 1.0, 0.5 oder 0.25.")
     End Function
 
     Public Shared Function ScreenToGeo(mousePos As Point,
@@ -1037,6 +1083,32 @@ Public Class EarthSurfaceViewModel
 
     End Sub
 
+    Private Function SnapZoom(value As Double, wheelDelta As Integer, minZoom As Double, maxZoom As Double) As Double
+
+        value = Clamp(value, minZoom, maxZoom)
+
+        Dim stepSize As Double = GetZoomStepSize(value)
+
+        If wheelDelta > 0 Then
+            'hoch -> nächster Wert >= value
+            Return Clamp(Math.Ceiling(value / stepSize) * stepSize, minZoom, maxZoom)
+        ElseIf wheelDelta < 0 Then
+            'runter -> nächster Wert <= value
+            Return Clamp(Math.Floor(value / stepSize) * stepSize, minZoom, maxZoom)
+        Else
+            Return value
+        End If
+    End Function
+
+    Private Function GetZoomStepSize(z As Double) As Double
+        'Schrittweite je nach Zoom-Bereich (fühlt sich "dynamisch" an)
+        If z < 0.75 Then Return 0.05
+        If z < 1.5 Then Return 0.1
+        If z < 3.0 Then Return 0.25
+        If z < 8.0 Then Return 0.5
+        Return 1.0
+    End Function
+
     Private Sub FitToViewport(viewPortW As Double, viewPortH As Double)
 
         If LoadedCache Is Nothing Then Return
@@ -1051,7 +1123,8 @@ Public Class EarthSurfaceViewModel
         'Optional: nicht größer als 1 hochskalieren
         fitZoom = Math.Min(fitZoom, 1.0)
 
-        Zoom = Clamp(fitZoom, 0.05, 20.0)
+        Dim z As Double = Math.Floor(fitZoom * 100) / 100.0
+        Zoom = Clamp(z, 0.05, 20.0)
 
         'Zentrieren
         PanX = (viewPortW - contentW * Zoom) / 2.0
@@ -1067,6 +1140,21 @@ Public Class EarthSurfaceViewModel
         If vp.Height > 0 Then _lastViewportH = vp.Height
     End Sub
 
+    Private Sub ClearStatusBar()
+        StatusLatText = "Lat: -"
+        StatusLonText = "Lon: -"
+        StatusHeightText = "Höhe: -"
+        StatusSurfaceText = "Surface: -"
+        StatusZoomText = $"Zoom: {Zoom * 100:0.##}%"
+    End Sub
+
+    Private Sub SetStatusBar(lat As Double, lon As Double, height As Double, surface As String, zoom As Double)
+        StatusLatText = $"Lat: {lat:0.##}°"
+        StatusLonText = $"Lon: {lon:0.##}°"
+        StatusHeightText = $"Höhe: {height:0.##} m"
+        StatusSurfaceText = $"Surface: {surface}"
+        StatusZoomText = $"Zoom: {zoom * 100:0.##}%"
+    End Sub
 #End Region
 
 End Class
