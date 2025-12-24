@@ -99,6 +99,7 @@ Public Class EarthSurfaceViewModel
                 Case CellSizePreset.Deg1 : Return 1.0
                 Case CellSizePreset.Deg0_5 : Return 0.5
                 Case CellSizePreset.Deg0_25 : Return 0.25
+                Case CellSizePreset.Deg0_125 : Return 0.125
                 Case Else : Return 1.0
             End Select
         End Get
@@ -996,6 +997,13 @@ Public Class EarthSurfaceViewModel
         Dim latC As Double = 90.0 - (latIdx + 0.5) * cell
         Dim lonC As Double = -180.0 + (lonIdx + 0.5) * cell
 
+        'TODO: AUsnhame nach Cache-Generierung: Ausnahme ausgelöst: "System.NullReferenceException" in ClimateSim.dll
+        'Object reference Not set to an instance of an object.
+
+        If _provider Is Nothing Then
+            _provider = DataEarthSurfaceProvider.CreateFromCache(LoadedCache)
+        End If
+        If _provider Is Nothing Then Return
         Dim info As SurfaceInfo = _provider.GetSurfaceInfo(latC, lonC)
 
         'Status: Cursor-Geo weiter anzeigen (f+r Gefühl), aber Werte aus Zell-Info
@@ -1303,6 +1311,8 @@ Public Class EarthSurfaceViewModel
             Return CellSizePreset.Deg0_5
         ElseIf Math.Abs(cellSizeDeg - 0.25) < eps Then
             Return CellSizePreset.Deg0_25
+        ElseIf Math.Abs(cellSizeDeg - 0.125) < eps Then
+            Return CellSizePreset.Deg0_125
         End If
 
         Throw New InvalidDataException($"Unbekannte CellSizeDeg in Meta: {cellSizeDeg}. Erwarten: 1.0, 0.5 oder 0.25.")

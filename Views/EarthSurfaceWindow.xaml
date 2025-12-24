@@ -483,6 +483,8 @@
                                          Margin="0,0,0,4"/>
                                     <RadioButton Content="0,25°"
                                          IsChecked="{Binding SelectedCellSize, Converter={StaticResource EnumToBool}, ConverterParameter=Deg0_25}"/>
+                                    <RadioButton Content="0,125°"
+                                         IsChecked="{Binding SelectedCellSize, Converter={StaticResource EnumToBool}, ConverterParameter=Deg0_125}"/>
                                 </StackPanel>
                             </StackPanel>
 
