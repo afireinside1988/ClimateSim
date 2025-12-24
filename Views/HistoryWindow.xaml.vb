@@ -133,11 +133,9 @@ Public Class HistoryWindow
         Dim plotLeft As Double = marginLeft
         Dim plotRight As Double = marginLeft + plotWidth
 
-        Dim xClamped = Math.Max(plotLeft, Math.Min(plotRight, mouseX))
-
-        Dim tNorm = (xClamped - plotLeft) / plotWidth
-        If tNorm < 0 Then tNorm = 0
-        If tNorm > 1 Then tNorm = 1
+        Dim xClamped As Double = Clamp(mouseX, plotLeft, plotRight)
+        Dim tnorm As Double = (xClamped - plotLeft) / plotWidth
+        tnorm = Clamp(tnorm, 0.0, 1.0)
 
         Dim minIndex As Double = SldTime.Minimum
         Dim maxIndex As Double = SldTime.Maximum

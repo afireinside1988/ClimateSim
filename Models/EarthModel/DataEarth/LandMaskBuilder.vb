@@ -150,9 +150,7 @@ Public NotInheritable Class LandMaskBuilder
 
             'Randbehandlung Latitude:
             'Wir clampen auf den gültigen Bereich [0..latCount-1]
-            Dim lat As Integer = centerLat + dLat
-            If lat < 0 Then lat = 0
-            If lat > latCount - 1 Then lat = latCount - 1
+            Dim lat As Integer = Clamp(centerLat + dLat, 0, latCount - 1)
 
             'lonOffset = -1, 0, +1
             For dLon As Integer = -1 To 1

@@ -10,6 +10,13 @@
         Return x
     End Function
 
+    Public Function Clamp(x As Integer, lo As Integer, hi As Integer) As Integer
+
+        If x < lo Then Return lo
+        If x > hi Then Return hi
+        Return x
+    End Function
+
     ''' <summary>
     ''' Wrap auf [-180,+180]
     ''' </summary>

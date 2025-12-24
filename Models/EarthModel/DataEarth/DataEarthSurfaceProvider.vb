@@ -14,6 +14,7 @@ Public Class DataEarthSurfaceProvider
     '--- einfache Regeln (später konfigurierbar machen) ---
     Private ReadOnly _seaIceNorthLatDeg As Double = 80.0
     Private ReadOnly _seaIceSouthLatDeg As Double = -70.0
+    Private Shared ReadOnly _mountainDecisionHeight As Double = 2000.0
 
     'LandIce grob (wie ToyEarth; später durch echte Eis-Modelle ersetzen)
     Private ReadOnly _antarcticaLatDeg As Double = -70.0
@@ -121,7 +122,7 @@ Public Class DataEarthSurfaceProvider
                 End If
             End If
             'Land: Mountain/Plain weiterhin heuristisch über Höhe
-            If heightM >= 2500.0 Then Return SurfaceType.LandMountain
+            If heightM >= _mountainDecisionHeight Then Return SurfaceType.LandMountain
             Return SurfaceType.LandPlain
         End If
 
@@ -135,7 +136,7 @@ Public Class DataEarthSurfaceProvider
         End If
 
         'Minimalheuristik (später: Biome/Mountain aus zusätzlichen Datensets)
-        If heightM >= 2500.0 Then
+        If heightM >= _mountainDecisionHeight Then
             Return SurfaceType.LandMountain
         End If
 
@@ -180,12 +181,6 @@ Public Class DataEarthSurfaceProvider
         Dim x As Double = lonDeg
         x = ((x + 180.0) Mod 360.0 + 360.0) Mod 360.0
         Return x - 180.0
-    End Function
-
-    Private Shared Function Clamp(x As Double, lo As Double, hi As Double) As Double
-        If x < lo Then Return lo
-        If x > hi Then Return hi
-        Return x
     End Function
 
 #End Region

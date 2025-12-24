@@ -501,8 +501,7 @@ Class MainWindow
         If _viewModel Is Nothing Then Return
 
         'Clamp in den Sliderbereich (damit ViewModel + Slider konsistent bleiben)
-        Dim clamped As Double = Math.Max(280.0, Math.Min(1000.0, co2))
-        _viewModel.CO2Value = clamped
+        _viewModel.CO2Value = Clamp(co2, 280.0, 1000.0)
     End Sub
 
     Private Sub EnableUIAfterSpinUp()

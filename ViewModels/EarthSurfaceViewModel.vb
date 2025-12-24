@@ -1,4 +1,5 @@
-﻿Imports System.IO
+﻿Imports System.Collections.ObjectModel
+Imports System.IO
 Imports System.Text
 Imports Microsoft.Win32
 
@@ -63,7 +64,14 @@ Public Class EarthSurfaceViewModel
         End Get
         Set(value As EarthSurfaceCache)
             SetProperty(_loadedCache, value)
+            OnPropertyChanged(NameOf(CacheMeta))
         End Set
+    End Property
+
+    Public ReadOnly Property CacheMeta As EarthSurfaceCacheMeta
+        Get
+            Return LoadedCache?.Meta
+        End Get
     End Property
 
     Private _provider As DataEarthSurfaceProvider
@@ -118,6 +126,8 @@ Public Class EarthSurfaceViewModel
 #End Region
 
 #Region "LandMask"
+
+    Private ShoreLineColor As Color = Colors.Cyan
 
     Private _selectedLandMaskMode As LandMaskMode = LandMaskMode.FromHeight
     Public Property SelectedLandMaskMode As LandMaskMode
@@ -316,7 +326,12 @@ Public Class EarthSurfaceViewModel
             Return _showLandMaskLayer
         End Get
         Set(value As Boolean)
-            SetProperty(_showLandMaskLayer, value)
+            If SetProperty(_showLandMaskLayer, value) Then
+                If value = False Then
+                    ShowShoreLines = False
+                    IsHoverCellVisible = False
+                End If
+            End If
         End Set
     End Property
 
@@ -356,7 +371,22 @@ Public Class EarthSurfaceViewModel
             Return _showTidLayer
         End Get
         Set(value As Boolean)
-            SetProperty(_showTidLayer, value)
+            If SetProperty(_showTidLayer, value) Then
+                If Not value Then
+                    ShowHoverOverlay = False
+                    IsTidLegendOpen = False
+                End If
+            End If
+        End Set
+    End Property
+
+    Private _tidLayer As ImageSource
+    Public Property TidLayer As ImageSource
+        Get
+            Return _tidLayer
+        End Get
+        Set(value As ImageSource)
+            SetProperty(_tidLayer, value)
         End Set
     End Property
 
@@ -419,6 +449,151 @@ Public Class EarthSurfaceViewModel
             SetProperty(_statusZoomText, value)
         End Set
     End Property
+
+    Private _isHoverCellVisible As Boolean
+    Public Property IsHoverCellVisible As Boolean
+        Get
+            Return _isHoverCellVisible
+        End Get
+        Set(value As Boolean)
+            SetProperty(_isHoverCellVisible, value)
+        End Set
+    End Property
+
+    Private _hoverCellX As Double
+    Public Property HoverCellX As Double
+        Get
+            Return _hoverCellX
+        End Get
+        Set(value As Double)
+            SetProperty(_hoverCellX, value)
+        End Set
+    End Property
+
+    Private _hoverCellY As Double
+    Public Property HoverCellY As Double
+        Get
+            Return _hoverCellY
+        End Get
+        Set(value As Double)
+            SetProperty(_hoverCellY, value)
+        End Set
+    End Property
+
+    Private _hoverLatIdx As Integer
+    Public Property HoverLatIdx As Integer
+        Get
+            Return _hoverLatIdx
+        End Get
+        Set(value As Integer)
+            SetProperty(_hoverLatIdx, value)
+        End Set
+    End Property
+
+    Private _hoverLonIdx As Integer
+    Public Property HoverLonIdx As Integer
+        Get
+            Return _hoverLonIdx
+        End Get
+        Set(value As Integer)
+            SetProperty(_hoverLonIdx, value)
+        End Set
+    End Property
+
+    Private _hoverLinearIdx As Integer
+    Public Property HoverLinearIdx As Integer
+        Get
+            Return _hoverLinearIdx
+        End Get
+        Set(value As Integer)
+            SetProperty(_hoverLinearIdx, value)
+        End Set
+    End Property
+
+    Private _hoverOverlayText As String
+    Public Property HoverOverlayText As String
+        Get
+            Return _hoverOverlayText
+        End Get
+        Set(value As String)
+            SetProperty(_hoverOverlayText, value)
+        End Set
+    End Property
+
+    Private _hoverOverlayX As Double
+    Public Property HoverOverlayX As Double
+        Get
+            Return _hoverOverlayX
+        End Get
+        Set(value As Double)
+            SetProperty(_hoverOverlayX, value)
+        End Set
+    End Property
+
+    Private _hoverOverlayY As Double
+    Public Property HoverOverlayY As Double
+        Get
+            Return _hoverOverlayY
+        End Get
+        Set(value As Double)
+            SetProperty(_hoverOverlayY, value)
+        End Set
+    End Property
+
+    Private _showHoverOverlay As Boolean
+    Public Property ShowHoverOverlay As Boolean
+        Get
+            Return _showHoverOverlay
+        End Get
+        Set(value As Boolean)
+            SetProperty(_showHoverOverlay, value)
+        End Set
+    End Property
+
+#End Region
+
+#Region "Legend-PopUp"
+
+    Private _isTidLegendOpen As Boolean = False
+    Public Property IsTidLegendOpen As Boolean
+        Get
+            Return _isTidLegendOpen
+        End Get
+        Set(value As Boolean)
+            SetProperty(_isTidLegendOpen, value)
+        End Set
+    End Property
+
+    Private _tidLegendX As Double = 16
+    Public Property TidLegendX As Double
+        Get
+            Return _tidLegendX
+        End Get
+        Set(value As Double)
+            SetProperty(_tidLegendX, value)
+        End Set
+    End Property
+
+    Private _tidLegendY As Double = 16
+    Public Property TidLegendY As Double
+        Get
+            Return _tidLegendY
+        End Get
+        Set(value As Double)
+            SetProperty(_tidLegendY, value)
+        End Set
+    End Property
+
+    Private _tidLegendItems As ObservableCollection(Of TidLegendItemViewModel)
+    Public Property TidLegendItems As ObservableCollection(Of TidLegendItemViewModel)
+        Get
+            Return _tidLegendItems
+        End Get
+        Set(value As ObservableCollection(Of TidLegendItemViewModel))
+            SetProperty(_tidLegendItems, value)
+        End Set
+    End Property
+
 #End Region
 
 #Region "Status"
@@ -474,6 +649,9 @@ Public Class EarthSurfaceViewModel
     Public ReadOnly Property ZoomCommand As ICommand
     Public ReadOnly Property ViewportChangedCommand As ICommand
 
+    Public ReadOnly Property CloseTidLegendCommand As ICommand
+    Public ReadOnly Property ToggleTidLegendCommand As ICommand
+
 #End Region
 
     Public Sub New()
@@ -512,6 +690,18 @@ Public Class EarthSurfaceViewModel
                 Await LoadCacheAsync()
             End Sub,
             Function(o) Not IsBusy)
+
+        CloseTidLegendCommand = New RelayCommand(Of Object)(
+            Sub(o)
+                IsTidLegendOpen = False
+            End Sub)
+
+        ToggleTidLegendCommand = New RelayCommand(Of Object)(
+            Sub(o)
+                IsTidLegendOpen = Not IsTidLegendOpen
+            End Sub)
+
+        TidLegendItems = New ObservableCollection(Of TidLegendItemViewModel)(TidLegend.BuildDefaultItems())
 
     End Sub
 
@@ -687,16 +877,21 @@ Public Class EarthSurfaceViewModel
         Dim width As Integer = LoadedCache.Meta.LonCount
         Dim height As Integer = LoadedCache.Meta.LatCount
 
-        'Beispiel: Preview in voller Auflösung
+        'Surface-Layer in voller Auflösung rendern
         SurfaceLayer = EarthSurfaceRenderer.RenderSurfaceTypeCamera(_provider, width, height, Camera)
 
         'LandMask und ShoreLines einmalig rendern (wenn vorhanden)
         If LoadedCache.Meta.HasLandMask AndAlso LoadedCache.LandMask IsNot Nothing Then
-            LandMaskLayer = LandMaskRenderer.RenderLandMask(LoadedCache, alpha:=200)
-            ShoreLineLayer = LandMaskRenderer.RenderShoreLines(LoadedCache, Colors.Cyan, alpha:=230)
+            LandMaskLayer = LandMaskRenderer.RenderLandMask(LoadedCache, alpha:=255)
+            ShoreLineLayer = LandMaskRenderer.RenderShoreLines(LoadedCache, ShoreLineColor, alpha:=160,, includeDiagonal:=True)
         Else
             LandMaskLayer = Nothing
             ShoreLineLayer = Nothing
+        End If
+
+        'TID-Layer rendern
+        If LoadedCache.Meta.HasTid Then
+            TidLayer = TidRenderer.RenderTidLayer(LoadedCache, alpha:=255)
         End If
 
         ContentWidth = width
@@ -731,6 +926,7 @@ Public Class EarthSurfaceViewModel
 
         RememberViewportSize(r.ViewPortSize)
 
+        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
         Dim viewportSize As Size = r.ViewPortSize
         Dim contentSize As New Size(LoadedCache.Meta.LonCount, LoadedCache.Meta.LatCount)
 
@@ -740,17 +936,76 @@ Public Class EarthSurfaceViewModel
             Return
         End If
 
-        Dim info As SurfaceInfo = _provider.GetSurfaceInfo(geo.Lat, geo.Lon)
+        Dim cell As Double = meta.CellSizeDeg
 
-        'Optional: Index bestimmen (falls wir mal latIdx/lonIdx zeigen wollen)
-        'Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / LoadedCache.Meta.CellSizeDeg))
-        'Dim lonIdx As Integer = CInt(Math.Floor((180.0 - geo.Lon) / LoadedCache.Meta.CellSizeDeg))
+        '--------------------------------
+        'A) Zellindex per Floor bestimmen
+        '--------------------------------
+        Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / cell))
+        latIdx = Clamp(latIdx, 0, meta.LatCount - 1)
 
-        SetStatusBar(geo.Lat, geo.Lon, info.HeightM, info.Surface.ToString(), Zoom)
+        Dim lonIdx As Integer = CInt(Math.Floor((geo.Lon + 180.0) / cell))
+        lonIdx = Clamp(lonIdx, 0, meta.LonCount - 1)
+
+        Dim idx As Integer = latIdx * meta.LonCount + lonIdx
+
+        If HoverLatIdx <> latIdx Then HoverLatIdx = latIdx
+        If HoverLonIdx <> lonIdx Then HoverLonIdx = lonIdx
+        If HoverLinearIdx <> idx Then HoverLinearIdx = idx
+
+        '-------------------------
+        'B) Floating-Label für TID
+        '-------------------------
+
+        If ShowTidLayer AndAlso LoadedCache?.Tid IsNot Nothing AndAlso HoverLinearIdx >= 0 AndAlso HoverLinearIdx < LoadedCache.Tid.Length Then
+
+            Dim t As Single = LoadedCache.Tid(HoverLinearIdx)
+            Dim code As Integer = TidHelpers.TidValueToCode(t)
+
+            HoverOverlayText = $"{TidLegend.TidText(code)}"
+            HoverOverlayX = r.MousePos.X + 14
+            HoverOverlayY = r.MousePos.Y + 14
+            ShowHoverOverlay = True
+        Else
+            ShowHoverOverlay = False
+        End If
+
+        '-------------
+        'C) Hover-Rect
+        '-------------
+
+        If ShowLandMaskLayer Then
+            HoverCellX = lonIdx
+            HoverCellY = latIdx
+            IsHoverCellVisible = True
+        Else
+            IsHoverCellVisible = False
+        End If
+
+        '-----------------------------------------
+        'D) Statusbar-Info aus genau dieser Zelle:
+        '-----------------------------------------
+
+        'Height: wenn möglich aus Cache (exakt zur Zelle)
+        Dim h As Double = Double.NaN
+        If LoadedCache.HeightM IsNot Nothing AndAlso idx >= 0 AndAlso idx < LoadedCache.HeightM.Length Then
+            h = LoadedCache.HeightM(idx)
+        End If
+
+        'SurfaceType: am Zellzentrum sampeln (nicht am Cursor)
+        Dim latC As Double = 90.0 - (latIdx + 0.5) * cell
+        Dim lonC As Double = -180.0 + (lonIdx + 0.5) * cell
+
+        Dim info As SurfaceInfo = _provider.GetSurfaceInfo(latC, lonC)
+
+        'Status: Cursor-Geo weiter anzeigen (f+r Gefühl), aber Werte aus Zell-Info
+        SetStatusBar(geo.Lat, geo.Lon, h, info.Surface.ToString(), Zoom)
 
     End Sub
 
     Private Sub OnMapMouseLeave()
+        IsHoverCellVisible = False
+        ShowHoverOverlay = False
         ClearStatusBar()
         Return
     End Sub
@@ -1093,6 +1348,26 @@ Public Class EarthSurfaceViewModel
         Return (lat, lon)
 
     End Function
+
+    Private Shared Sub GeoToCell_Floor(geoLat As Double,
+                                            geoLon As Double,
+                                            cellSizeDeg As Double,
+                                            latCount As Integer,
+                                            lonCount As Integer,
+                                            ByRef latIdx As Integer,
+                                            ByRef lonIdx As Integer)
+
+        'lat: +90---90 (nord->süd)
+        latIdx = CInt(Math.Floor((90.0 - geoLat) / cellSizeDeg))
+        If latIdx < 0 Then latIdx = 0
+        If latIdx > latCount - 1 Then latIdx = latCount - 1
+
+        'lon: -180..+180 (west->ost)
+        lonIdx = CInt(Math.Floor((geoLon + 180.0) / cellSizeDeg))
+        If lonIdx < 0 Then lonIdx = 0
+        If lonIdx > lonCount - 1 Then lonIdx = lonCount - 1
+
+    End Sub
 
     Private Sub ClampPan(viewportW As Double, viewportH As Double)
 

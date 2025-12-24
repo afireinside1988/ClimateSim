@@ -49,10 +49,8 @@
                 Dim srcX As Integer = CInt(Math.Round((lonCenter - SrcLon0) / SrcCellDeg))
 
                 'Auf globales Grid clampen
-                If srcY < 0 Then srcY = 0
-                If srcY > SrcLatCount - 1 Then srcY = SrcLatCount - 1
-                If srcX < 0 Then srcX = 0
-                If srcX > SrcLonCount - 1 Then srcX = SrcLonCount - 1
+                srcY = Clamp(srcY, 0, SrcLatCount - 1)
+                srcX = Clamp(srcX, 0, SrcLonCount - 1)
 
                 Dim tileIndex As Integer = FindTileIndex(tiles, latCenter, lonCenter)
                 If tileIndex < 0 Then
@@ -73,10 +71,8 @@
 
                 'Auf Tile-Grenzen clampen um sicher zu bleiben
                 Const TileSize As Integer = 21600
-                If rowInTile < 0 Then rowInTile = 0
-                If rowInTile > TileSize - 1 Then rowInTile = TileSize - 1
-                If colInTile < 0 Then colInTile = 0
-                If colInTile > TileSize - 1 Then colInTile = TileSize - 1
+                rowInTile = Clamp(rowInTile, 0, TileSize - 1)
+                colInTile = Clamp(colInTile, 0, TileSize - 1)
 
                 'Tile-Größe sollte 21600x21600 sein, aber wir lassen es generisch (Clamp während der Laufzeit auf die header-Werte)
                 Dim targetIndex As Integer = latIdx * targetLonCount + lonIdx

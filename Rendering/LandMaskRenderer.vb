@@ -18,20 +18,21 @@
         Dim h As Integer = cache.Meta.LatCount
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(w)
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(h)
-        If cache.LandMask Is Nothing OrElse cache.LandMask.Length <> w * h Then Throw New InvalidOperationException("LandMask fehlt oder hat die falsche Größe.")
+        Dim mask As Byte() = cache.LandMask
+        If mask Is Nothing OrElse mask.Length <> w * h Then Throw New InvalidOperationException("LandMask fehlt oder hat die falsche Größe.")
 
         If dpi <= 0 Then dpi = 96.0
 
         Dim bmp As New WriteableBitmap(w, h, dpi, dpi, PixelFormats.Bgra32, Nothing)
         Dim pixels(w * h - 1) As Integer
 
-        Dim a As Integer = alpha
-        Dim whiteArgb As Integer = (a << 24) Or (&HFF << 16) Or (&HFF << 8) Or &HFF
-        Dim blackArgb As Integer = (a << 24)        'RGB=0
+        Dim aShift As Integer = CInt(alpha) << 24
+        Dim greyArgb As Integer = aShift Or (&HE6 << 16) Or (&HE6 << 8) Or &HE6
+        Dim blackArgb As Integer = aShift        'RGB=0
 
         For i As Integer = 0 To pixels.Length - 1
-            Dim island As Boolean = (cache.LandMask(i) <> 0)
-            pixels(i) = If(island, whiteArgb, blackArgb)
+            Dim island As Boolean = (mask(i) <> 0)
+            pixels(i) = If(island, greyArgb, blackArgb)
         Next
 
         bmp.WritePixels(New Int32Rect(0, 0, w, h), pixels, w * 4, 0)
@@ -62,6 +63,7 @@
         Dim h As Integer = cache.Meta.LatCount
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(w)
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(h)
+        Dim mask As Byte() = cache.LandMask
 
         If w < 3 OrElse h < 3 Then
             Dim empty As New WriteableBitmap(w, h, dpi, dpi, PixelFormats.Bgra32, Nothing)
@@ -69,13 +71,13 @@
             Return empty
         End If
 
-        If cache.LandMask Is Nothing OrElse cache.LandMask.Length <> w * h Then Throw New InvalidOperationException("LandMask fehlt oder hat die falsche Größe.")
+        If mask Is Nothing OrElse mask.Length <> w * h Then Throw New InvalidOperationException("LandMask fehlt oder hat die falsche Größe.")
 
         If dpi <= 0 Then dpi = 96.0
 
         Dim c As Color = If(color, Colors.Cyan)
-        Dim a As Integer = alpha
-        Dim edgeArgb As Integer = (a << 24) Or (CInt(c.R) << 16) Or (CInt(c.G) << 8) Or CInt(c.B)
+        Dim aShift As Integer = CInt(alpha) << 24
+        Dim edgeArgb As Integer = aShift Or (CInt(c.R) << 16) Or (CInt(c.G) << 8) Or CInt(c.B)
 
         Dim bmp As New WriteableBitmap(w, h, dpi, dpi, PixelFormats.Bgra32, Nothing)
         Dim pixels(w * h - 1) As Integer    'default = 0 -> transparent
@@ -89,25 +91,35 @@
 
                 Dim i As Integer = row + x
 
-                Dim island As Boolean = (cache.LandMask(i) <> 0)
+                Dim isLand As Boolean = (mask(i) <> 0)
 
                 'die 4 Nachbarn wenn keine Diagonalen
-                Dim n As Boolean = (cache.LandMask(i - w) <> 0)
-                Dim s As Boolean = (cache.LandMask(i + w) <> 0)
-                Dim wl As Boolean = (cache.LandMask(i - 1) <> 0)
-                Dim e As Boolean = (cache.LandMask(i + 1) <> 0)
+                Dim north As Boolean = (mask(i - w) <> 0)
+                Dim south As Boolean = (mask(i + w) <> 0)
+                Dim west As Boolean = (mask(i - 1) <> 0)
+                Dim east As Boolean = (mask(i + 1) <> 0)
 
-                Dim isEdge As Boolean = (n <> island) OrElse (s <> island) OrElse (wl <> island) OrElse (e <> island)
+                Dim isEdge As Boolean = False
 
-                If (Not isEdge) AndAlso includeDiagonal Then
+                If isLand Then
+                    isEdge = (north = False) OrElse
+                             (south = False) OrElse
+                             (west = False) OrElse
+                             (east = False)
+                End If
+
+
+                If isLand AndAlso Not isEdge AndAlso includeDiagonal Then
                     'Optional die Diagonalen
-                    Dim nw As Boolean = (cache.LandMask(i - w - 1) <> 0)
-                    Dim ne As Boolean = (cache.LandMask(i - w + 1) <> 0)
-                    Dim sw As Boolean = (cache.LandMask(i + w - 1) <> 0)
-                    Dim se As Boolean = (cache.LandMask(i + w + 1) <> 0)
+                    Dim northwest As Boolean = (mask(i - w - 1) <> 0)
+                    Dim northeast As Boolean = (mask(i - w + 1) <> 0)
+                    Dim southwest As Boolean = (mask(i + w - 1) <> 0)
+                    Dim southeast As Boolean = (mask(i + w + 1) <> 0)
 
-                    isEdge = (nw <> island) OrElse (ne <> island) OrElse (sw <> island) OrElse (se <> island)
-
+                    isEdge = (northwest = False) OrElse
+                             (northeast = False) OrElse
+                             (southwest = False) OrElse
+                             (southeast = False)
                 End If
 
                 If isEdge Then pixels(i) = edgeArgb

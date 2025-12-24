@@ -62,16 +62,31 @@
 
                     <!-- Header + Layer-Toggles -->
                     <StackPanel Grid.Row="0" Margin="0,0,0,10">
-                        <TextBlock Text="Vorschau" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
-
-                        <WrapPanel>
-                            <CheckBox Content="Höhen-Relief" IsChecked="{Binding ShowReliefLayer}" Margin="0,0,12,0" />
-                            <CheckBox Content="Hill-Shading" IsChecked="{Binding UseHillShading}" Margin="0,0,12,0" IsEnabled="{Binding ShowReliefLayer}"/>
-                            <CheckBox Content="Land-Maske" IsChecked="{Binding ShowLandMaskLayer}" Margin="0,0,12,0"/>
-                            <CheckBox Content="Küstenlinien" IsChecked="{Binding ShowShoreLines}" Margin="0,0,12,0" IsEnabled="{Binding ShowLandMaskLayer}"/>
-                            <CheckBox Content="TID (Quell-Info)" IsChecked="{Binding ShowTidLayer}" Margin="0,0,12,0"/>
-                            <CheckBox Content="Gitternetz" IsChecked="{Binding ShowGridLayer}" />
-                        </WrapPanel>
+                        <TextBlock Text="Vorschau" FontSize="16" FontWeight="Bold" Margin="0,0,0,5"/>
+                        <Grid MinHeight="25">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            
+                                <WrapPanel Grid.Column="0" VerticalAlignment="Bottom">
+                                    <CheckBox Content="Höhen-Relief" IsChecked="{Binding ShowReliefLayer}" Margin="0,0,12,0" />
+                                    <CheckBox Content="Hill-Shading" IsChecked="{Binding UseHillShading}" Margin="0,0,12,0" IsEnabled="{Binding ShowReliefLayer}"/>
+                                    <CheckBox Content="Land-Maske" IsChecked="{Binding ShowLandMaskLayer}" Margin="0,0,12,0"/>
+                                    <CheckBox Content="Küstenlinien" IsChecked="{Binding ShowShoreLines}" Margin="0,0,12,0" IsEnabled="{Binding ShowLandMaskLayer}"/>
+                                    <CheckBox Content="TID (Quell-Info)" IsChecked="{Binding ShowTidLayer}" Margin="0,0,12,0"/>
+                                    <CheckBox Content="Gitternetz" IsChecked="{Binding ShowGridLayer}" />
+                                </WrapPanel>
+                            
+                                <Button Grid.Column="1"
+                                        Width="80"
+                                        MaxHeight="25"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Bottom"
+                                        Content="TID-Legende" Visibility="{Binding ShowTidLayer, Converter={StaticResource BoolToVis}}"
+                                        Command="{Binding ToggleTidLegendCommand}"/>
+                        </Grid>
+                    
                     </StackPanel>
 
                     <!-- Preview Image -->
@@ -143,28 +158,186 @@
                                 </Canvas.RenderTransform>
 
                                 <!-- Layer 1: Surface -->
-                                <Image Source="{Binding SurfaceLayer}"/>
+                                <Image Source="{Binding SurfaceLayer}" x:Name="SurfaceMap"/>
 
                                 <!-- Layer 2: Relief (später) -->
                                 <Image Source="{Binding ReliefLayer}"
-                                   Visibility="{Binding ShowReliefLayer, Converter={StaticResource BoolToVis}}"/>
+                                       Visibility="{Binding ShowReliefLayer, Converter={StaticResource BoolToVis}}"/>
 
                                 <!-- Layer 3: LandMask -->
                                 <Image Source="{Binding LandMaskLayer}"
-                                   Visibility="{Binding ShowLandMaskLayer, Converter={StaticResource BoolToVis}}"/>
-                                
+                                       Visibility="{Binding ShowLandMaskLayer, Converter={StaticResource BoolToVis}}"/>
+
                                 <!-- Layer 4: Küstenlinien -->
                                 <Image Source="{Binding ShoreLineLayer}"
                                        Visibility="{Binding ShowShoreLines, Converter={StaticResource BoolToVis}}"/>
 
-                                <!-- Layer 5: TID (später) -->
+                                <!-- Layer 5: TID -->
                                 <Image Source="{Binding TidLayer}"
-                                   Visibility="{Binding ShowTidLayer, Converter={StaticResource BoolToVis}}"/>
+                                       Visibility="{Binding ShowTidLayer, Converter={StaticResource BoolToVis}}"/>
 
-                                <!-- Layer 6: Grid (später) -->
-                                <Image Source="{Binding GridLayer}"
-                                   Visibility="{Binding ShowGridLayer, Converter={StaticResource BoolToVis}}"/>
+                                <!-- Hover-Zelle als Overlay für Editing -->
+                                <Rectangle Width="1"
+                                           Height="1"
+                                           IsHitTestVisible="False"
+                                           Visibility="{Binding IsHoverCellVisible, Converter={StaticResource BoolToVis}}"
+                                           Canvas.Left="{Binding HoverCellX}"
+                                           Canvas.Top="{Binding HoverCellY}"
+                                           SnapsToDevicePixels="True"
+                                           Fill="#40FF0000"
+                                           Stroke="#A0FF0000"
+                                           StrokeThickness="0.08"
+                                           RenderOptions.EdgeMode="Aliased" />
 
+                            </Canvas>
+
+                            <!-- Overlay (Screen-Space; zoomt/panned NICHT!) -->
+                            <Canvas x:Name="MapOverlay"
+                                    IsHitTestVisible="True"
+                                    Panel.ZIndex="50"
+                                    SnapsToDevicePixels="True"
+                                    UseLayoutRounding="True">
+
+                                <!-- Gird-Layer (screen-space, wird pro Viewport gerendert) -->
+                                <local:GeoGridOverlay
+                                    Canvas.Left="0"
+                                    Canvas.Top="0"
+                                    Width="{Binding ElementName=MapHost, Path=ActualWidth}"
+                                    Height="{Binding ElementName=MapHost, Path=ActualHeight}"
+                                    IsHitTestVisible="False"
+                                    Visibility="{Binding ShowGridLayer,Converter={StaticResource BoolToVis}}"
+                                    RenderOptions.EdgeMode="Aliased"
+                                    Zoom="{Binding Zoom}"
+                                    PanX="{Binding PanX}"
+                                    PanY="{Binding PanY}"
+                                    CacheMeta="{Binding CacheMeta}" />
+
+                                <!-- Floating-Label am Mauszeiger -->
+                                <Border Visibility="{Binding ShowHoverOverlay, Converter={StaticResource BoolToVis}}"
+                                        Canvas.Left="{Binding HoverOverlayX}"
+                                        Canvas.Top="{Binding HoverOverlayY}"
+                                        Background="#E0101010"
+                                        BorderBrush="#FFDDDDDD"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="8,5"
+                                        SnapsToDevicePixels="True">
+                                    <TextBlock Text="{Binding HoverOverlayText}"
+                                               Foreground="#FFFFFFFF"
+                                               FontFamily="Consolas"
+                                               FontSize="11"
+                                               TextWrapping="Wrap"/>
+                                </Border>
+                                
+                                <!-- Legend-Popup (verschiebbar) -->
+                                <Border x:Name="TidLegendBorder"
+                                        Visibility="{Binding IsTidLegendOpen, Converter={StaticResource BoolToVis}}"
+                                        Canvas.Left="{Binding TidLegendX}"
+                                        Canvas.Top="{Binding TidLegendY}"
+                                        Background="#F0181818"
+                                        BorderBrush="#66FFFFFF"
+                                        BorderThickness="1"
+                                        CornerRadius="5"
+                                        Padding="3"
+                                        SnapsToDevicePixels="True">
+
+                                    <Grid Width="260">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+
+                                        <Grid Grid.Row="0" Background="#FF222222">
+                                           
+                                            
+                                            <!-- Header / Drag -->
+                                            
+                                              <!-- Thumb ist der saubere Weg für Drag -->
+                                            <Thumb x:Name="TidLegendThumb"
+                                                   Cursor="SizeAll"
+                                                   DragDelta="TidLegendThumb_DragDelta"
+                                                   HorizontalAlignment="Stretch"
+                                                   VerticalAlignment="Stretch"
+                                                   Panel.ZIndex="2">
+                                                <Thumb.Template>
+                                                    <ControlTemplate TargetType="{x:Type Thumb}">
+                                                        <Rectangle Fill="Transparent"/>
+                                                    </ControlTemplate>
+                                                </Thumb.Template>
+                                            </Thumb>
+                                                
+                                                 <Button Content="X"
+                                                        DockPanel.Dock="Right"
+                                                        Width="22" Height="22"
+                                                        Margin="10,0,0,0"
+                                                        Command="{Binding CloseTidLegendCommand}"
+                                                        Padding="0"
+                                                        Background="#00FFFFFF"
+                                                        BorderBrush="#00FFFFFF"
+                                                        Foreground="#CCFFFFFF"
+                                                        Panel.ZIndex="3"
+                                                        HorizontalAlignment="Right"/>
+
+                                                <TextBlock Text="GEBCO TID-Legende"
+                                                           Foreground="#FFFFFFFF"
+                                                           FontWeight="SemiBold"
+                                                           IsHitTestVisible="False"
+                                                           TextAlignment="Left"
+                                                           VerticalAlignment="Center"
+                                                           Margin="5,0,0,0"/>
+
+                                        </Grid>
+                                        
+                                        
+                                        <!-- Items -->
+                                        <ScrollViewer Grid.Row="1"
+                                                      Padding="10"
+                                                      VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      MaxHeight="340">
+                                            <ItemsControl ItemsSource="{Binding TidLegendItems}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid Margin="0,0,0,6">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="18"/>
+                                                                <ColumnDefinition Width="8"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                            </Grid.ColumnDefinitions>
+
+                                                            <!-- Farbbox -->
+                                                            <Border Grid.Column="0"
+                                                                    Width="18" Height="18"
+                                                                    CornerRadius="3"
+                                                                    Background="{Binding Brush}"
+                                                                    BorderBrush="#55000000"
+                                                                    BorderThickness="1"/>
+                                                            <!-- Text -->
+                                                            <StackPanel Grid.Column="2">
+                                                                <!-- Titel -->
+                                                                <TextBlock Text="{Binding TidTitle}"
+                                                                       Foreground="#FFFFFFFF"
+                                                                       FontWeight="SemiBold"
+                                                                       FontSize="12"
+                                                                       TextWrapping="Wrap"/>
+                                                                
+                                                                <!-- Beschreibung -->
+                                                                <TextBlock Text="{Binding TidDescription}"
+                                                                           Foreground="#B0FFFFFF"
+                                                                           FontSize="9"
+                                                                           Margin="0,2,0,0"
+                                                                           TextWrapping="Wrap"/>
+                                                            </StackPanel>
+                                                            
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            
+                                        </ScrollViewer>
+                                    </Grid>
+                                    
+                                </Border>
                             </Canvas>
 
                             <Grid
@@ -198,7 +371,7 @@
 
                     </Border>
 
-                    <!-- Hover / Info -->
+                    <!-- Statusbar -->
                     <StatusBar Grid.Row="2">
                         <StatusBarItem>
                             <TextBlock MinWidth="90" FontFamily="Consolas" Text="{Binding StatusLatText}"/>
@@ -372,7 +545,6 @@
                          VerticalScrollBarVisibility="Auto"/>
                 </StackPanel>
             </ScrollViewer>
-
 
         </Grid>
 
