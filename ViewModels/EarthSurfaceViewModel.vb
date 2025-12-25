@@ -1189,6 +1189,8 @@ Public Class EarthSurfaceViewModel
             LoadedCache = cache
             LastReport = report
 
+            RenderPreviewFromCache()
+
             Return cache
 
         Catch ex As OperationCanceledException
