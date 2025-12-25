@@ -1,4 +1,7 @@
 ﻿
+Imports System.IO
+Imports System.Security.AccessControl
+
 ''' <summary>
 ''' Erstellt pro GEBCO-Tile eine Request-Map für bilineares Resampling
 ''' 
@@ -48,7 +51,7 @@ Public NotInheritable Class GebcoBilinearRequestBuilder
     End Structure
 
     Public Class TileRowRequest
-        'RowInTile -> Request (sortiert nach Col0, damit Streamen effizient ist
+        'RowInTile -> Request (sortiert nach Col0, damit Streamen effizient ist)
         Public ReadOnly Rows As New Dictionary(Of Integer, List(Of BilinearRequest))()
     End Class
 
@@ -63,73 +66,206 @@ Public NotInheritable Class GebcoBilinearRequestBuilder
     'GEBCO Tiles: 90x90 Grad bei 15" -> 21600 Zellen
     Private Const TileSize As Integer = 21600
 
-    ''' <summary>
-    ''' Baut pro Tile eine Map: RowInTile -> List(Of BilinearRequest).
-    ''' Tile-Reihenfolge muss deterministisch sein (GebcoZipCatalog sortiert bereits).
-    ''' </summary>
-    Public Shared Function BuildRequests(tiles As List(Of GebcoTileInfo),
-                                        targetCellDeg As Double,
-                                        targetLatCount As Integer,
-                                        targetLonCount As Integer) As List(Of TileRowRequest)
 
-        If tiles Is Nothing OrElse tiles.Count = 0 Then Throw New ArgumentException("Es wurden keine GEBCO-Tiles übergeben (tiles ist leer).")
+    Public Shared Function BuildRequests(tiles As List(Of GebcoTileInfo),
+                                         targetCellDeg As Double,
+                                         targetLatCount As Integer,
+                                         targetLonCount As Integer) As List(Of TileRequests(Of BilinearRequestPacked))
+
+        If tiles Is Nothing OrElse tiles.Count = 0 Then Throw New ArgumentException("tiles ist leer")
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetCellDeg)
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetLatCount)
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetLonCount)
 
-        Dim result As New List(Of TileRowRequest)(tiles.Count)
-        For i As Integer = 0 To tiles.Count - 1
-            result.Add(New TileRowRequest())
+        Dim tileCount As Integer = tiles.Count
+        Dim result As New List(Of TileRequests(Of BilinearRequestPacked))(tileCount)
+
+        '--------------------------------
+        'A) Index-Arrays pro Tile anlegen
+        '--------------------------------
+        Dim rowCountsPerTile As Integer()() = New Integer(tileCount - 1)() {}  'pro Tile: rowCounts(TileSize)
+        For t As Integer = 0 To tileCount - 1
+            rowCountsPerTile(t) = New Integer(TileSize - 1) {}
         Next
+
+        '---------------------------------------------
+        'B) Pass A: nur zählen (2 Requests pro Target)
+        '---------------------------------------------
+        Dim totalReq As Long = 0
+        Dim tilesWithReq As Integer = 0
 
         For latIdx As Integer = 0 To targetLatCount - 1
 
-            'Zellzentrum: 90°..-90° (nördlich nach südlich)
             Dim latCenter As Double = (90.0 - targetCellDeg / 2.0) - latIdx * targetCellDeg
 
             For lonIdx As Integer = 0 To targetLonCount - 1
 
-                'Zellzentrum: -180°...+180° (westlich nach östlich)
                 Dim lonCenter As Double = (-180.0 + targetCellDeg / 2.0) + lonIdx * targetCellDeg
 
-                '----------------------------------------
-                '1) Fractional Source-Koordinate (global)
-                '----------------------------------------
-
+                '1) fractional source
                 Dim fy As Double = (latCenter - SrcLat0) / SrcCellDeg
                 Dim fx As Double = (lonCenter - SrcLon0) / SrcCellDeg
 
-                'floor statt CInt/Math.Round -> Bilinear braucht die "untere linke" Zelle
                 Dim y0 As Integer = CInt(Math.Floor(fy))
                 Dim x0 As Integer = CInt(Math.Floor(fx))
-
                 Dim wy As Single = CSng(fy - y0)
                 Dim wx As Single = CSng(fx - x0)
 
                 Dim y1 As Integer = y0 + 1
                 Dim x1 As Integer = x0 + 1
 
-                '---------------------------------
-                '2) Clamp auf globales Source-Grid
-                '---------------------------------
+                '2) Clampen
+                ClampIndexPair(y0, y1, SrcLatCount, wy)
+                ClampIndexPair(x0, x1, SrcLonCount, wx)
+
+                '3) Tile
+                Dim tileIndex As Integer = FindTileIndex(tiles, latCenter, lonCenter)
+                If tileIndex < 0 Then
+                    Throw New InvalidOperationException($"Kein GEBCO-Tile für lat={latCenter:0.####}°, lon={lonCenter:0.####}° gefunden.")
+                End If
+                Dim tile As GebcoTileInfo = tiles(tileIndex)
+
+                '4) Auf Tile Row/Col mappen
+                Dim srcYNorthMost As Integer = LatToSrcY(tile.North - SrcCellDeg / 2.0)
+                Dim srcXWestMost As Integer = LonToSrcX(tile.West + SrcCellDeg / 2.0)
+
+                Dim row0InTile As Integer = srcYNorthMost - y0
+                Dim row1InTile As Integer = srcYNorthMost - y1
+
+                'tile-lokal clampen (verhinder cross-tile bilinear)
+                Clamp0ToTile(row0InTile)
+                Clamp0ToTile(row1InTile)
+
+                'Zählen: pro Target genau 2 Requests
+                rowCountsPerTile(tileIndex)(row0InTile) += 1
+                rowCountsPerTile(tileIndex)(row1InTile) += 1
+
+                totalReq += 2
+            Next
+        Next
+
+        'Guards:
+        If totalReq = 0 Then
+            Throw New InvalidOperationException($"Bilinear-RequestBuilder: keine Requests erzeugt. tiles={tiles.Count}, target={targetLatCount}x{targetLonCount}, cell={targetCellDeg:0.####}°")
+        End If
+
+        '--------------------------------------------
+        'B) PrefixSum: RowStart/RowCount + Requests()
+        '--------------------------------------------
+        Dim rowStartPerTile As Integer()() = New Integer(tileCount - 1)() {}
+        Dim writePtrPerTile As Integer()() = New Integer(tileCount - 1)() {}
+
+        Dim totalPerTile As Integer() = New Integer(tileCount - 1) {}
+
+        For t As Integer = 0 To tileCount - 1
+
+            Dim rowCountArr As Integer() = rowCountsPerTile(t)
+            Dim rowStartArr As Integer() = New Integer(TileSize - 1) {}
+            Dim writePtrArr As Integer() = New Integer(TileSize - 1) {}
+
+            'RowStart: initialisieren: -1 für leer
+            Array.Fill(rowStartArr, -1)
+
+            Dim acc As Integer = 0
+
+            For r As Integer = 0 To TileSize - 1
+                Dim c As Integer = rowCountArr(r)
+                If c > 0 Then
+                    rowStartArr(r) = acc
+                    writePtrArr(r) = acc
+                    acc += c
+                End If
+            Next
+
+            totalPerTile(t) = acc
+            rowStartPerTile(t) = rowStartArr
+            writePtrPerTile(t) = writePtrArr
+
+            If acc > 0 Then tilesWithReq += 1
+        Next
+
+        '--- DEBUG: Hot Rows finden (max Requests pro Row pro Tile) ---
+        For t As Integer = 0 To tileCount - 1
+
+            Dim rowCountArr As Integer() = rowCountsPerTile(t)
+
+            Dim maxRow As Integer = -1
+            Dim maxCount As Integer = 0
+            Dim nonEmptyRows As Integer = 0
+
+            For r As Integer = 0 To TileSize - 1
+                Dim c As Integer = rowCountArr(r)
+                If c > 0 Then
+                    nonEmptyRows += 1
+                    If c > maxCount Then
+                        maxCount = c
+                        maxRow = r
+                    End If
+                End If
+            Next
+
+            'Nur loggen, wenn Tile überhaupt Requests hat
+            If maxCount > 0 Then
+                Debug.WriteLine($"[REQSTATS] tile={t} nonEmptyRows={nonEmptyRows:N0} maxRow={maxRow} maxCount={maxCount:N0} total={totalPerTile(t):N0}")
+            End If
+        Next
+
+        If tilesWithReq = 0 Then
+            Throw New InvalidOperationException($"Bilinear-RequestBuilder: tilesWithReq=0 (unerwartet). tiles={tiles.Count}")
+        End If
+
+        '--------------------------------------------
+        'C) Requests-Arrays allokieren + result bauen
+        '--------------------------------------------
+
+        Dim requestsPerTile As BilinearRequestPacked()() = New BilinearRequestPacked(tileCount - 1)() {}
+        For t As Integer = 0 To tileCount - 1
+            Dim n As Integer = totalPerTile(t)
+            requestsPerTile(t) = If(n > 0, New BilinearRequestPacked(n - 1) {}, Array.Empty(Of BilinearRequestPacked)())
+
+            Dim idx As New TileRowIndex With {
+                .RowStart = rowStartPerTile(t),
+                .RowCount = rowCountsPerTile(t)
+            }
+
+            result.Add(New TileRequests(Of BilinearRequestPacked) With {
+                       .Index = idx,
+                       .Requests = requestsPerTile(t)
+            })
+        Next
+
+        '-------------------------------------------------
+        'Pass B: wieder durchlaufen und Requests schreiben
+        '-------------------------------------------------
+
+        For latIdx As Integer = 0 To targetLatCount - 1
+
+            Dim latCenter As Double = (90.0 - targetCellDeg / 2.0) - latIdx * targetCellDeg
+
+            For lonIdx As Integer = 0 To targetLonCount - 1
+
+                Dim lonCenter As Double = (-180.0 + targetCellDeg / 2.0) + lonIdx * targetCellDeg
+
+                Dim fy As Double = (latCenter - SrcLat0) / SrcCellDeg
+                Dim fx As Double = (lonCenter - SrcLon0) / SrcCellDeg
+
+                Dim y0 As Integer = CInt(Math.Floor(fy))
+                Dim x0 As Integer = CInt(Math.Floor(fx))
+                Dim wy As Single = CSng(fy - y0)
+                Dim wx As Single = CSng(fx - x0)
+
+                Dim y1 As Integer = y0 + 1
+                Dim x1 As Integer = x0 + 1
 
                 ClampIndexPair(y0, y1, SrcLatCount, wy)
                 ClampIndexPair(x0, x1, SrcLonCount, wx)
 
-                '----------------------------------------
-                '3) Tile finden (nach Target-Zellzentrum)
-                '----------------------------------------
-
-                Dim tileindex As Integer = FindTileIndex(tiles, latCenter, lonCenter)
-                If tileindex < 0 Then
-                    Throw New InvalidOperationException($"Kein GEBCO-Tile für lat={latCenter:0.####}°, lon={lonCenter:0.####}° gefunden. (Bilinear-RequestBuilder)")
+                Dim tileIndex As Integer = FindTileIndex(tiles, latCenter, lonCenter)
+                If tileIndex < 0 Then
+                    Throw New InvalidOperationException($"Kein GEBCO-Tile für lat={latCenter:0.####}°, lon={lonCenter:0.#####}° gefunden.")
                 End If
 
-                Dim tile As GebcoTileInfo = tiles(tileindex)
-
-                '-------------------------------------------------------------------------------------
-                '4) Map global src (y/x) -> row/col im Tile (Row 0 im ASCII = nördlichste Row im Tile)
-                '-------------------------------------------------------------------------------------
+                Dim tile As GebcoTileInfo = tiles(tileIndex)
 
                 Dim srcYNorthMost As Integer = LatToSrcY(tile.North - SrcCellDeg / 2.0)
                 Dim srcXWestMost As Integer = LonToSrcX(tile.West + SrcCellDeg / 2.0)
@@ -140,106 +276,91 @@ Public NotInheritable Class GebcoBilinearRequestBuilder
                 Dim col0InTile As Integer = x0 - srcXWestMost
                 Dim col1InTile As Integer = x1 - srcXWestMost
 
-                'Tile-lokales Clamp (verhindert Cross-Tile-Bilinear)
                 Clamp0ToTile(row0InTile)
                 Clamp0ToTile(row1InTile)
                 Clamp0ToTile(col0InTile)
                 Clamp0ToTile(col1InTile)
 
-                Dim targetIndex As Integer = latIdx * targetLonCount + lonIdx
+                Dim ti As Integer = latIdx * targetLonCount + lonIdx
 
-                '-------------------------------------
-                '5) Zwei Requests erzeugen (Row0/Row1)
-                '-------------------------------------
+                'Schreibe Row0 Request
+                Dim wp0 As Integer = writePtrPerTile(tileIndex)(row0InTile)
+                requestsPerTile(tileIndex)(wp0) = New BilinearRequestPacked With {
+                    .TargetIndex = ti,
+                    .Part = CByte(RowPart.Row0),
+                    .Col0 = CUShort(col0InTile),
+                    .Col1 = CUShort(col1InTile),
+                    .Wx = wx,
+                    .Wy = wy
+                }
+                writePtrPerTile(tileIndex)(row0InTile) = wp0 + 1
 
-                AddRequest(result(tileindex), row0InTile,
-                            New BilinearRequest With {
-                                .TargetIndex = targetIndex,
-                                .Part = RowPart.Row0,
-                                .Col0 = col0InTile,
-                                .Col1 = col1InTile,
-                                .Wx = wx,
-                                .Wy = wy
-                            })
+                'Schreibe Row1 Request
+                Dim wp1 As Integer = writePtrPerTile(tileIndex)(row1InTile)
+                requestsPerTile(tileIndex)(wp1) = New BilinearRequestPacked With {
+                    .TargetIndex = ti,
+                    .Part = CByte(RowPart.Row1),
+                    .Col0 = CUShort(col0InTile),
+                    .Col1 = CUShort(col1InTile),
+                    .Wx = wx,
+                    .Wy = wy
+                }
+                writePtrPerTile(tileIndex)(row1InTile) = wp1 + 1
 
-                AddRequest(result(tileindex), row1InTile,
-                            New BilinearRequest With {
-                                .TargetIndex = targetIndex,
-                                .Part = RowPart.Row1,
-                                .Col0 = col0InTile,
-                                .Col1 = col1InTile,
-                                .Wx = wx,
-                                .Wy = wy
-                            })
             Next
         Next
 
-        '---------------------
-        'Sortierung und Guards
-        '---------------------
+        '-----------------------------
+        'D) Sortierung pro Row-Segment
+        '-----------------------------
+        Dim cmp As New BilinearPackedComparer()
 
-        Dim totalReq As Long = 0
-        Dim tilesWithReq As Integer = 0
+        For t As Integer = 0 To tileCount - 1
 
-        For Each trr In result
+            Dim idx As TileRowIndex = result(t).Index
+            Dim reqs As BilinearRequestPacked() = result(t).Requests
 
-            Dim tileHasAny As Boolean = False
+            If reqs Is Nothing OrElse reqs.Length = 0 Then Continue For
 
-            For Each kvp In trr.Rows
+            For r As Integer = 0 To TileSize - 1
+                Dim c As Integer = idx.RowCount(r)
+                If c > 1 Then
+                    Dim s As Integer = idx.RowStart(r)
+                    'Sicherheit
+                    If s < 0 OrElse s + c > reqs.Length Then
+                        Throw New InvalidDataException($"Interner Fehler: RowSpan ungültig (tile={t}, row={r}, start={s}, count={c}, len={reqs.Length}")
+                    End If
 
-                Dim list As List(Of BilinearRequest) = kvp.Value
-                If list IsNot Nothing AndAlso list.Count > 0 Then
+                    Array.Sort(reqs, s, c, cmp)
 
-                    tileHasAny = True
-                    totalReq += list.Count
-
-                    list.Sort(
-                        Function(a, b)
-
-                            Dim c As Integer = a.Col0.CompareTo(b.Col0)
-
-                            If c <> 0 Then Return c
-                            c = a.Col1.CompareTo(b.Col1)
-
-                            If c <> 0 Then Return c
-                            'stabiler Tiebreak: TargetIndex
-                            Return a.TargetIndex.CompareTo(b.TargetIndex)
-
-                        End Function)
                 End If
-
             Next
-
-            If tileHasAny Then tilesWithReq += 1
-
         Next
-
-        If totalReq = 0 OrElse tilesWithReq = 0 Then
-            Throw New InvalidOperationException($"Bilinear-RequestBuilder: Es wurden keine Requests erzeugt. tiles={tiles.Count}, target={targetLatCount}x{targetLonCount}, cell={targetCellDeg:0.####}°")
-        End If
-
-        Dim expectedMin As Long = CLng(targetLatCount) * CLng(targetLonCount) * 2L
-        If totalReq < expectedMin Then
-            Throw New InvalidOperationException($"Bilinear-RequestBuilder: Unplausible Request-Anzahl ({totalReq:N0}). Erwartet mindestens {expectedMin:N0} (=2 pro Target-Zelle). tiles={tiles.Count}, target={targetLatCount}x{targetLonCount}, cell={targetCellDeg:0.####}°")
-        End If
-
 
         Return result
+
     End Function
 
+#Region "Comparer"
+
+    Private NotInheritable Class BilinearPackedComparer
+        Implements IComparer(Of BilinearRequestPacked)
+
+        Public Function Compare(a As BilinearRequestPacked, b As BilinearRequestPacked) As Integer Implements IComparer(Of BilinearRequestPacked).Compare
+            Dim c As Integer = a.Col0.CompareTo(b.Col0)
+            If c <> 0 Then Return c
+            c = a.Col1.CompareTo(b.Col1)
+            If c <> 0 Then Return c
+            c = a.TargetIndex.CompareTo(b.TargetIndex)
+            If c <> 0 Then Return c
+            'stabiler Tie-Break
+            Return a.Part.CompareTo(b.Part)
+        End Function
+    End Class
+
+#End Region
+
 #Region "Helpers"
-
-    Private Shared Sub AddRequest(trr As TileRowRequest, rowInTile As Integer, req As BilinearRequest)
-
-        Dim list As List(Of BilinearRequest) = Nothing
-
-        If Not trr.Rows.TryGetValue(rowInTile, list) Then
-            list = New List(Of BilinearRequest)()
-            trr.Rows(rowInTile) = list
-        End If
-
-        list.Add(req)
-    End Sub
 
     ''' <summary>
     ''' Clamp von (i0, i1) auf [0...count-1].

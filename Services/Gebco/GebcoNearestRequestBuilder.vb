@@ -4,17 +4,6 @@
 
     End Sub
 
-
-    Public Structure NearestRequest
-        Public TargetIndex As Integer
-        Public ColInTile As Integer
-    End Structure
-
-    Public Class TileRowRequests
-        'RowInTile -> Requests nach ColInTile sortieren
-        Public ReadOnly Rows As New Dictionary(Of Integer, List(Of NearestRequest))()
-    End Class
-
     'GEBCO 15arc
     Private Const SrcCellDeg As Double = 15.0 / 3600.0      '0.00416666666...
     Private Shared ReadOnly SrcLat0 As Double = -90.0 + SrcCellDeg / 2.0
@@ -23,20 +12,31 @@
     Private Const SrcLatCount As Integer = 43200
     Private Const SrcLonCount As Integer = 86400
 
-    ''' <summary>
-    ''' Baut pro Tile eine Map: RowInTile -> List(Of (ColInTile, TargetIndex)) für Nearest-Resampling
-    ''' Tile-Reihenfolge muss deterministisch sein (GebcoZipCatalog sortiert bereits)
-    ''' </summary>
+    Private Const TileSize As Integer = 21600
+
     Public Shared Function BuildRequests(tiles As List(Of GebcoTileInfo),
                                          targetCellDeg As Double,
                                          targetLatCount As Integer,
-                                         targetLonCount As Integer) As List(Of TileRowRequests)
+                                         targetLonCount As Integer) As List(Of TileRequests(Of NearestRequestPacked))
 
-        If tiles Is Nothing OrElse tiles.Count = 0 Then Throw New ArgumentException("tiles fehlt.")
-        Dim result As New List(Of TileRowRequests)
-        For i As Integer = 0 To tiles.Count - 1
-            result.Add(New TileRowRequests())
+        If tiles Is Nothing OrElse tiles.Count = 0 Then Throw New ArgumentException("tiles fehlt/leer.")
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetCellDeg)
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetLatCount)
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetLonCount)
+
+        Dim tileCount As Integer = tiles.Count
+        Dim result As New List(Of TileRequests(Of NearestRequestPacked))(tileCount)
+
+        'RowCounts pro Tile (TileSize * tilesCount, aber als viele kleine Arrays)
+        Dim rowCountsPerTile As Integer()() = New Integer(tileCount - 1)() {}
+        For t As Integer = 0 To tileCount - 1
+            rowCountsPerTile(t) = New Integer(TileSize - 1) {}
         Next
+
+        '--------------------------
+        'Pass A: nur zählen
+        '--------------------------
+        Dim totalReq As Long = 0
 
         For latIdx As Integer = 0 To targetLatCount - 1
             Dim latCenter As Double = (90.0 - targetCellDeg / 2.0) - latIdx * targetCellDeg
@@ -44,59 +44,160 @@
             For lonIdx As Integer = 0 To targetLonCount - 1
                 Dim lonCenter As Double = (-180.0 + targetCellDeg / 2.0) + lonIdx * targetCellDeg
 
-                'Nearest global source index (pixel-centre registered)
+                'Nearest global source index
                 Dim srcY As Integer = CInt(Math.Round((latCenter - SrcLat0) / SrcCellDeg))
                 Dim srcX As Integer = CInt(Math.Round((lonCenter - SrcLon0) / SrcCellDeg))
 
-                'Auf globales Grid clampen
                 srcY = Clamp(srcY, 0, SrcLatCount - 1)
                 srcX = Clamp(srcX, 0, SrcLonCount - 1)
 
                 Dim tileIndex As Integer = FindTileIndex(tiles, latCenter, lonCenter)
                 If tileIndex < 0 Then
-                    'Sollte bei GEBCO-Abdeckung nicht passieren - aber robust bleiben
-                    Throw New Exception($"No tile for latCenter={latCenter}, lonCenter={lonCenter}")
-                    'Continue For
+                    Throw New InvalidOperationException($"No tile for latCenter={latCenter}, lonCenter={lonCenter}")
                 End If
 
                 Dim tile As GebcoTileInfo = tiles(tileIndex)
 
-                'Tile row/col:
-                'Row 0 in ASCII = nördlichste Row im Tile
                 Dim srcYNorthMost As Integer = LatToSrcY(tile.North - SrcCellDeg / 2.0)
                 Dim srcXWestMost As Integer = LonToSrcX(tile.West + SrcCellDeg / 2.0)
 
                 Dim rowInTile As Integer = srcYNorthMost - srcY
                 Dim colInTile As Integer = srcX - srcXWestMost
 
-                'Auf Tile-Grenzen clampen um sicher zu bleiben
-                Const TileSize As Integer = 21600
                 rowInTile = Clamp(rowInTile, 0, TileSize - 1)
                 colInTile = Clamp(colInTile, 0, TileSize - 1)
 
-                'Tile-Größe sollte 21600x21600 sein, aber wir lassen es generisch (Clamp während der Laufzeit auf die header-Werte)
-                Dim targetIndex As Integer = latIdx * targetLonCount + lonIdx
-
-                Dim trr As TileRowRequests = result(tileIndex)
-                Dim list As List(Of NearestRequest) = Nothing
-                If Not trr.Rows.TryGetValue(rowInTile, list) Then
-                    list = New List(Of NearestRequest)()
-                    trr.Rows(rowInTile) = list
-                End If
-
-                list.Add(New NearestRequest With {.TargetIndex = targetIndex, .ColInTile = colInTile})
+                rowCountsPerTile(tileIndex)(rowInTile) += 1
+                totalReq += 1
             Next
         Next
 
-        'Jede Reihe nach Spalten sortieren, damit die CPU einen Pointer Scan nutzen kann
-        For Each trr In result
-            For Each kvp In trr.Rows
-                kvp.Value.Sort(Function(a, b) a.ColInTile.CompareTo(b.ColInTile))
+        If totalReq = 0 Then Throw New InvalidOperationException("Nearest-RequestBuilder: 0 Requests erzeugt (unerwartet).")
+
+        '--------------------------
+        'PrefixSum: RowStart + Total pro Tile
+        '--------------------------
+        Dim rowStartPerTile As Integer()() = New Integer(tileCount - 1)() {}
+        Dim writePtrPerTile As Integer()() = New Integer(tileCount - 1)() {}
+        Dim totalPerTile As Integer() = New Integer(tileCount - 1) {}
+
+        For t As Integer = 0 To tileCount - 1
+            Dim counts As Integer() = rowCountsPerTile(t)
+
+            Dim starts As Integer() = New Integer(TileSize - 1) {}
+            Dim wptr As Integer() = New Integer(TileSize - 1) {}
+
+            For r As Integer = 0 To TileSize - 1
+                starts(r) = -1
+            Next
+
+            Dim acc As Integer = 0
+            For r As Integer = 0 To TileSize - 1
+                Dim c As Integer = counts(r)
+                If c > 0 Then
+                    starts(r) = acc
+                    wptr(r) = acc
+                    acc += c
+                End If
+            Next
+
+            totalPerTile(t) = acc
+            rowStartPerTile(t) = starts
+            writePtrPerTile(t) = wptr
+        Next
+
+        '--------------------------
+        'Requests-Arrays allokieren + result befüllen
+        '--------------------------
+        Dim reqPerTile As NearestRequestPacked()() = New NearestRequestPacked(tileCount - 1)() {}
+
+        For t As Integer = 0 To tileCount - 1
+            Dim n As Integer = totalPerTile(t)
+            reqPerTile(t) = If(n > 0, New NearestRequestPacked(n - 1) {}, Array.Empty(Of NearestRequestPacked)())
+
+            Dim idx As New TileRowIndex With {
+                .RowStart = rowStartPerTile(t),
+                .RowCount = rowCountsPerTile(t)
+            }
+
+            result.Add(New TileRequests(Of NearestRequestPacked) With {
+                .Index = idx,
+                .Requests = reqPerTile(t)
+            })
+        Next
+
+        '--------------------------
+        'Pass B: Requests schreiben
+        '--------------------------
+        For latIdx As Integer = 0 To targetLatCount - 1
+            Dim latCenter As Double = (90.0 - targetCellDeg / 2.0) - latIdx * targetCellDeg
+
+            For lonIdx As Integer = 0 To targetLonCount - 1
+                Dim lonCenter As Double = (-180.0 + targetCellDeg / 2.0) + lonIdx * targetCellDeg
+
+                Dim srcY As Integer = CInt(Math.Round((latCenter - SrcLat0) / SrcCellDeg))
+                Dim srcX As Integer = CInt(Math.Round((lonCenter - SrcLon0) / SrcCellDeg))
+
+                srcY = Clamp(srcY, 0, SrcLatCount - 1)
+                srcX = Clamp(srcX, 0, SrcLonCount - 1)
+
+                Dim tileIndex As Integer = FindTileIndex(tiles, latCenter, lonCenter)
+                If tileIndex < 0 Then Throw New InvalidOperationException($"No tile for latCenter={latCenter}, lonCenter={lonCenter}")
+
+                Dim tile As GebcoTileInfo = tiles(tileIndex)
+
+                Dim srcYNorthMost As Integer = LatToSrcY(tile.North - SrcCellDeg / 2.0)
+                Dim srcXWestMost As Integer = LonToSrcX(tile.West + SrcCellDeg / 2.0)
+
+                Dim rowInTile As Integer = srcYNorthMost - srcY
+                Dim colInTile As Integer = srcX - srcXWestMost
+
+                rowInTile = Clamp(rowInTile, 0, TileSize - 1)
+                colInTile = Clamp(colInTile, 0, TileSize - 1)
+
+                Dim ti As Integer = latIdx * targetLonCount + lonIdx
+
+                Dim wp As Integer = writePtrPerTile(tileIndex)(rowInTile)
+                reqPerTile(tileIndex)(wp) = New NearestRequestPacked With {
+                    .TargetIndex = ti,
+                    .Col = CUShort(colInTile)
+                }
+                writePtrPerTile(tileIndex)(rowInTile) = wp + 1
+            Next
+        Next
+
+        '--------------------------
+        'Sortierung je Row-Segment nach Col
+        '--------------------------
+        Dim cmp As New NearestPackedComparer()
+
+        For t As Integer = 0 To tileCount - 1
+            Dim idx = result(t).Index
+            Dim reqs = result(t).Requests
+            If reqs Is Nothing OrElse reqs.Length = 0 Then Continue For
+
+            For r As Integer = 0 To TileSize - 1
+                Dim c As Integer = idx.RowCount(r)
+                If c > 1 Then
+                    Dim s As Integer = idx.RowStart(r)
+                    Array.Sort(reqs, s, c, cmp)
+                End If
             Next
         Next
 
         Return result
     End Function
+
+    Private NotInheritable Class NearestPackedComparer
+        Implements IComparer(Of NearestRequestPacked)
+
+        Public Function Compare(a As NearestRequestPacked, b As NearestRequestPacked) As Integer Implements IComparer(Of NearestRequestPacked).Compare
+            Dim c As Integer = a.Col.CompareTo(b.Col)
+            If c <> 0 Then Return c
+            Return a.TargetIndex.CompareTo(b.TargetIndex)
+        End Function
+    End Class
+
 
     Private Shared Function FindTileIndex(tiles As List(Of GebcoTileInfo), latCenter As Double, lonCenter As Double) As Integer
         Const eps As Double = 0.000000001

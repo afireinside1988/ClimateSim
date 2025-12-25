@@ -1,4 +1,5 @@
-﻿Imports System.IO
+﻿Imports System.Buffers
+Imports System.IO
 Imports System.Text
 Imports System.Threading
 
@@ -130,6 +131,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         Dim saveStart As Integer = metaEnd
         Dim saveEnd As Integer = 100
 
+        LogMem("before BuildRequests")
         '---------------------
         'E) Requests erstellen
         '---------------------
@@ -137,7 +139,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         Dim pReq As New ProgressSlice(progress, mapStart, mapEnd, "GEBCO: ")
 
         'TID bleibt immer Nearest -> diese Request brauchen wir ggf. später
-        Dim reqNearestByTile As List(Of GebcoNearestRequestBuilder.TileRowRequests) = Nothing
+        Dim reqNearestByTile As List(Of TileRequests(Of NearestRequestPacked)) = Nothing
 
         If hasTid OrElse resampling = "nearest" Then
             pReq.Report(New ProgressInfo("Baue Nearest-Mapping...", 0))
@@ -147,7 +149,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         End If
 
         'Height-Requests je nach Resampling
-        Dim reqBilinearByTile As List(Of GebcoBilinearRequestBuilder.TileRowRequest) = Nothing
+        Dim reqBilinearByTile As List(Of TileRequests(Of BilinearRequestPacked)) = Nothing
 
         If resampling = "bilinear" Then
             reqBilinearByTile = GebcoBilinearRequestBuilder.BuildRequests(heightTiles, opts.CellSizeDeg, latCount, lonCount)
@@ -155,6 +157,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
 
         ct.ThrowIfCancellationRequested()
 
+        LogMem("after BuildRequests")
         '------------------------
         'F) Height Tiles streamen
         '------------------------
@@ -190,41 +193,68 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
 
             If reqBilinearByTile Is Nothing OrElse reqBilinearByTile.Count <> tileCount Then Throw New InvalidOperationException("Interner Fehler: Bilinear-Requests fehlen oder passen nicht zur Tile-Anzahl.")
 
-            'Scratch einmalig allokieren (wird pro Tile wiederverwendet)
-            Dim row0Buf As Single() = New Single(n - 1) {}
-            Dim row1Buf As Single() = New Single(n - 1) {}
+            'Scratch einmalig allokieren (wird pro Tile wiederverwendet) -> ArrayPool
+            Dim poolS As ArrayPool(Of Single) = ArrayPool(Of Single).Shared
+            Dim poolB As ArrayPool(Of Byte) = ArrayPool(Of Byte).Shared
 
-            Dim row0Set As Byte() = New Byte(n - 1) {}
-            Dim row1Set As Byte() = New Byte(n - 1) {}
+            Dim row0Buf As Single() = Nothing
+            Dim row1Buf As Single() = Nothing
+            Dim row0Set As Byte() = Nothing
+            Dim row1Set As Byte() = Nothing
 
             Dim touched As New List(Of Integer)(capacity:=Math.Min(n, 200000))
-            For t As Integer = 0 To tileCount - 1
 
-                ct.ThrowIfCancellationRequested()
 
-                Dim tile As GebcoTileInfo = heightTiles(t)
+            Try
+                row0Buf = poolS.Rent(n)
+                row1Buf = poolS.Rent(n)
+                row0Set = poolB.Rent(n)
+                row1Set = poolB.Rent(n)
 
-                Dim ts, te As Integer
-                GetTileSlice(t, tileCount, heightStart, heightEnd, ts, te)
+                LogMem("after Rent scratch")
+                'WICHTIG: Flags müssen 0 sein (nur [0..n] clearen)
+                Array.Clear(row0Set, 0, n)
+                Array.Clear(row1Set, 0, n)
 
-                Dim pTile As New ProgressSlice(progress, ts, te, "GEBCO: ")
-                pTile.Report(New ProgressInfo($"HEIGHT: Tile {t + 1}/{tileCount}: {Path.GetFileName(tile.EntryName)}", 0))
+                For t As Integer = 0 To tileCount - 1
 
-                GebcoTileProcessor.ProcessHeightTileBilinear(
-                    opts.HeightZipPath, tile, reqBilinearByTile(t), heightOut,
-                    row0Buf, row1Buf,
-                    row0Set, row1Set,
-                    touched,
-                    pTile, ct, progressPrefix:=$"HEIGHT {t + 1}/{tileCount}")
+                    ct.ThrowIfCancellationRequested()
 
-            Next
+                    Dim tile As GebcoTileInfo = heightTiles(t)
+
+                    Dim ts, te As Integer
+                    GetTileSlice(t, tileCount, heightStart, heightEnd, ts, te)
+
+                    Dim pTile As New ProgressSlice(progress, ts, te, "GEBCO: ")
+                    pTile.Report(New ProgressInfo($"HEIGHT: Tile {t + 1}/{tileCount}: {Path.GetFileName(tile.EntryName)}", 0))
+
+                    GebcoTileProcessor.ProcessHeightTileBilinear(
+                        opts.HeightZipPath, tile, reqBilinearByTile(t), heightOut,
+                        row0Buf, row1Buf,
+                        row0Set, row1Set,
+                        touched,
+                        pTile, ct, progressPrefix:=$"HEIGHT {t + 1}/{tileCount}")
+
+                    'DEBUG:
+                    If (t Mod 2) = 0 Then LogMem($"after tile {t + 1}")
+                Next
+            Finally
+                touched.Clear()
+
+                If row0Buf IsNot Nothing Then poolS.Return(row0Buf, clearArray:=False)
+                If row1Buf IsNot Nothing Then poolS.Return(row1Buf, clearArray:=False)
+
+                'Flags: entweder clearArray:=True oder wir garantieren vorher Clear([0..n))
+                If row0Set IsNot Nothing Then poolB.Return(row0Set, clearArray:=True)
+                If row1Set IsNot Nothing Then poolB.Return(row1Set, clearArray:=True)
+            End Try
 
         End If
 
         '-------------------------------------
         'G) TID Tiles streamen (immer Nearest)
         '-------------------------------------
-
+        LogMem("before TID")
         If hasTid Then
 
             If tidTiles Is Nothing OrElse tidTiles.Count = 0 Then Throw New InvalidDataException("TID-ZIP ist vorhanden, aber es wurden keine TID-Tiles gefunden.")
@@ -251,6 +281,9 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
                 GebcoTileProcessor.ProcessTidTile(
                     opts.TidZipPath, tile, reqNearestByTile(t), tidOut,
                     pTile, ct, progressPrefix:=$"TID: {t + 1}/{tileCount}")
+
+                'DEBUG:
+                If (t Mod 2) = 0 Then LogMem($"after tile {t + 1}")
             Next
 
             If tidOut Is Nothing OrElse tidOut.Length <> n Then Throw New InvalidOperationException($"Interner Fehler: tidOut ist Nothing oder hat eine falsche Länge. Erwartet={n}, ist={(If(tidOut Is Nothing, 0, tidOut.Length))}.")
@@ -258,7 +291,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         End If
 
         ct.ThrowIfCancellationRequested()
-
+        LogMem("after TID scratch")
         '-----------------
         'H) LandMask bauen
         '-----------------
@@ -345,7 +378,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         pMeta.Report(New ProgressInfo("Meta OK.", 100))
 
         ct.ThrowIfCancellationRequested()
-
+        LogMem("before Save Cache")
         '-------------
         'J) Save Cache
         '-------------
@@ -361,6 +394,7 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
             progress:=pSave,
             ct:=ct)
 
+        LogMem("finally")
         '---------
         'K) Report
         '---------
@@ -398,6 +432,23 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         If tileStart < blockStart Then tileStart = blockStart
         If tileEnd > blockEnd Then tileEnd = blockEnd
 
+    End Sub
+
+
+    Private Shared Sub LogMem(tag As String)
+        Dim p = Process.GetCurrentProcess()
+
+        Dim gi = GC.GetGCMemoryInfo()
+        Dim heap = gi.HeapSizeBytes
+        Dim committed = gi.TotalCommittedBytes
+
+        Debug.WriteLine(
+            $"[MEM] {tag,-24} " &
+            $"GC.Heap={heap / 1024 / 1024:0}MB " &
+            $"GC.Committed={committed / 1024 / 1024:0}MB " &
+            $"WS={p.WorkingSet64 / 1024 / 1024:0}MB " &
+            $"Private={p.PrivateMemorySize64 / 1024 / 1024:0}MB"
+        )
     End Sub
 
 End Class

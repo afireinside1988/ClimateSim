@@ -1478,6 +1478,10 @@ Public Class EarthSurfaceViewModel
         StatusSurfaceText = $"Surface: {surface}"
         StatusZoomText = $"Zoom: {zoom * 100:0.##}%"
     End Sub
+
+
+
+
 #End Region
 
 End Class

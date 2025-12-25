@@ -1,5 +1,4 @@
-﻿
-Imports System.CodeDom
+﻿Imports System.Buffers
 Imports System.IO
 Imports System.Text
 Imports System.Threading
@@ -24,6 +23,16 @@ Public NotInheritable Class GebcoTileProcessor
         End Sub
     End Structure
 
+    Private NotInheritable Class ColNeedComparer
+        Implements IComparer(Of ColNeed)
+
+        Public Shared ReadOnly Instance As New ColNeedComparer()
+
+        Public Function Compare(x As ColNeed, y As ColNeed) As Integer Implements IComparer(Of ColNeed).Compare
+            Return x.Col.CompareTo(y.Col)
+        End Function
+    End Class
+
     Private Sub New()
 
     End Sub
@@ -32,7 +41,7 @@ Public NotInheritable Class GebcoTileProcessor
     ''' Tile-Processor für Height-Tiles (für Nearest-Resampling)
     Public Shared Sub ProcessHeightTileNearest(zipPath As String,
                                         tile As GebcoTileInfo,
-                                        requests As GebcoNearestRequestBuilder.TileRowRequests,
+                                        requests As TileRequests(Of NearestRequestPacked),
                                         heightOut As Single(),
                                         progress As IProgress(Of ProgressInfo),
                                         ct As CancellationToken,
@@ -47,27 +56,31 @@ Public NotInheritable Class GebcoTileProcessor
                     Dim firstLine As String = Nothing
                     Dim header As AsciiGridHeader = EsriAsciiHeaderReader.ReadHeader(sr, firstLine)
 
-                    Dim noData As Double? = header.NoDataValue
-                    If Not noData.HasValue Then
-                        'GEBCO hat es eigentlich immer. Wenn nicht: wir setzen "keins"
-                        noData = Nothing
-                    End If
+                    Dim noData As Integer? = Nothing
+                    If header.NoDataValue.HasValue Then noData = CInt(header.NoDataValue.Value)
 
                     Dim tok As New AsciiIntTokenizer(sr, firstLine)
 
                     Dim nRows As Integer = header.NRows
                     Dim nCols As Integer = header.NCols
 
+                    Dim idx As TileRowIndex = requests.Index
+                    Dim reqs As NearestRequestPacked() = requests.Requests
+
                     'Row 0 = nördlichste Row im ASCII Grid
                     For row As Integer = 0 To nRows - 1
 
                         ct.ThrowIfCancellationRequested()
 
-                        Dim want As List(Of GebcoNearestRequestBuilder.NearestRequest) = Nothing
-                        requests.Rows.TryGetValue(row, want)
+                        Dim start As Integer = -1
+                        Dim count As Integer = 0
+
+                        If idx.RowStart IsNot Nothing AndAlso row < idx.RowStart.Length Then
+                            start = idx.RowStart(row)
+                            count = idx.RowCount(row)
+                        End If
 
                         Dim wantPtr As Integer = 0
-                        Dim wantCount As Integer = If(want Is Nothing, 0, want.Count)
 
                         For col As Integer = 0 To nCols - 1
 
@@ -76,31 +89,21 @@ Public NotInheritable Class GebcoTileProcessor
                                 Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei row={row}, col={col}")
                             End If
 
-                            If wantCount > 0 AndAlso wantPtr < wantCount AndAlso col = want(wantPtr).ColInTile Then
-                                Dim ti As Integer = want(wantPtr).TargetIndex
+                            If count > 0 Then
 
-                                If noData.HasValue AndAlso v = CInt(noData.Value) Then
-                                    heightOut(ti) = Single.NaN
-                                Else
-                                    heightOut(ti) = CSng(v)
-                                End If
+                                'Pointer-Scan innerhalb des RowSegments (Requests sind nach Col sortiert)
+                                While wantPtr < count AndAlso CInt(reqs(start + wantPtr).Col) = col
 
-                                'Mehrere Requests können theoretisch dieselbe Spalte haben (sollte nicht passieren),
-                                'wir gehen sicherheitshalber weiter
-                                wantPtr += 1
-
-                                While wantPtr < wantCount AndAlso want(wantPtr).ColInTile = col
-
-                                    ti = want(wantPtr).TargetIndex
-                                    If noData.HasValue AndAlso v = CInt(noData.Value) Then
+                                    Dim ti As Integer = reqs(start + wantPtr).TargetIndex
+                                    If noData.HasValue AndAlso v = noData.Value Then
                                         heightOut(ti) = Single.NaN
                                     Else
                                         heightOut(ti) = CSng(v)
                                     End If
 
                                     wantPtr += 1
-
                                 End While
+
                             End If
                         Next
 
@@ -121,7 +124,7 @@ Public NotInheritable Class GebcoTileProcessor
     ''' </summary>
     Public Shared Sub ProcessHeightTileBilinear(zipPath As String,
                                                 tile As GebcoTileInfo,
-                                                requests As GebcoBilinearRequestBuilder.TileRowRequest,
+                                                requests As TileRequests(Of BilinearRequestPacked),
                                                 heightOut As Single(),
                                                 row0Buf As Single(),
                                                 row1Buf As Single(),
@@ -133,175 +136,222 @@ Public NotInheritable Class GebcoTileProcessor
                                                 Optional progressPrefix As String = "HEIGHT(BILINEAR)")
 
         ArgumentNullException.ThrowIfNull(heightOut)
-        ArgumentNullException.ThrowIfNull(requests)
         ArgumentNullException.ThrowIfNull(row0Buf)
         ArgumentNullException.ThrowIfNull(row1Buf)
         ArgumentNullException.ThrowIfNull(row0Set)
         ArgumentNullException.ThrowIfNull(row1Set)
         ArgumentNullException.ThrowIfNull(touched)
 
-        If row0Buf.Length <> heightOut.Length OrElse row1Buf.Length <> heightOut.Length OrElse
-           row0Set.Length <> heightOut.Length OrElse row1Set.Length <> heightOut.Length Then
-            Throw New InvalidOperationException("Interner Fehler: Scratch-Arrays haben nicht die gleiche Länge wie heightOut")
+
+        Dim n As Integer = heightOut.Length
+        If row0Buf.Length < n OrElse row1Buf.Length < n OrElse row0Set.Length < n OrElse row1Set.Length < n Then
+            Throw New InvalidOperationException("Interner Fehler: Scratch-Arrays sind zu klein")
         End If
 
         ct.ThrowIfCancellationRequested()
 
-        Using s As Stream = ZipHelpers.OpenZipEntryStream(zipPath, tile.EntryName)
-            Using bs As New BufferedStream(s, 1024 * 1024)
-                Using sr As New StreamReader(bs, Encoding.ASCII, detectEncodingFromByteOrderMarks:=False, bufferSize:=1024 * 1024, leaveOpen:=False)
+        'DEBUG:
+        Dim alloc0 As Long = GC.GetAllocatedBytesForCurrentThread()
+        Dim sw As Stopwatch = Stopwatch.StartNew()
+        'END DEBUG
 
-                    Dim firstLine As String = Nothing
-                    Dim header As AsciiGridHeader = EsriAsciiHeaderReader.ReadHeader(sr, firstLine)
+        Dim idx As TileRowIndex = requests.Index
+        Dim reqs As BilinearRequestPacked() = requests.Requests
 
-                    Dim noData As Integer? = Nothing
-                    If header.NoDataValue.HasValue Then noData = CInt(header.NoDataValue.Value)
+        Dim poolNeed As ArrayPool(Of ColNeed) = ArrayPool(Of ColNeed).Shared
+        Dim poolI As ArrayPool(Of Integer) = ArrayPool(Of Integer).Shared
+        Dim poolB As ArrayPool(Of Byte) = ArrayPool(Of Byte).Shared
 
-                    Dim tok As New AsciiIntTokenizer(sr, firstLine)
+        Dim needsArr As ColNeed() = Nothing
+        Dim needsCap As Integer = 0
 
-                    Dim nRows As Integer = header.NRows
-                    Dim nCols As Integer = header.NCols
+        Dim sample0 As Integer() = Nothing
+        Dim sample1 As Integer() = Nothing
+        Dim has0 As Byte() = Nothing
+        Dim has1 As Byte() = Nothing
+        Dim sampleCap As Integer = 0
 
-                    'Row 0 = nördlichste Row im ASCII Grid
-                    For row As Integer = 0 To nRows - 1
+        Try
+            Using s As Stream = ZipHelpers.OpenZipEntryStream(zipPath, tile.EntryName)
+                Using bs As New BufferedStream(s, 1024 * 1024)
+                    Using sr As New StreamReader(bs, Encoding.ASCII, detectEncodingFromByteOrderMarks:=False, bufferSize:=1024 * 1024, leaveOpen:=False)
 
-                        ct.ThrowIfCancellationRequested()
+                        Dim firstLine As String = Nothing
+                        Dim header As AsciiGridHeader = EsriAsciiHeaderReader.ReadHeader(sr, firstLine)
 
-                        Dim want As List(Of GebcoBilinearRequestBuilder.BilinearRequest) = Nothing
-                        requests.Rows.TryGetValue(row, want)
+                        Dim noData As Integer? = Nothing
+                        If header.NoDataValue.HasValue Then noData = CInt(header.NoDataValue.Value)
 
-                        If want Is Nothing OrElse want.Count = 0 Then
-                            'Row ist uninteressant -> trotzdem Tokens der Row komplett lesen!
-                            'ABER: wir streamen ohnehin alle Spalten, daher kein Sonderfall nötig
-                        End If
+                        Dim tok As New AsciiIntTokenizer(sr, firstLine)
 
-                        'Wenn wir Requests haben, bauen wir eine "NeedCol"-Liste, damit wir beim Col-Scan pointerbasiert bleiben.
-                        Dim needs As List(Of ColNeed) = Nothing
-                        Dim sample0 As Integer() = Nothing
-                        Dim sample1 As Integer() = Nothing
-                        Dim has0 As Byte() = Nothing
-                        Dim has1 As Byte() = Nothing
+                        Dim nRows As Integer = header.NRows
+                        Dim nCols As Integer = header.NCols
 
-                        Dim wantCount As Integer = If(want Is Nothing, 0, want.Count)
+                        'Row 0 = nördlichste Row im ASCII Grid
+                        For row As Integer = 0 To nRows - 1
 
-                        If wantCount > 0 Then
+                            ct.ThrowIfCancellationRequested()
 
-                            needs = New List(Of ColNeed)(wantCount * 2)
-                            sample0 = New Integer(wantCount - 1) {}
-                            sample1 = New Integer(wantCount - 1) {}
-                            has0 = New Byte(wantCount - 1) {}
-                            has1 = New Byte(wantCount - 1) {}
+                            'Row-Segment holen
+                            Dim start As Integer = -1
+                            Dim count As Integer = 0
+                            If idx.RowStart IsNot Nothing AndAlso row < idx.RowStart.Length Then
+                                start = idx.RowStart(row)
+                                count = idx.RowCount(row)
+                            End If
 
-                            For i As Integer = 0 To wantCount - 1
-                                Dim r As GebcoBilinearRequestBuilder.BilinearRequest = want(i)
-                                needs.Add(New ColNeed(r.Col0, i, True))       'True => Col0
-                                needs.Add(New ColNeed(r.Col1, i, False))      'False => Col1
+                            Dim needPtr As Integer = 0
+                            Dim needCount As Integer = 0
+
+                            If count > 0 Then
+
+                                '--- Needs: 2 pro Request ---
+                                Dim needReq As Integer = count * 2
+                                If needsArr Is Nothing OrElse needsCap < needReq Then
+                                    Dim oldCap = If(needsArr Is Nothing, 0, needsArr.Length)
+                                    If needsArr IsNot Nothing Then poolNeed.Return(needsArr, clearArray:=False)
+                                    needsArr = poolNeed.Rent(needReq)
+                                    needsCap = needsArr.Length
+
+                                    Debug.WriteLine($"[BILINEAR] {Path.GetFileName(tile.EntryName)} row={row} wantCount={count:N0} needReq={needReq:N0} NEEDS {oldCap:N0}->{needsCap:N0}")
+                                End If
+
+                                '--- Samples/Flags: 1 pro Request (index = i im RowSegment) ---
+                                If sample0 Is Nothing OrElse sampleCap < count Then
+                                    Dim oldCap = If(sample0 Is Nothing, 0, sample0.Length)
+                                    If sample0 IsNot Nothing Then poolI.Return(sample0, clearArray:=False)
+                                    If sample1 IsNot Nothing Then poolI.Return(sample1, clearArray:=False)
+                                    If has0 IsNot Nothing Then poolB.Return(has0, clearArray:=True)
+                                    If has1 IsNot Nothing Then poolB.Return(has1, clearArray:=True)
+
+                                    sample0 = poolI.Rent(count)
+                                    sample1 = poolI.Rent(count)
+                                    has0 = poolB.Rent(count)
+                                    has1 = poolB.Rent(count)
+                                    sampleCap = count
+                                    Debug.WriteLine($"[BILINEAR] {Path.GetFileName(tile.EntryName)} row={row} wantCount={count:N0} SAMPLES {oldCap:N0}->{sampleCap:N0}")
+                                End If
+
+                                'Flags zurücksetzen (Samples brauchen wir nicht clearen)
+                                Array.Clear(has0, 0, count)
+                                Array.Clear(has1, 0, count)
+
+                                'Needs füllen aus reqs(start..start+count)
+                                For i As Integer = 0 To count - 1
+                                    Dim r As BilinearRequestPacked = reqs(start + i)
+                                    needsArr(needCount) = New ColNeed(r.Col0, i, True) : needCount += 1
+                                    needsArr(needCount) = New ColNeed(r.Col1, i, False) : needCount += 1
+                                Next
+
+                                Array.Sort(needsArr, 0, needCount, ColNeedComparer.Instance)
+
+                            End If
+
+                            For col As Integer = 0 To nCols - 1
+
+                                Dim v As Integer
+                                If Not tok.TryReadInt(v) Then Throw New EndOfStreamException($"{progressPrefix}: Unerwartetes Dateiende in {tile.EntryName} bei row={row}, col={col}.")
+
+                                If needCount > 0 Then
+
+                                    'Alle NeedCol-Einträge für diese Spalte abarbeiten
+                                    While needPtr < needCount AndAlso needsArr(needPtr).Col = col
+
+                                        Dim reqIndex As Integer = needsArr(needPtr).ReqIndex
+
+                                        'NODATA -> ungültig
+                                        If Not (noData.HasValue AndAlso v = noData.Value) Then
+                                            If needsArr(needPtr).IsCol0 Then
+                                                sample0(reqIndex) = v
+                                                has0(reqIndex) = 1
+                                            Else
+                                                sample1(reqIndex) = v
+                                                has1(reqIndex) = 1
+                                            End If
+                                        End If
+
+                                        needPtr += 1
+                                    End While
+                                End If
                             Next
 
-                            needs.Sort(Function(a, b) a.Col.CompareTo(b.Col))
+                            'Nach Col-Scan: Requests finalisieren, bei denen wir mindestens 1 Sample haben
+                            If count > 0 Then
 
-                        End If
+                                For i As Integer = 0 To count - 1
 
-                        Dim needPtr As Integer = 0
-                        Dim needCount As Integer = If(needs Is Nothing, 0, needs.Count)
+                                    Dim r As BilinearRequestPacked = reqs(start + i)
 
-                        For col As Integer = 0 To nCols - 1
+                                    Dim v0Valid As Boolean = (has0(i) <> 0)
+                                    Dim v1Valid As Boolean = (has1(i) <> 0)
 
-                            Dim v As Integer
-                            If Not tok.TryReadInt(v) Then Throw New EndOfStreamException($"{progressPrefix}: Unerwartetes Dateiende in {tile.EntryName} bei row={row}, col={col}.")
+                                    'X-Interpolation (innerhalb der Row)
+                                    Dim rowLerp As Single = LerpRobust(
+                                        If(v0Valid, CSng(sample0(i)), Single.NaN),
+                                        If(v1Valid, CSng(sample1(i)), Single.NaN),
+                                        r.Wx)
 
-                            If needCount > 0 Then
+                                    'Wenn beide ungültig -> kein Beitrag aus dieser Row
+                                    If Single.IsNaN(rowLerp) Then Continue For
 
-                                'Alle NeedCol-Einträge für diese Spalte abarbeiten
-                                While needPtr < needCount AndAlso needs(needPtr).Col = col
+                                    Dim ti As Integer = r.TargetIndex
 
-                                    Dim reqIndex As Integer = needs(needPtr).ReqIndex
+                                    'Erstkontakt? -> merken, damit wir am Ende zurücksetzen können
+                                    'Wir fügen ti in touched ein, sobald wir irgendeinen Part setzen.
+                                    'Damit landet jeder ti zwar evtl. doppelt, aber wir vermeiden teure "Contains".
+                                    'Dopllete sind okay, Reset bleibt korrekt (setzt einfach zweimal)
 
-                                    'NODATA -> ungültig
-                                    If noData.HasValue AndAlso v = noData.Value Then
-                                        'nicht setzen
-                                    Else
-                                        If needs(needPtr).IsCol0 Then
-                                            sample0(reqIndex) = v
-                                            has0(reqIndex) = 1
-                                        Else
-                                            sample1(reqIndex) = v
-                                            has1(reqIndex) = 1
+                                    If r.Part = 0 Then              'Row0
+                                        row0Buf(ti) = rowLerp
+                                        If row0Set(ti) = 0 Then
+                                            row0Set(ti) = 1
+                                            touched.Add(ti)
                                         End If
+                                    Else                            'Row1
+                                        row1Buf(ti) = rowLerp
+                                        If row1Set(ti) = 0 Then
+                                            row1Set(ti) = 1
+                                            touched.Add(ti)
+                                        End If
+
                                     End If
 
-                                    needPtr += 1
-                                End While
+                                    'Wenn wir beide Parts haben -> Y-Interpolation und final schreiben
+                                    If row0Set(ti) <> 0 AndAlso row1Set(ti) <> 0 Then
+
+                                        heightOut(ti) = LerpRobust(row0Buf(ti), row1Buf(ti), r.Wy)
+
+                                        'Optional: direkt freigeben, damit ein späteres "zufälliges" Doppeltreffen nicht stört und um touched-Reset kleiner zu halten
+                                        row0Set(ti) = 0
+                                        row1Set(ti) = 0
+
+                                    End If
+
+                                Next
+                            End If
+
+                            'Progress
+                            If (row Mod ProgressThrottleRowInterval) = 0 Then
+                                Dim pct As Integer = CInt((row / Math.Max(1.0, nRows - 1)) * 100.0)
+                                progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Row {row:N0}/{nRows:N0}", pct))
                             End If
                         Next
 
-                        'Nach Col-Scan: Requests finalisieren, bei denen wir mindestens 1 Sample haben
-                        If wantCount > 0 Then
+                        sw.Stop()
+                        Dim alloc1 As Long = GC.GetAllocatedBytesForCurrentThread()
+                        Debug.WriteLine($"[ALLOC] {Path.GetFileName(tile.EntryName)} alloc={(alloc1 - alloc0) / (1024.0 * 1024.0):0.0} MB time={sw.Elapsed}")
 
-                            For i As Integer = 0 To wantCount - 1
-
-                                Dim r As GebcoBilinearRequestBuilder.BilinearRequest = want(i)
-
-                                Dim v0Valid As Boolean = (has0(i) <> 0)
-                                Dim v1Valid As Boolean = (has1(i) <> 0)
-
-                                'X-Interpolation (innerhalb der Row)
-                                Dim rowLerp As Single = LerpRobust(
-                                    If(v0Valid, CSng(sample0(i)), Single.NaN),
-                                    If(v1Valid, CSng(sample1(i)), Single.NaN), r.Wx)
-
-                                'Wenn beide ungültig -> kein Beitrag aus dieser Row
-                                If Single.IsNaN(rowLerp) Then Continue For
-
-                                Dim ti As Integer = r.TargetIndex
-
-                                'Erstkontakt? -> merken, damit wir am Ende zurücksetzen können
-                                'Wir fügen ti in touched ein, sobald wir irgendeinen Part setzen.
-                                'Damit landet jeder ti zwar evtl. doppelt, aber wir vermeiden teure "Contains".
-                                'Dopllete sind okay, Reset bleibt korrekt (setzt einfach zweimal)
-                                If r.Part = GebcoBilinearRequestBuilder.RowPart.Row0 Then
-
-                                    row0Buf(ti) = rowLerp
-                                    If row0Set(ti) = 0 Then
-                                        row0Set(ti) = 1
-                                        touched.Add(ti)
-                                    End If
-
-                                Else    'Row1
-
-                                    row1Buf(ti) = rowLerp
-                                    If row1Set(ti) = 0 Then
-                                        row1Set(ti) = 1
-                                        touched.Add(ti)
-                                    End If
-
-                                End If
-
-                                'Wenn wir beide Parts haben -> Y-Interpolation und final schreiben
-                                If row0Set(ti) <> 0 AndAlso row1Set(ti) <> 0 Then
-
-                                    Dim outVal As Single = LerpRobust(row0Buf(ti), row1Buf(ti), r.Wy)
-                                    heightOut(ti) = outVal
-
-                                    'Optional: direkt freigeben, damit ein späteres "zufälliges" Doppeltreffen nicht stört und um touched-Reset kleiner zu halten
-                                    row0Set(ti) = 0
-                                    row1Set(ti) = 0
-
-                                End If
-
-                            Next
-                        End If
-
-                        'Progress
-                        If (row Mod ProgressThrottleRowInterval) = 0 Then
-                            Dim pct As Integer = CInt((row / Math.Max(1.0, nRows - 1)) * 100.0)
-                            progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Row {row:N0}/{nRows:N0}", pct))
-                        End If
-                    Next
-
+                    End Using
                 End Using
             End Using
-        End Using
+
+        Finally
+            If needsArr IsNot Nothing Then poolNeed.Return(needsArr, clearArray:=False)
+            If sample0 IsNot Nothing Then poolI.Return(sample0, clearArray:=False)
+            If sample1 IsNot Nothing Then poolI.Return(sample1, clearArray:=False)
+            If has0 IsNot Nothing Then poolB.Return(has0, clearArray:=True)
+            If has1 IsNot Nothing Then poolB.Return(has1, clearArray:=True)
+        End Try
 
         'Am Ende: alles aufräumen, was noch halb-fertig ist
         'Falls ein TargetIndex nur Row0 ODER nur Row1 bekommen hat, bleibt er sonst "gesetzt" und könnte im nächsten Tile fälschlich finalisieren
@@ -321,7 +371,7 @@ Public NotInheritable Class GebcoTileProcessor
     ''' </summary>
     Public Shared Sub ProcessTidTile(zipPath As String,
                                      tile As GebcoTileInfo,
-                                     requests As GebcoNearestRequestBuilder.TileRowRequests,
+                                     requests As TileRequests(Of NearestRequestPacked),
                                      tidOut As Byte(),
                                      progress As IProgress(Of ProgressInfo),
                                      ct As CancellationToken,
@@ -355,15 +405,22 @@ Public NotInheritable Class GebcoTileProcessor
                     Dim nRows As Integer = header.NRows
                     Dim nCols As Integer = header.NCols
 
+                    Dim idx As TileRowIndex = requests.Index
+                    Dim reqs As NearestRequestPacked() = requests.Requests
+
                     For row As Integer = 0 To nRows - 1
 
                         ct.ThrowIfCancellationRequested()
 
-                        Dim want As List(Of GebcoNearestRequestBuilder.NearestRequest) = Nothing
-                        requests.Rows.TryGetValue(row, want)
+                        Dim start As Integer = -1
+                        Dim count As Integer = 0
+
+                        If idx.RowStart IsNot Nothing AndAlso row < idx.RowStart.Length Then
+                            start = idx.RowStart(row)
+                            count = idx.RowCount(row)
+                        End If
 
                         Dim wantPtr As Integer = 0
-                        Dim wantCount As Integer = If(want Is Nothing, 0, want.Count)
 
                         For col As Integer = 0 To nCols - 1
 
@@ -372,21 +429,13 @@ Public NotInheritable Class GebcoTileProcessor
                                 Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei row={row}, col={col}")
                             End If
 
-                            If wantCount > 0 AndAlso wantPtr < wantCount AndAlso col = want(wantPtr).ColInTile Then
+                            If count > 0 Then
+                                While wantPtr < count AndAlso CInt(reqs(start + wantPtr).Col) = col
 
-                                'NODATA -> UnknownTid
-                                Dim outVal As Byte = b
-                                If noDataByte.HasValue AndAlso b = noDataByte.Value Then
-                                    outVal = UnknownTid
-                                End If
+                                    Dim outVal As Byte = b
+                                    If noDataByte.HasValue AndAlso b = noDataByte.Value Then outVal = UnknownTid
 
-                                Dim ti As Integer = want(wantPtr).TargetIndex
-                                tidOut(ti) = outVal
-
-                                wantPtr += 1
-
-                                While wantPtr < wantCount AndAlso want(wantPtr).ColInTile = col
-                                    ti = want(wantPtr).TargetIndex
+                                    Dim ti As Integer = reqs(start + wantPtr).TargetIndex
                                     tidOut(ti) = outVal
 
                                     wantPtr += 1
