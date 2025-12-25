@@ -59,61 +59,62 @@ Public NotInheritable Class GebcoTileProcessor
                     Dim noData As Integer? = Nothing
                     If header.NoDataValue.HasValue Then noData = CInt(header.NoDataValue.Value)
 
-                    Dim tok As New AsciiIntTokenizer(sr, firstLine)
+                    Using tok As New AsciiIntTokenizer(sr, firstLine)
 
-                    Dim nRows As Integer = header.NRows
-                    Dim nCols As Integer = header.NCols
+                        Dim nRows As Integer = header.NRows
+                        Dim nCols As Integer = header.NCols
 
-                    Dim idx As TileRowIndex = requests.Index
-                    Dim reqs As NearestRequestPacked() = requests.Requests
+                        Dim idx As TileRowIndex = requests.Index
+                        Dim reqs As NearestRequestPacked() = requests.Requests
 
-                    'Row 0 = nördlichste Row im ASCII Grid
-                    For row As Integer = 0 To nRows - 1
+                        'Row 0 = nördlichste Row im ASCII Grid
+                        For row As Integer = 0 To nRows - 1
 
-                        ct.ThrowIfCancellationRequested()
+                            ct.ThrowIfCancellationRequested()
 
-                        Dim start As Integer = -1
-                        Dim count As Integer = 0
+                            Dim start As Integer = -1
+                            Dim count As Integer = 0
 
-                        If idx.RowStart IsNot Nothing AndAlso row < idx.RowStart.Length Then
-                            start = idx.RowStart(row)
-                            count = idx.RowCount(row)
-                        End If
-
-                        Dim wantPtr As Integer = 0
-
-                        For col As Integer = 0 To nCols - 1
-
-                            Dim v As Integer
-                            If Not tok.TryReadInt(v) Then
-                                Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei row={row}, col={col}")
+                            If idx.RowStart IsNot Nothing AndAlso row < idx.RowStart.Length Then
+                                start = idx.RowStart(row)
+                                count = idx.RowCount(row)
                             End If
 
-                            If count > 0 Then
+                            Dim wantPtr As Integer = 0
 
-                                'Pointer-Scan innerhalb des RowSegments (Requests sind nach Col sortiert)
-                                While wantPtr < count AndAlso CInt(reqs(start + wantPtr).Col) = col
+                            For col As Integer = 0 To nCols - 1
 
-                                    Dim ti As Integer = reqs(start + wantPtr).TargetIndex
-                                    If noData.HasValue AndAlso v = noData.Value Then
-                                        heightOut(ti) = Single.NaN
-                                    Else
-                                        heightOut(ti) = CSng(v)
-                                    End If
+                                Dim v As Integer
+                                If Not tok.TryReadInt(v) Then
+                                    Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei row={row}, col={col}")
+                                End If
 
-                                    wantPtr += 1
-                                End While
+                                If count > 0 Then
 
+                                    'Pointer-Scan innerhalb des RowSegments (Requests sind nach Col sortiert)
+                                    While wantPtr < count AndAlso CInt(reqs(start + wantPtr).Col) = col
+
+                                        Dim ti As Integer = reqs(start + wantPtr).TargetIndex
+                                        If noData.HasValue AndAlso v = noData.Value Then
+                                            heightOut(ti) = Single.NaN
+                                        Else
+                                            heightOut(ti) = CSng(v)
+                                        End If
+
+                                        wantPtr += 1
+                                    End While
+
+                                End If
+                            Next
+
+                            'Progress-Throttling und Report
+                            If (row Mod ProgressThrottleRowInterval) = 0 Then
+                                Dim pct As Integer = CInt((row / Math.Max(1.0, nRows - 1)) * 100.0)
+                                progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Row {row:N0}/{nRows:N0}", pct))
                             End If
+
                         Next
-
-                        'Progress-Throttling und Report
-                        If (row Mod ProgressThrottleRowInterval) = 0 Then
-                            Dim pct As Integer = CInt((row / Math.Max(1.0, nRows - 1)) * 100.0)
-                            progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Row {row:N0}/{nRows:N0}", pct))
-                        End If
-
-                    Next
+                    End Using
                 End Using
             End Using
         End Using
@@ -150,11 +151,6 @@ Public NotInheritable Class GebcoTileProcessor
 
         ct.ThrowIfCancellationRequested()
 
-        'DEBUG:
-        Dim alloc0 As Long = GC.GetAllocatedBytesForCurrentThread()
-        Dim sw As Stopwatch = Stopwatch.StartNew()
-        'END DEBUG
-
         Dim idx As TileRowIndex = requests.Index
         Dim reqs As BilinearRequestPacked() = requests.Requests
 
@@ -182,165 +178,158 @@ Public NotInheritable Class GebcoTileProcessor
                         Dim noData As Integer? = Nothing
                         If header.NoDataValue.HasValue Then noData = CInt(header.NoDataValue.Value)
 
-                        Dim tok As New AsciiIntTokenizer(sr, firstLine)
+                        Using tok As New AsciiIntTokenizer(sr, firstLine)
 
-                        Dim nRows As Integer = header.NRows
-                        Dim nCols As Integer = header.NCols
+                            Dim nRows As Integer = header.NRows
+                            Dim nCols As Integer = header.NCols
 
-                        'Row 0 = nördlichste Row im ASCII Grid
-                        For row As Integer = 0 To nRows - 1
+                            'Row 0 = nördlichste Row im ASCII Grid
+                            For row As Integer = 0 To nRows - 1
 
-                            ct.ThrowIfCancellationRequested()
+                                ct.ThrowIfCancellationRequested()
 
-                            'Row-Segment holen
-                            Dim start As Integer = -1
-                            Dim count As Integer = 0
-                            If idx.RowStart IsNot Nothing AndAlso row < idx.RowStart.Length Then
-                                start = idx.RowStart(row)
-                                count = idx.RowCount(row)
-                            End If
-
-                            Dim needPtr As Integer = 0
-                            Dim needCount As Integer = 0
-
-                            If count > 0 Then
-
-                                '--- Needs: 2 pro Request ---
-                                Dim needReq As Integer = count * 2
-                                If needsArr Is Nothing OrElse needsCap < needReq Then
-                                    Dim oldCap = If(needsArr Is Nothing, 0, needsArr.Length)
-                                    If needsArr IsNot Nothing Then poolNeed.Return(needsArr, clearArray:=False)
-                                    needsArr = poolNeed.Rent(needReq)
-                                    needsCap = needsArr.Length
-
-                                    Debug.WriteLine($"[BILINEAR] {Path.GetFileName(tile.EntryName)} row={row} wantCount={count:N0} needReq={needReq:N0} NEEDS {oldCap:N0}->{needsCap:N0}")
+                                'Row-Segment holen
+                                Dim start As Integer = -1
+                                Dim count As Integer = 0
+                                If idx.RowStart IsNot Nothing AndAlso row < idx.RowStart.Length Then
+                                    start = idx.RowStart(row)
+                                    count = idx.RowCount(row)
                                 End If
 
-                                '--- Samples/Flags: 1 pro Request (index = i im RowSegment) ---
-                                If sample0 Is Nothing OrElse sampleCap < count Then
-                                    Dim oldCap = If(sample0 Is Nothing, 0, sample0.Length)
-                                    If sample0 IsNot Nothing Then poolI.Return(sample0, clearArray:=False)
-                                    If sample1 IsNot Nothing Then poolI.Return(sample1, clearArray:=False)
-                                    If has0 IsNot Nothing Then poolB.Return(has0, clearArray:=True)
-                                    If has1 IsNot Nothing Then poolB.Return(has1, clearArray:=True)
+                                Dim needPtr As Integer = 0
+                                Dim needCount As Integer = 0
 
-                                    sample0 = poolI.Rent(count)
-                                    sample1 = poolI.Rent(count)
-                                    has0 = poolB.Rent(count)
-                                    has1 = poolB.Rent(count)
-                                    sampleCap = count
-                                    Debug.WriteLine($"[BILINEAR] {Path.GetFileName(tile.EntryName)} row={row} wantCount={count:N0} SAMPLES {oldCap:N0}->{sampleCap:N0}")
+                                If count > 0 Then
+
+                                    '--- Needs: 2 pro Request ---
+                                    Dim needReq As Integer = count * 2
+                                    If needsArr Is Nothing OrElse needsCap < needReq Then
+                                        If needsArr IsNot Nothing Then poolNeed.Return(needsArr, clearArray:=False)
+                                        needsArr = poolNeed.Rent(needReq)
+                                        needsCap = needsArr.Length
+
+                                    End If
+
+                                    '--- Samples/Flags: 1 pro Request (index = i im RowSegment) ---
+                                    If sample0 Is Nothing OrElse sampleCap < count Then
+                                        If sample0 IsNot Nothing Then poolI.Return(sample0, clearArray:=False)
+                                        If sample1 IsNot Nothing Then poolI.Return(sample1, clearArray:=False)
+                                        If has0 IsNot Nothing Then poolB.Return(has0, clearArray:=True)
+                                        If has1 IsNot Nothing Then poolB.Return(has1, clearArray:=True)
+
+                                        sample0 = poolI.Rent(count)
+                                        sample1 = poolI.Rent(count)
+                                        has0 = poolB.Rent(count)
+                                        has1 = poolB.Rent(count)
+                                        sampleCap = count
+                                    End If
+
+                                    'Flags zurücksetzen (Samples brauchen wir nicht clearen)
+                                    Array.Clear(has0, 0, count)
+                                    Array.Clear(has1, 0, count)
+
+                                    'Needs füllen aus reqs(start..start+count)
+                                    For i As Integer = 0 To count - 1
+                                        Dim r As BilinearRequestPacked = reqs(start + i)
+                                        needsArr(needCount) = New ColNeed(r.Col0, i, True) : needCount += 1
+                                        needsArr(needCount) = New ColNeed(r.Col1, i, False) : needCount += 1
+                                    Next
+
+                                    Array.Sort(needsArr, 0, needCount, ColNeedComparer.Instance)
+
                                 End If
 
-                                'Flags zurücksetzen (Samples brauchen wir nicht clearen)
-                                Array.Clear(has0, 0, count)
-                                Array.Clear(has1, 0, count)
+                                For col As Integer = 0 To nCols - 1
 
-                                'Needs füllen aus reqs(start..start+count)
-                                For i As Integer = 0 To count - 1
-                                    Dim r As BilinearRequestPacked = reqs(start + i)
-                                    needsArr(needCount) = New ColNeed(r.Col0, i, True) : needCount += 1
-                                    needsArr(needCount) = New ColNeed(r.Col1, i, False) : needCount += 1
+                                    Dim v As Integer
+                                    If Not tok.TryReadInt(v) Then Throw New EndOfStreamException($"{progressPrefix}: Unerwartetes Dateiende in {tile.EntryName} bei row={row}, col={col}.")
+
+                                    If needCount > 0 Then
+
+                                        'Alle NeedCol-Einträge für diese Spalte abarbeiten
+                                        While needPtr < needCount AndAlso needsArr(needPtr).Col = col
+
+                                            Dim reqIndex As Integer = needsArr(needPtr).ReqIndex
+
+                                            'NODATA -> ungültig
+                                            If Not (noData.HasValue AndAlso v = noData.Value) Then
+                                                If needsArr(needPtr).IsCol0 Then
+                                                    sample0(reqIndex) = v
+                                                    has0(reqIndex) = 1
+                                                Else
+                                                    sample1(reqIndex) = v
+                                                    has1(reqIndex) = 1
+                                                End If
+                                            End If
+
+                                            needPtr += 1
+                                        End While
+                                    End If
                                 Next
 
-                                Array.Sort(needsArr, 0, needCount, ColNeedComparer.Instance)
+                                'Nach Col-Scan: Requests finalisieren, bei denen wir mindestens 1 Sample haben
+                                If count > 0 Then
 
-                            End If
+                                    For i As Integer = 0 To count - 1
 
-                            For col As Integer = 0 To nCols - 1
+                                        Dim r As BilinearRequestPacked = reqs(start + i)
 
-                                Dim v As Integer
-                                If Not tok.TryReadInt(v) Then Throw New EndOfStreamException($"{progressPrefix}: Unerwartetes Dateiende in {tile.EntryName} bei row={row}, col={col}.")
+                                        Dim v0Valid As Boolean = (has0(i) <> 0)
+                                        Dim v1Valid As Boolean = (has1(i) <> 0)
 
-                                If needCount > 0 Then
-
-                                    'Alle NeedCol-Einträge für diese Spalte abarbeiten
-                                    While needPtr < needCount AndAlso needsArr(needPtr).Col = col
-
-                                        Dim reqIndex As Integer = needsArr(needPtr).ReqIndex
-
-                                        'NODATA -> ungültig
-                                        If Not (noData.HasValue AndAlso v = noData.Value) Then
-                                            If needsArr(needPtr).IsCol0 Then
-                                                sample0(reqIndex) = v
-                                                has0(reqIndex) = 1
-                                            Else
-                                                sample1(reqIndex) = v
-                                                has1(reqIndex) = 1
-                                            End If
-                                        End If
-
-                                        needPtr += 1
-                                    End While
-                                End If
-                            Next
-
-                            'Nach Col-Scan: Requests finalisieren, bei denen wir mindestens 1 Sample haben
-                            If count > 0 Then
-
-                                For i As Integer = 0 To count - 1
-
-                                    Dim r As BilinearRequestPacked = reqs(start + i)
-
-                                    Dim v0Valid As Boolean = (has0(i) <> 0)
-                                    Dim v1Valid As Boolean = (has1(i) <> 0)
-
-                                    'X-Interpolation (innerhalb der Row)
-                                    Dim rowLerp As Single = LerpRobust(
+                                        'X-Interpolation (innerhalb der Row)
+                                        Dim rowLerp As Single = LerpRobust(
                                         If(v0Valid, CSng(sample0(i)), Single.NaN),
                                         If(v1Valid, CSng(sample1(i)), Single.NaN),
                                         r.Wx)
 
-                                    'Wenn beide ungültig -> kein Beitrag aus dieser Row
-                                    If Single.IsNaN(rowLerp) Then Continue For
+                                        'Wenn beide ungültig -> kein Beitrag aus dieser Row
+                                        If Single.IsNaN(rowLerp) Then Continue For
 
-                                    Dim ti As Integer = r.TargetIndex
+                                        Dim ti As Integer = r.TargetIndex
 
-                                    'Erstkontakt? -> merken, damit wir am Ende zurücksetzen können
-                                    'Wir fügen ti in touched ein, sobald wir irgendeinen Part setzen.
-                                    'Damit landet jeder ti zwar evtl. doppelt, aber wir vermeiden teure "Contains".
-                                    'Dopllete sind okay, Reset bleibt korrekt (setzt einfach zweimal)
+                                        'Erstkontakt? -> merken, damit wir am Ende zurücksetzen können
+                                        'Wir fügen ti in touched ein, sobald wir irgendeinen Part setzen.
+                                        'Damit landet jeder ti zwar evtl. doppelt, aber wir vermeiden teure "Contains".
+                                        'Dopllete sind okay, Reset bleibt korrekt (setzt einfach zweimal)
 
-                                    If r.Part = 0 Then              'Row0
-                                        row0Buf(ti) = rowLerp
-                                        If row0Set(ti) = 0 Then
-                                            row0Set(ti) = 1
-                                            touched.Add(ti)
+                                        If r.Part = 0 Then              'Row0
+                                            row0Buf(ti) = rowLerp
+                                            If row0Set(ti) = 0 Then
+                                                row0Set(ti) = 1
+                                                touched.Add(ti)
+                                            End If
+                                        Else                            'Row1
+                                            row1Buf(ti) = rowLerp
+                                            If row1Set(ti) = 0 Then
+                                                row1Set(ti) = 1
+                                                touched.Add(ti)
+                                            End If
+
                                         End If
-                                    Else                            'Row1
-                                        row1Buf(ti) = rowLerp
-                                        If row1Set(ti) = 0 Then
-                                            row1Set(ti) = 1
-                                            touched.Add(ti)
+
+                                        'Wenn wir beide Parts haben -> Y-Interpolation und final schreiben
+                                        If row0Set(ti) <> 0 AndAlso row1Set(ti) <> 0 Then
+
+                                            heightOut(ti) = LerpRobust(row0Buf(ti), row1Buf(ti), r.Wy)
+
+                                            'Optional: direkt freigeben, damit ein späteres "zufälliges" Doppeltreffen nicht stört und um touched-Reset kleiner zu halten
+                                            row0Set(ti) = 0
+                                            row1Set(ti) = 0
+
                                         End If
 
-                                    End If
+                                    Next
+                                End If
 
-                                    'Wenn wir beide Parts haben -> Y-Interpolation und final schreiben
-                                    If row0Set(ti) <> 0 AndAlso row1Set(ti) <> 0 Then
+                                'Progress
+                                If (row Mod ProgressThrottleRowInterval) = 0 Then
+                                    Dim pct As Integer = CInt((row / Math.Max(1.0, nRows - 1)) * 100.0)
+                                    progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Row {row:N0}/{nRows:N0}", pct))
+                                End If
+                            Next
 
-                                        heightOut(ti) = LerpRobust(row0Buf(ti), row1Buf(ti), r.Wy)
-
-                                        'Optional: direkt freigeben, damit ein späteres "zufälliges" Doppeltreffen nicht stört und um touched-Reset kleiner zu halten
-                                        row0Set(ti) = 0
-                                        row1Set(ti) = 0
-
-                                    End If
-
-                                Next
-                            End If
-
-                            'Progress
-                            If (row Mod ProgressThrottleRowInterval) = 0 Then
-                                Dim pct As Integer = CInt((row / Math.Max(1.0, nRows - 1)) * 100.0)
-                                progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Row {row:N0}/{nRows:N0}", pct))
-                            End If
-                        Next
-
-                        sw.Stop()
-                        Dim alloc1 As Long = GC.GetAllocatedBytesForCurrentThread()
-                        Debug.WriteLine($"[ALLOC] {Path.GetFileName(tile.EntryName)} alloc={(alloc1 - alloc0) / (1024.0 * 1024.0):0.0} MB time={sw.Elapsed}")
-
+                        End Using
                     End Using
                 End Using
             End Using
@@ -400,59 +389,59 @@ Public NotInheritable Class GebcoTileProcessor
                         End If
                     End If
 
-                    Dim tok As New AsciiIntTokenizer(sr, firstLine)
+                    Using tok As New AsciiIntTokenizer(sr, firstLine)
 
-                    Dim nRows As Integer = header.NRows
-                    Dim nCols As Integer = header.NCols
+                        Dim nRows As Integer = header.NRows
+                        Dim nCols As Integer = header.NCols
 
-                    Dim idx As TileRowIndex = requests.Index
-                    Dim reqs As NearestRequestPacked() = requests.Requests
+                        Dim idx As TileRowIndex = requests.Index
+                        Dim reqs As NearestRequestPacked() = requests.Requests
 
-                    For row As Integer = 0 To nRows - 1
+                        For row As Integer = 0 To nRows - 1
 
-                        ct.ThrowIfCancellationRequested()
+                            ct.ThrowIfCancellationRequested()
 
-                        Dim start As Integer = -1
-                        Dim count As Integer = 0
+                            Dim start As Integer = -1
+                            Dim count As Integer = 0
 
-                        If idx.RowStart IsNot Nothing AndAlso row < idx.RowStart.Length Then
-                            start = idx.RowStart(row)
-                            count = idx.RowCount(row)
-                        End If
-
-                        Dim wantPtr As Integer = 0
-
-                        For col As Integer = 0 To nCols - 1
-
-                            Dim b As Byte
-                            If Not tok.TryReadByte(b) Then
-                                Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei row={row}, col={col}")
+                            If idx.RowStart IsNot Nothing AndAlso row < idx.RowStart.Length Then
+                                start = idx.RowStart(row)
+                                count = idx.RowCount(row)
                             End If
 
-                            If count > 0 Then
-                                While wantPtr < count AndAlso CInt(reqs(start + wantPtr).Col) = col
+                            Dim wantPtr As Integer = 0
 
-                                    Dim outVal As Byte = b
-                                    If noDataByte.HasValue AndAlso b = noDataByte.Value Then outVal = UnknownTid
+                            For col As Integer = 0 To nCols - 1
 
-                                    Dim ti As Integer = reqs(start + wantPtr).TargetIndex
-                                    tidOut(ti) = outVal
+                                Dim b As Byte
+                                If Not tok.TryReadByte(b) Then
+                                    Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei row={row}, col={col}")
+                                End If
 
-                                    wantPtr += 1
-                                End While
+                                If count > 0 Then
+                                    While wantPtr < count AndAlso CInt(reqs(start + wantPtr).Col) = col
+
+                                        Dim outVal As Byte = b
+                                        If noDataByte.HasValue AndAlso b = noDataByte.Value Then outVal = UnknownTid
+
+                                        Dim ti As Integer = reqs(start + wantPtr).TargetIndex
+                                        tidOut(ti) = outVal
+
+                                        wantPtr += 1
+                                    End While
+                                End If
+                            Next
+
+                            'Progress-Throttling und reporten
+                            If (row Mod ProgressThrottleRowInterval) = 0 Then
+                                Dim pct As Integer = CInt((row / Math.Max(1.0, nRows - 1.0)) * 100.0)
+                                progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Row {row:N0}/{nRows:N0}", pct))
+
                             End If
                         Next
 
-                        'Progress-Throttling und reporten
-                        If (row Mod ProgressThrottleRowInterval) = 0 Then
-                            Dim pct As Integer = CInt((row / Math.Max(1.0, nRows - 1.0)) * 100.0)
-                            progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Row {row:N0}/{nRows:N0}", pct))
-
-                        End If
-                    Next
-
-                    progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Done", 100))
-
+                        progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Done", 100))
+                    End Using
                 End Using
             End Using
         End Using

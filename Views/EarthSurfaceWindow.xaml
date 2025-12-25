@@ -421,7 +421,12 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBox Grid.Column="0"
                                      Text="{Binding RawHeightFile, UpdateSourceTrigger=PropertyChanged}"
-                                     VerticalContentAlignment="Center" Margin="0,0,8,0" IsReadOnly="True"/>
+                                     VerticalContentAlignment="Center" Margin="0,0,8,0" IsReadOnly="True"
+                                         ToolTip="Entfernen mit [Entf] oder [Backspace]">
+                                    <i:Interaction.Behaviors>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearHeightFileCommand}"/>
+                                    </i:Interaction.Behaviors>
+                                </TextBox>
                                 <Button Grid.Column="1" Content="..." Width="34" Command="{Binding BrowseHeightCommand}"/>
                             </Grid>
                             <TextBlock Text="TID (optional)" Opacity="0.8"/>
@@ -433,7 +438,12 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBox Grid.Column="0"
                                      Text="{Binding RawTidFile, UpdateSourceTrigger=PropertyChanged}"
-                                     VerticalContentAlignment="Center" Margin="0,0,8,0" IsReadOnly="True"/>
+                                     VerticalContentAlignment="Center" Margin="0,0,8,0" IsReadOnly="True"
+                                         ToolTip="Entfernen mit [Entf] oder [Backspace]">
+                                    <i:Interaction.Behaviors>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearTidFileCommand}"/>
+                                    </i:Interaction.Behaviors>
+                                </TextBox>
                                 <Button Grid.Column="1" Content="..." Width="34" Command="{Binding BrowseTidCommand}"/>
                             </Grid>
 
@@ -442,7 +452,8 @@
                                 <RadioButton Content="Aus Höhe ableiten (LandMask-Builder)"
                                          IsChecked="{Binding SelectedLandMaskMode, Converter={StaticResource EnumToBool}, ConverterParameter=FromHeight}"/>
                                 <RadioButton Content="Aus TID auslesen"
-                                         IsChecked="{Binding SelectedLandMaskMode, Converter={StaticResource EnumToBool}, ConverterParameter=FromTid0}"/>
+                                         IsChecked="{Binding SelectedLandMaskMode, Converter={StaticResource EnumToBool}, ConverterParameter=FromTid0}"
+                                             IsEnabled="{Binding HasTidFile}"/>
                                 <RadioButton Content="Aus externer LandMask-Datei (nicht implementiert)"
                                          IsChecked="{Binding SelectedLandMaskMode, Converter={StaticResource EnumToBool}, ConverterParameter=ExternalSource}"/>
                             </StackPanel>

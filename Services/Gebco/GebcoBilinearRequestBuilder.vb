@@ -66,7 +66,6 @@ Public NotInheritable Class GebcoBilinearRequestBuilder
     'GEBCO Tiles: 90x90 Grad bei 15" -> 21600 Zellen
     Private Const TileSize As Integer = 21600
 
-
     Public Shared Function BuildRequests(tiles As List(Of GebcoTileInfo),
                                          targetCellDeg As Double,
                                          targetLatCount As Integer,
@@ -182,32 +181,6 @@ Public NotInheritable Class GebcoBilinearRequestBuilder
             writePtrPerTile(t) = writePtrArr
 
             If acc > 0 Then tilesWithReq += 1
-        Next
-
-        '--- DEBUG: Hot Rows finden (max Requests pro Row pro Tile) ---
-        For t As Integer = 0 To tileCount - 1
-
-            Dim rowCountArr As Integer() = rowCountsPerTile(t)
-
-            Dim maxRow As Integer = -1
-            Dim maxCount As Integer = 0
-            Dim nonEmptyRows As Integer = 0
-
-            For r As Integer = 0 To TileSize - 1
-                Dim c As Integer = rowCountArr(r)
-                If c > 0 Then
-                    nonEmptyRows += 1
-                    If c > maxCount Then
-                        maxCount = c
-                        maxRow = r
-                    End If
-                End If
-            Next
-
-            'Nur loggen, wenn Tile überhaupt Requests hat
-            If maxCount > 0 Then
-                Debug.WriteLine($"[REQSTATS] tile={t} nonEmptyRows={nonEmptyRows:N0} maxRow={maxRow} maxCount={maxCount:N0} total={totalPerTile(t):N0}")
-            End If
         Next
 
         If tilesWithReq = 0 Then

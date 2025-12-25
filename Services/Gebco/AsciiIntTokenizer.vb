@@ -1,104 +1,228 @@
-﻿
-Imports System.Globalization
+﻿Imports System.Buffers
 Imports System.IO
-Imports System.Reflection.Metadata
 
-''' <summary>
-''' Streaming-Tokenizer für ESRI-ASCII Grid-Daten.
-''' - arbeitet nur vorwärts (kein Seek nötig)
-''' - kann mit einer gepufferten firstDataLine starten
-''' - liefert Integer-Werte
-''' -akzeptiert Tokens wie "11.0" / "11.000" als Integer 11
-''' </summary>
 Public NotInheritable Class AsciiIntTokenizer
+    Implements IDisposable
 
     Private ReadOnly _sr As StreamReader
+    Private ReadOnly _pool As ArrayPool(Of Char) = ArrayPool(Of Char).Shared
 
-    Private _line As String
+    'Buffer für StreamReader
+    Private _buf As Char()
     Private _pos As Integer
+    Private _len As Integer
 
-    Private ReadOnly _ci As CultureInfo = CultureInfo.InvariantCulture
+    'Optional: firstDataLine, die schon als String existiert
+    Private _first As String
+    Private _firstPos As Integer
+    Private _usingFirst As Boolean
 
-    Public Sub New(sr As StreamReader, Optional firstDataLine As String = Nothing)
+    Private _disposed As Boolean
+    Private Const DefaultBufferSize As Integer = 64 * 1024
+
+    Public Sub New(sr As StreamReader, Optional firstDataLine As String = Nothing, Optional bufferSize As Integer = DefaultBufferSize)
+
+        ArgumentNullException.ThrowIfNull(sr)
+        If bufferSize < 4096 Then bufferSize = DefaultBufferSize
 
         _sr = sr
+        _buf = _pool.Rent(bufferSize)
 
-        _line = firstDataLine
-        _pos = 0
+        If Not String.IsNullOrEmpty(firstDataLine) Then
+            _first = firstDataLine
+            If _first.Length = 0 OrElse (_first(_first.Length - 1) <> ControlChars.Lf) Then
+                _first &= ControlChars.Lf
+            End If
 
+            _firstPos = 0
+            _usingFirst = True
+        End If
     End Sub
 
-    ''' <summary>
-    ''' Liest den nächsten Integer-Wert. Gibt False zurück bei EOF (keine weiteren Tokens).
-    ''' Wirft InvalidDataException bei nicht unterstützten Tokens (z.B. "11.5")
-    ''' </summary>
+
+    Private Sub Dispose(disposing As Boolean)
+        _disposed = disposing
+        If _disposed Then Return
+        _disposed = True
+
+        Dim tmp = _buf
+        _buf = Nothing
+        If tmp IsNot Nothing Then
+            _pool.Return(tmp, clearArray:=False)
+        End If
+
+        _first = Nothing
+        _len = 0
+        _pos = 0
+    End Sub
+
+    Public Sub Dispose() Implements IDisposable.Dispose
+        ' Ändern Sie diesen Code nicht. Fügen Sie Bereinigungscode in der Methode "Dispose(disposing As Boolean)" ein.
+        Dispose(disposing:=True)
+        GC.SuppressFinalize(Me)
+    End Sub
+
+
+
     Public Function TryReadInt(ByRef value As Integer) As Boolean
         value = 0
 
-        Dim token As String = Nothing
-        If Not TryReadToken(token) Then
-            Return False
-        End If
+        If Not SkipWs() Then Return False
 
-        value = ParseIntToken(token)
+        Dim ch As Char
 
-        Return True
+        Dim neg As Boolean = False
+        Dim hasSign As Boolean = False
 
-    End Function
-
-    ''' <summary>
-    ''' Optional: für TID praktisch. Liest Integer und validiert Byte-Range
-    ''' </summary>
-    Public Function TryReadByte(ByRef value As Byte) As Boolean
-
-        value = 0
-        Dim i As Integer
-        If Not TryReadInt(i) Then Return False
-
-        If i < Byte.MinValue OrElse i > Byte.MaxValue Then
-            Throw New InvalidDataException($"TID außerhalb Byte-Bereich: {i}")
-        End If
-
-        value = CByte(i)
-
-        Return True
-
-    End Function
-
-#Region "Token reading"
-
-    Private Function TryReadToken(ByRef token As String) As Boolean
-
-        token = Nothing
+        Dim acc As Integer = 0
+        Dim hasDigit As Boolean = False
+        Dim seenDot As Boolean = False
 
         While True
 
-            If _line Is Nothing Then
-                If _sr.EndOfStream Then Return False
-                _line = _sr.ReadLine()
-                _pos = 0
-                If _line Is Nothing Then Return False
+            If Not PeekChar(ch) Then
+                Exit While 'EOF beendet Token
             End If
 
-            'Skip whitepsace
-            While _pos < _line.Length AndAlso Char.IsWhiteSpace(_line(_pos))
-                _pos += 1
-            End While
+            If IsWs(ch) Then
+                Exit While 'Token endet an Whitespace
+            End If
 
-            'Wenn Zeile leer/zu Ende -> nächste Zeile
-            If _pos >= _line.Length Then
-                _line = Nothing
+            'Exponent explizit verbieten
+            If ch = "e"c OrElse ch = "E"c Then
+                Throw New InvalidDataException("Nicht unterstütztes Zahlenformat (Exponent) im ASCII Grid.")
+            End If
+
+            'Vorzeichen nur am Anfang erlauben (bevor Digit oder Dot gelesen wurde)
+            If (ch = "-"c OrElse ch = "+"c) AndAlso Not hasDigit AndAlso Not seenDot AndAlso Not hasSign Then
+                hasSign = True
+                If Not ReadChar(ch) Then Return False
+                neg = (ch = "-"c)
                 Continue While
             End If
 
-            'Token bis zum nächsten Whitespace
-            Dim start As Integer = _pos
-            While _pos < _line.Length AndAlso Not Char.IsWhiteSpace(_line(_pos))
-                _pos += 1
-            End While
+            If ch = "."c Then
+                If seenDot Then
+                    Throw New InvalidDataException("Ungültiges Zahlenformat: mehrfacher Dezimalpunkt.")
+                End If
 
-            token = _line.Substring(start, _pos - start)
-            Return True
+                seenDot = True
+                If Not ReadChar(ch) Then Return False
+                Continue While
+            End If
+
+            Dim d As Integer = AscW(ch) - AscW("0"c)
+            If d < 0 OrElse d > 9 Then
+                Throw New InvalidDataException($"ungültiges Zeichen im Zahlen-Token: '{ch}'")
+            End If
+
+            'consume digit
+            If Not ReadChar(ch) Then Return False
+            hasDigit = True
+
+            If Not seenDot Then
+                'Overflow-robust
+                If acc > (Integer.MaxValue - d) \ 10 Then
+                    Throw New InvalidDataException("Integer overflow im ASCII Grid Token.")
+                End If
+                acc = acc * 10 + d
+            Else
+                'Nach Dezimalpunkt dürfen nur Nullen kommen
+                If d <> 0 Then
+                    Throw New InvalidDataException("Nicht-integer Dezimalwert im ASCII Grid (z.B. 11.5).")
+                End If
+            End If
+
+        End While
+
+        'Token ohne Ziffern ist ungültig (z.B. nur "+" oder "-" oder ".")
+        If Not hasDigit Then
+            Throw New InvalidDataException("Ungültiges Zahlen-Token (keine Ziffern).")
+        End If
+
+        value = If(neg, -acc, acc)
+        Return True
+    End Function
+
+    Public Function TryReadByte(ByRef value As Byte) As Boolean
+
+        Dim i As Integer
+
+        If Not TryReadInt(i) Then
+            value = 0
+            Return False
+        End If
+
+        If i < Byte.MinValue OrElse i > Byte.MaxValue Then
+            Throw New InvalidDataException($"TID außerhalb Byte-Bereich: {i}.")
+        End If
+
+        value = CByte(i)
+        Return True
+    End Function
+
+
+#Region "Helper"
+
+    Private Function Refill() As Boolean
+        _pos = 0
+        _len = _sr.Read(_buf, 0, _buf.Length)
+        Return _len > 0
+    End Function
+
+    Private Function PeekChar(ByRef ch As Char) As Boolean
+
+        If _usingFirst Then
+            If _firstPos < _first.Length Then
+                ch = _first(_firstPos)
+                Return True
+            Else
+                _usingFirst = False
+            End If
+        End If
+
+        If _pos >= _len Then
+            If Not Refill() Then Return False
+        End If
+
+        ch = _buf(_pos)
+        Return True
+    End Function
+
+    Private Function ReadChar(ByRef ch As Char) As Boolean
+
+        If _usingFirst Then
+            If _firstPos < _first.Length Then
+                ch = _first(_firstPos)
+                _firstPos += 1
+                Return True
+            Else
+                _usingFirst = False
+            End If
+        End If
+
+        If _pos >= _len Then
+            If Not Refill() Then Return False
+        End If
+
+        ch = _buf(_pos)
+        _pos += 1
+        Return True
+    End Function
+
+    Private Shared Function IsWs(ch As Char) As Boolean
+        Return Char.IsWhiteSpace(ch)
+    End Function
+
+    Private Function SkipWs() As Boolean
+        Dim ch As Char
+        While True
+            If Not PeekChar(ch) Then Return False
+            If Not IsWs(ch) Then Return True
+            'consume
+            If Not ReadChar(ch) Then
+                Return False
+            End If
         End While
 
         Return False
@@ -106,55 +230,4 @@ Public NotInheritable Class AsciiIntTokenizer
 
 #End Region
 
-#Region "Parsing"
-
-    Private Function ParseIntToken(token As String) As Integer
-
-        If String.IsNullOrWhiteSpace(token) Then
-            Throw New InvalidDataException("Leeres Token im ASCII Grid")
-        End If
-
-        token = token.Trim()
-
-        'Exponent? -> nicht erwartet im ESRI ASCII (und wir wollen das nicht stillschweigend unterstützen)
-        If token.Contains("e"c) OrElse token.Contains("E"c) Then
-            Throw New InvalidDataException($"Nicht unterstütztes Zahlenformat (Exponent): '{token}'")
-        End If
-
-        Dim dotIdx As Integer = token.IndexOf("."c)
-        If dotIdx < 0 Then
-            'reines Integer
-            Dim i As Integer
-            If Not Integer.TryParse(token, NumberStyles.Integer, _ci, i) Then
-                Throw New InvalidDataException($"Ungültiger Integer im ASCII Grid: '{token}'")
-            End If
-
-            Return i
-
-        End If
-
-        'hat Dezimalpunkt -> nur zulassen, wenn danach ausschließlich Nullen kommen
-        Dim intPart As String = token.Substring(0, dotIdx)
-        Dim fracPart As String = token.Substring(dotIdx + 1)
-
-        If fracPart.Length = 0 Then
-            '"11." -> behandlen wie 11
-            fracPart = "0"
-        End If
-
-        For Each ch As Char In fracPart
-            If ch <> "0"c Then
-                Throw New InvalidDataException($"Nicht-integer Dezimalwert im ASCII Grid: '{token}'")
-            End If
-        Next
-
-        Dim baseInt As Integer
-        If Not Integer.TryParse(intPart, NumberStyles.Integer, _ci, baseInt) Then
-            Throw New InvalidDataException($"Ungültiger Integer-Anteil im ASCII Grid: '{token}'")
-        End If
-
-        Return baseInt
-    End Function
-
-#End Region
 End Class

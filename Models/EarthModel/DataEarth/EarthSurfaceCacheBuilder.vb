@@ -131,7 +131,6 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         Dim saveStart As Integer = metaEnd
         Dim saveEnd As Integer = 100
 
-        LogMem("before BuildRequests")
         '---------------------
         'E) Requests erstellen
         '---------------------
@@ -142,10 +141,10 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         Dim reqNearestByTile As List(Of TileRequests(Of NearestRequestPacked)) = Nothing
 
         If hasTid OrElse resampling = "nearest" Then
-            pReq.Report(New ProgressInfo("Baue Nearest-Mapping...", 0))
+            pReq.Report(New ProgressInfo("Baue Nearest-Mapping...", ProgressInfo.Indeterminate))
             reqNearestByTile = GebcoNearestRequestBuilder.BuildRequests(heightTiles, opts.CellSizeDeg, latCount, lonCount)
         Else
-            pReq.Report(New ProgressInfo("Baue Bilinear-Mapping...", 0))
+            pReq.Report(New ProgressInfo("Baue Bilinear-Mapping...", ProgressInfo.Indeterminate))
         End If
 
         'Height-Requests je nach Resampling
@@ -157,7 +156,6 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
 
         ct.ThrowIfCancellationRequested()
 
-        LogMem("after BuildRequests")
         '------------------------
         'F) Height Tiles streamen
         '------------------------
@@ -211,7 +209,6 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
                 row0Set = poolB.Rent(n)
                 row1Set = poolB.Rent(n)
 
-                LogMem("after Rent scratch")
                 'WICHTIG: Flags müssen 0 sein (nur [0..n] clearen)
                 Array.Clear(row0Set, 0, n)
                 Array.Clear(row1Set, 0, n)
@@ -235,8 +232,6 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
                         touched,
                         pTile, ct, progressPrefix:=$"HEIGHT {t + 1}/{tileCount}")
 
-                    'DEBUG:
-                    If (t Mod 2) = 0 Then LogMem($"after tile {t + 1}")
                 Next
             Finally
                 touched.Clear()
@@ -254,7 +249,6 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         '-------------------------------------
         'G) TID Tiles streamen (immer Nearest)
         '-------------------------------------
-        LogMem("before TID")
         If hasTid Then
 
             If tidTiles Is Nothing OrElse tidTiles.Count = 0 Then Throw New InvalidDataException("TID-ZIP ist vorhanden, aber es wurden keine TID-Tiles gefunden.")
@@ -282,8 +276,6 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
                     opts.TidZipPath, tile, reqNearestByTile(t), tidOut,
                     pTile, ct, progressPrefix:=$"TID: {t + 1}/{tileCount}")
 
-                'DEBUG:
-                If (t Mod 2) = 0 Then LogMem($"after tile {t + 1}")
             Next
 
             If tidOut Is Nothing OrElse tidOut.Length <> n Then Throw New InvalidOperationException($"Interner Fehler: tidOut ist Nothing oder hat eine falsche Länge. Erwartet={n}, ist={(If(tidOut Is Nothing, 0, tidOut.Length))}.")
@@ -291,7 +283,6 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         End If
 
         ct.ThrowIfCancellationRequested()
-        LogMem("after TID scratch")
         '-----------------
         'H) LandMask bauen
         '-----------------
@@ -378,7 +369,6 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         pMeta.Report(New ProgressInfo("Meta OK.", 100))
 
         ct.ThrowIfCancellationRequested()
-        LogMem("before Save Cache")
         '-------------
         'J) Save Cache
         '-------------
@@ -394,7 +384,6 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
             progress:=pSave,
             ct:=ct)
 
-        LogMem("finally")
         '---------
         'K) Report
         '---------
@@ -432,23 +421,6 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         If tileStart < blockStart Then tileStart = blockStart
         If tileEnd > blockEnd Then tileEnd = blockEnd
 
-    End Sub
-
-
-    Private Shared Sub LogMem(tag As String)
-        Dim p = Process.GetCurrentProcess()
-
-        Dim gi = GC.GetGCMemoryInfo()
-        Dim heap = gi.HeapSizeBytes
-        Dim committed = gi.TotalCommittedBytes
-
-        Debug.WriteLine(
-            $"[MEM] {tag,-24} " &
-            $"GC.Heap={heap / 1024 / 1024:0}MB " &
-            $"GC.Committed={committed / 1024 / 1024:0}MB " &
-            $"WS={p.WorkingSet64 / 1024 / 1024:0}MB " &
-            $"Private={p.PrivateMemorySize64 / 1024 / 1024:0}MB"
-        )
     End Sub
 
 End Class

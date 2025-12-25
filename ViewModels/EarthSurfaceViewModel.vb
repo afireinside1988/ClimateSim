@@ -41,8 +41,19 @@ Public Class EarthSurfaceViewModel
         End Get
         Set(value As String)
             If SetProperty(_rawTidFile, value) Then
+                HasTidFile = Not String.IsNullOrWhiteSpace(value) AndAlso File.Exists(value)
                 OnPropertyChanged(NameOf(CanGenerateCache))
             End If
+        End Set
+    End Property
+
+    Private _hasTidFile As Boolean = False
+    Public Property HasTidFile As Boolean
+        Get
+            Return _hasTidFile
+        End Get
+        Set(value As Boolean)
+            SetProperty(_hasTidFile, value)
         End Set
     End Property
 
@@ -332,6 +343,8 @@ Public Class EarthSurfaceViewModel
                 If value = False Then
                     ShowShoreLines = False
                     IsHoverCellVisible = False
+                Else
+                    ShowTidLayer = False
                 End If
             End If
         End Set
@@ -377,6 +390,8 @@ Public Class EarthSurfaceViewModel
                 If Not value Then
                     ShowHoverOverlay = False
                     IsTidLegendOpen = False
+                Else
+                    ShowLandMaskLayer = False
                 End If
             End If
         End Set
@@ -637,6 +652,9 @@ Public Class EarthSurfaceViewModel
     Public ReadOnly Property BrowseHeightCommand As ICommand
     Public ReadOnly Property BrowseTidCommand As ICommand
     Public ReadOnly Property BrowseLandMaskCommand As ICommand
+    Public ReadOnly Property ClearHeightFileCommand As ICommand
+    Public ReadOnly Property ClearTidFileCommand As ICommand
+
 
     Public ReadOnly Property GenerateCacheCommand As ICommand
     Public ReadOnly Property OpenCacheFolderCommand As ICommand
@@ -686,6 +704,22 @@ Public Class EarthSurfaceViewModel
                     MessageBox.Show(ex.Message, "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
                 End Try
             End Sub)
+
+        ClearHeightFileCommand = New RelayCommand(Of Object)(
+            Sub(o)
+                If String.IsNullOrWhiteSpace(RawHeightFile) Then Return
+                RawHeightFile = Nothing
+                LastReport = "GEBCO-Height-Datei entfernt."
+            End Sub,
+            Function(o) Not String.IsNullOrWhiteSpace(RawHeightFile))
+
+        ClearTidFileCommand = New RelayCommand(Of Object)(
+            Sub(o)
+                If String.IsNullOrWhiteSpace(RawTidFile) Then Return
+                RawTidFile = Nothing
+                LastReport = "GEBCO-TID-Datei entfernt."
+            End Sub,
+            Function(o) Not String.IsNullOrWhiteSpace(RawTidFile))
 
         LoadCacheCommand = New RelayCommand(Of Object)(
             Async Sub(o)

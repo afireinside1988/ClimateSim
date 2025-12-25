@@ -64,8 +64,8 @@
                 Dim rowInTile As Integer = srcYNorthMost - srcY
                 Dim colInTile As Integer = srcX - srcXWestMost
 
-                rowInTile = Clamp(rowInTile, 0, TileSize - 1)
-                colInTile = Clamp(colInTile, 0, TileSize - 1)
+                Clamp0ToTile(rowInTile)
+                Clamp0ToTile(colInTile)
 
                 rowCountsPerTile(tileIndex)(rowInTile) += 1
                 totalReq += 1
@@ -152,9 +152,8 @@
                 Dim rowInTile As Integer = srcYNorthMost - srcY
                 Dim colInTile As Integer = srcX - srcXWestMost
 
-                rowInTile = Clamp(rowInTile, 0, TileSize - 1)
-                colInTile = Clamp(colInTile, 0, TileSize - 1)
-
+                Clamp0ToTile(rowInTile)
+                Clamp0ToTile(colInTile)
                 Dim ti As Integer = latIdx * targetLonCount + lonIdx
 
                 Dim wp As Integer = writePtrPerTile(tileIndex)(rowInTile)
@@ -235,4 +234,12 @@
         Return x
 
     End Function
+
+    ''' <summary>
+    ''' Clampt auf die Tile-Grenzen
+    ''' </summary>
+    Private Shared Sub Clamp0ToTile(ByRef idx As Integer)
+        If idx < 0 Then idx = 0
+        If idx > TileSize - 1 Then idx = TileSize - 1
+    End Sub
 End Class
