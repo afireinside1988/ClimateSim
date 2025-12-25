@@ -178,13 +178,10 @@
                     <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" FontFamily="Consolas" Text="{Binding CO2Value, StringFormat={}{0:F0} ppm}"/>
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                    <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
                         <TextBlock Text="Klimasensitivität λ [K/(W/m²)]:"/>
                         <TextBlock Margin="5,0,0,0" FontFamily="Consolas" VerticalAlignment="Bottom" Text="{Binding CurrentConfig.Lambda, StringFormat=0.0}"/>
                     </StackPanel>
-
-                <Button x:Name="BtnShowHistory" Content="Verlauf anzeigen..." Height="30" Margin="0,20,0,0" Command="{Binding ShowHistoryCommand}"/>
-                    <Button x:Name="BtnTestCache" Content="Test-Cache" Margin="0,10,0,0" Click="BtnTestCache_Click"/>
                 </StackPanel>
         </Grid>
         </Grid>

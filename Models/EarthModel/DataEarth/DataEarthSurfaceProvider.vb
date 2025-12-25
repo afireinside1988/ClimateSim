@@ -83,8 +83,8 @@ Public Class DataEarthSurfaceProvider
         Dim idx As Integer = latIdx * _cache.Meta.LonCount + lonIdx
 
         Dim landMaskAvailable As Boolean = (_cache.LandMask IsNot Nothing AndAlso _cache.LandMask.Length > idx)
-        Dim isLand As Boolean
-        Dim isUnknown As Boolean
+        Dim isLand As Boolean = False
+        Dim isUnknown As Boolean = False
 
         If landMaskAvailable Then
             Dim lm As Byte = _cache.LandMask(idx)
@@ -92,7 +92,7 @@ Public Class DataEarthSurfaceProvider
             isUnknown = (lm = 2)
         End If
 
-        Dim h As Double = 0.0
+        Dim h As Double = Double.NaN
         If _cache.HeightM IsNot Nothing AndAlso _cache.HeightM.Length > idx Then
             h = _cache.HeightM(idx)
         End If
@@ -131,6 +131,11 @@ Public Class DataEarthSurfaceProvider
     End Function
 
     Private Shared Function SurfaceTypeFromHeight(heightM As Double) As SurfaceType
+
+        If Double.IsNaN(heightM) OrElse Double.IsInfinity(heightM) Then
+            Return SurfaceType.Unknown
+        End If
+
         If heightM < 0.0 Then
             Return SurfaceType.Ocean
         End If

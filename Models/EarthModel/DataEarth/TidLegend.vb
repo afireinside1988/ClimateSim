@@ -1,4 +1,4 @@
-﻿Imports System.CodeDom
+﻿Imports System.Windows.Media
 
 Public NotInheritable Class TidLegend
 

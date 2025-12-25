@@ -7,7 +7,7 @@
 
     Public Structure NearestRequest
         Public TargetIndex As Integer
-        Public CollInTile As Integer
+        Public ColInTile As Integer
     End Structure
 
     Public Class TileRowRequests
@@ -84,14 +84,14 @@
                     trr.Rows(rowInTile) = list
                 End If
 
-                list.Add(New NearestRequest With {.TargetIndex = targetIndex, .CollInTile = colInTile})
+                list.Add(New NearestRequest With {.TargetIndex = targetIndex, .ColInTile = colInTile})
             Next
         Next
 
         'Jede Reihe nach Spalten sortieren, damit die CPU einen Pointer Scan nutzen kann
         For Each trr In result
             For Each kvp In trr.Rows
-                kvp.Value.Sort(Function(a, b) a.CollInTile.CompareTo(b.CollInTile))
+                kvp.Value.Sort(Function(a, b) a.ColInTile.CompareTo(b.ColInTile))
             Next
         Next
 
@@ -105,17 +105,6 @@
             Dim t As GebcoTileInfo = tiles(i)
 
             'Wir interpretieren die Grenzen als Ecken: Süden <= lat < Norden, West <= lon < Osten
-            If latCenter >= t.South - eps AndAlso latCenter < t.North + eps AndAlso
-               lonCenter >= t.West - eps AndAlso lonCenter < t.East + eps Then
-
-                Return i
-            End If
-        Next
-
-        'Wenn Ecke: bei Zellzentren sollte lon nicht exakt 180 sein, aber wir bleiben robust
-        For i As Integer = 0 To tiles.Count - 1
-            Dim t As GebcoTileInfo = tiles(i)
-
             If latCenter >= t.South - eps AndAlso latCenter < t.North + eps AndAlso
                lonCenter >= t.West - eps AndAlso lonCenter < t.East + eps Then
 

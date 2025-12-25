@@ -1,4 +1,5 @@
 ﻿Imports System.Collections.ObjectModel
+Imports System.Globalization
 Imports System.IO
 Imports System.Text
 Imports Microsoft.Win32
@@ -850,7 +851,7 @@ Public Class EarthSurfaceViewModel
             Case "bilinear"
                 SelectedResampling = ResamplingMode.Bilinear
             Case Else
-                SelectedResampling = Nothing
+                SelectedResampling = ResamplingMode.Nearest
         End Select
 
         If meta.LandMaskSource = LandMaskMode.FromHeight.ToString() Then
@@ -960,10 +961,10 @@ Public Class EarthSurfaceViewModel
 
         If ShowTidLayer AndAlso LoadedCache?.Tid IsNot Nothing AndAlso HoverLinearIdx >= 0 AndAlso HoverLinearIdx < LoadedCache.Tid.Length Then
 
-            Dim t As Single = LoadedCache.Tid(HoverLinearIdx)
-            Dim code As Integer = TidHelpers.TidValueToCode(t)
+            Dim t As Byte = LoadedCache.Tid(HoverLinearIdx)
+            Dim code As Integer = TidHelpers.TidByteToCode(t)
 
-            HoverOverlayText = $"{TidLegend.TidText(code)}"
+            HoverOverlayText = TidLegend.TidText(code)
             HoverOverlayX = r.MousePos.X + 14
             HoverOverlayY = r.MousePos.Y + 14
             ShowHoverOverlay = True
@@ -1226,10 +1227,7 @@ Public Class EarthSurfaceViewModel
             Dim cntOther As Integer = 0
 
             For i As Integer = 0 To latCount * lonCount - 1
-                Dim t As Single = cache.Tid(i)
-                If Single.IsNaN(t) Then Continue For
-
-                Dim v As Integer = CInt(Math.Round(t))      'Tid ist als Single gespeichert, aber kommt aus Byte
+                Dim v As Integer = CInt(cache.Tid(i))      '0..255
 
                 If v < minTid Then minTid = v
                 If v > maxTid Then maxTid = v
@@ -1270,7 +1268,7 @@ Public Class EarthSurfaceViewModel
 
             Dim tidStr As String = "(n/a)"
             If hasTid Then
-                tidStr = cache.Tid(idx).ToString("0", Globalization.CultureInfo.InvariantCulture)
+                tidStr = CInt(cache.Tid(idx)).ToString(CultureInfo.InvariantCulture)
             End If
 
             Dim lmStr As String = "(n/a)"

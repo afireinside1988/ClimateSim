@@ -42,7 +42,7 @@ Public NotInheritable Class LandMaskBuilder
 
         Dim expectedLen As Integer = latCount * lonCount
         If heightM.Length <> expectedLen Then
-            Throw New ArgumentException($"heightM-Länge passt nicht: {expectedLen} (erwartet: {heightM.Length}).")
+            Throw New ArgumentException($"heightM-Länge passt nicht: ist={heightM.Length} (erwartet: {expectedLen}).")
         End If
 
         ArgumentOutOfRangeException.ThrowIfNegative(iterations)
@@ -168,7 +168,8 @@ Public NotInheritable Class LandMaskBuilder
     End Function
 
     ''' <summary>
-    ''' Wrappt einen Longitude-Index in den Bereich (0...lonCount-1)
+    ''' Wrappt einen Longitude-Index in den Bereich (0...lonCount-1)+
+    ''' </summary>
     Private Shared Function WrapLonIndex(lonIndex As Integer, lonCount As Integer) As Integer
         'VB Mod kann negative Werte liefern, daher robust:
         Dim x As Integer = lonIndex Mod lonCount

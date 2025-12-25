@@ -76,7 +76,7 @@ Public NotInheritable Class GebcoTileProcessor
                                 Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei row={row}, col={col}")
                             End If
 
-                            If wantCount > 0 AndAlso wantPtr < wantCount AndAlso col = want(wantPtr).CollInTile Then
+                            If wantCount > 0 AndAlso wantPtr < wantCount AndAlso col = want(wantPtr).ColInTile Then
                                 Dim ti As Integer = want(wantPtr).TargetIndex
 
                                 If noData.HasValue AndAlso v = CInt(noData.Value) Then
@@ -89,7 +89,7 @@ Public NotInheritable Class GebcoTileProcessor
                                 'wir gehen sicherheitshalber weiter
                                 wantPtr += 1
 
-                                While wantPtr < wantCount AndAlso want(wantPtr).CollInTile = col
+                                While wantPtr < wantCount AndAlso want(wantPtr).ColInTile = col
 
                                     ti = want(wantPtr).TargetIndex
                                     If noData.HasValue AndAlso v = CInt(noData.Value) Then
@@ -340,13 +340,13 @@ Public NotInheritable Class GebcoTileProcessor
                     Dim header As AsciiGridHeader = EsriAsciiHeaderReader.ReadHeader(sr, firstLine)
 
                     'NODATA aus Header lesen (bei GEBCO TID typischerweise 127)
-                    Dim noDataBye As Byte? = Nothing
+                    Dim noDataByte As Byte? = Nothing
                     If header.NoDataValue.HasValue Then
                         Dim nd As Integer = CInt(header.NoDataValue.Value)
 
                         'nur übernehmen, wenn es wirklich in Byte-Range liegt
                         If nd >= Byte.MinValue AndAlso nd <= Byte.MaxValue Then
-                            noDataBye = CByte(nd)
+                            noDataByte = CByte(nd)
                         End If
                     End If
 
@@ -372,11 +372,11 @@ Public NotInheritable Class GebcoTileProcessor
                                 Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei row={row}, col={col}")
                             End If
 
-                            If wantCount > 0 AndAlso wantPtr < wantCount AndAlso col = want(wantPtr).CollInTile Then
+                            If wantCount > 0 AndAlso wantPtr < wantCount AndAlso col = want(wantPtr).ColInTile Then
 
                                 'NODATA -> UnknownTid
                                 Dim outVal As Byte = b
-                                If noDataBye.HasValue AndAlso b = noDataBye.Value Then
+                                If noDataByte.HasValue AndAlso b = noDataByte.Value Then
                                     outVal = UnknownTid
                                 End If
 
@@ -385,7 +385,7 @@ Public NotInheritable Class GebcoTileProcessor
 
                                 wantPtr += 1
 
-                                While wantPtr < wantCount AndAlso want(wantPtr).CollInTile = col
+                                While wantPtr < wantCount AndAlso want(wantPtr).ColInTile = col
                                     ti = want(wantPtr).TargetIndex
                                     tidOut(ti) = outVal
 

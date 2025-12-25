@@ -1,25 +1,18 @@
 ﻿Module TidHelpers
 
-    Public Function TidValueToCode(value As Single) As Integer
+    Public Function TidByteToCode(value As Byte) As Integer
 
-        'NaN / Infinity -> Unknown
-        If Single.IsNaN(value) OrElse Single.IsInfinity(value) Then Return 255
-
-        'GEBCO speichert TID als Single, Ursprung ist Byte
-        'Runden ist korrekt (nicht Floor!)
-
-        Dim code As Integer = CInt(Math.Round(value))
-        If code < 0 Then Return 255
-        If code > 255 Then Return 255
-
-        Return code
+        If value = 255 Then Return 255
+        Return CInt(value)
     End Function
 
-    Public Function GetTidCode(cache As EarthSurfaceCache, linearIndex As Integer) As Integer
+    Public Function TryGetTidByte(cache As EarthSurfaceCache, linearIndex As Integer, ByRef tid As Byte) As Boolean
+        tid = 255
 
-        If cache Is Nothing OrElse cache.Tid Is Nothing Then Return 255
-        If linearIndex < 0 OrElse linearIndex >= cache.Tid.Length Then Return 255
-
-        Return TidValueToCode(cache.Tid(linearIndex))
+        If cache Is Nothing OrElse cache.Tid Is Nothing Then Return False
+        If linearIndex < 0 OrElse linearIndex >= cache.Tid.Length Then Return False
+        tid = cache.Tid(linearIndex)
+        Return True
     End Function
+
 End Module

@@ -10,8 +10,8 @@ Public NotInheritable Class TidRenderer
                                           Optional alpha As Byte = 200,
                                           Optional dpi As Double = 96.0) As WriteableBitmap
 
-        ArgumentNullException.ThrowIfNullOrEmpty(NameOf(cache))
-        ArgumentNullException.ThrowIfNullOrEmpty(NameOf(cache.Meta))
+        ArgumentNullException.ThrowIfNull(cache)
+        If cache.Meta Is Nothing Then Throw New ArgumentNullException(NameOf(cache), "cache.Meta darf nicht Nothing sein.")
 
         Dim meta As EarthSurfaceCacheMeta = cache.Meta
         Dim w As Integer = meta.LonCount
@@ -31,11 +31,10 @@ Public NotInheritable Class TidRenderer
 
         For i As Integer = 0 To pixels.Length - 1
 
-            Dim t As Single = cache.Tid(i)
-
-            Dim code As Integer = TidHelpers.TidValueToCode(t)
-
+            Dim t As Byte = cache.Tid(i)
+            Dim code As Integer = TidHelpers.TidByteToCode(t)
             Dim c As Color = TidLegend.TidColor(code)
+
             pixels(i) = (a << 24) Or
                         (CInt(c.R) << 16) Or
                         (CInt(c.G) << 8) Or

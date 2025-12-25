@@ -5,7 +5,7 @@
 ''' Wird als JSON gespeichert und beim Laden als "Kompatibilitätsvertrag" verwendet
 ''' </summary>
 Public Class EarthSurfaceCacheMeta
-    Public Property CacheVersion As Integer = 1
+    Public Property CacheVersion As Integer = 2         'Version 2 für: TID von Single auf Byte umgestellt
 
     'Identifiziert die Datenquellen und Layer (für Menschen + spätere Auswahl in UI)
     Public Property Source As String = "GEBCO_2025"
@@ -16,7 +16,7 @@ Public Class EarthSurfaceCacheMeta
     Public Property LandThreshold As Integer = 6
     Public Property OceanThreshold As Integer = 3
     'Raster-Definition
-    Public Property CellSizeDeg As Double       '1.0 / 0.5 / 0.25
+    Public Property CellSizeDeg As Double       '1.0 / 0.5 / 0.25 / 0.125
     Public Property LatCount As Integer          'z.B. 180 bei 1° (wenn -90...90 exkl. Pol-Kanten)
     Public Property LonCount As Integer          'z.B. 360 bei 1°
 
@@ -26,7 +26,7 @@ Public Class EarthSurfaceCacheMeta
     Public Property LonMin As Double = -179.5
     Public Property LonMax As Double = 179.5
 
-    'Welche Interpolation wurde beim Resamlping benutzt (wichtig für Reproduzierbarkeit)
+    'Welche Interpolation wurde beim Resampling benutzt (wichtig für Reproduzierbarkeit)
     Public Property Resampling As String = "nearest"        'nearest|bilinear
 
     'Welche Layer sind enthalten

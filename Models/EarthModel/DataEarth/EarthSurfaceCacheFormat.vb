@@ -1,15 +1,14 @@
 ﻿Imports System.IO
-Imports System.Net.Http.Headers
 Imports System.Text
 Imports System.Threading
 
 ''' <summary>
 ''' Binärformat für EarthSurface-Cache.
 ''' 
-''' Datei-Aufbau (v1, little-endian):
+''' Datei-Aufbau (v2, little-endian):
 ''' [HEADER]
 '''     0..3    : Magic "ESCF" (Earth Surface Cache File)
-'''     4..7    : Int32 Version (=1)
+'''     4..7    : Int32 Version (=2)
 '''     8..11   : Int32 LatCount
 '''    12..15   : Int32 LonCount
 '''    16..23   : Double CellSizeDeg
@@ -21,13 +20,13 @@ Imports System.Threading
 '''    
 ''' [PAYLOAD]
 '''     Wenn HasHeight: HeightM float32[LatCount*LonCount]
-'''        Wenn HasTiD: Tid     float32[LatCount*LonCount]
+'''        Wenn HasTiD: Tid     uint8[LatCount*LonCount] (0...255)
 '''        
 ''' Meta wird seperat als JSON gespeichert (.meta.json) und ist "User-facing".
 ''' </summary>
 Public NotInheritable Class EarthSurfaceCacheFormat
 
-    Public Const CurrentVersion As Integer = 1
+    Public Const CurrentVersion As Integer = 2
     Private Const Magic As String = "ESCF"
 
     <Flags>
@@ -69,7 +68,9 @@ Public NotInheritable Class EarthSurfaceCacheFormat
         If meta.HasTid Then flags = flags Or CacheFlags.HasTid
         If meta.HasLandMask Then flags = flags Or CacheFlags.HasLandMask
 
-        Directory.CreateDirectory(Path.GetDirectoryName(binPath))
+
+        Dim dir As String = Path.GetDirectoryName(binPath)
+        If Not String.IsNullOrWhiteSpace(dir) Then Directory.CreateDirectory(dir)
 
         progress?.Report(New ProgressInfo("Cache speichern: Vorbereitung...", 0))
         ct.ThrowIfCancellationRequested()
@@ -103,7 +104,7 @@ Public NotInheritable Class EarthSurfaceCacheFormat
 
                 'Payload
                 If meta.HasHeight Then
-                    progress?.Report(New ProgressInfo("Cache speicher: Höhenfeld...", 2))
+                    progress?.Report(New ProgressInfo("Cache speichern: Höhenfeld...", 2))
 
                     For i As Integer = 0 To cache.HeightM.Length - 1
                         ct.ThrowIfCancellationRequested()
@@ -122,7 +123,7 @@ Public NotInheritable Class EarthSurfaceCacheFormat
 
                     For i As Integer = 0 To cache.Tid.Length - 1
                         ct.ThrowIfCancellationRequested()
-                        bw.Write(cache.Tid(i))              'Single
+                        bw.Write(cache.Tid(i))              'Byte
                         processed += 1
 
                         If (processed Mod reportEvery) = 0 Then
@@ -161,7 +162,7 @@ Public NotInheritable Class EarthSurfaceCacheFormat
     End Sub
 
     Public Shared Function ReadCache(binPath As String, Optional progress As IProgress(Of ProgressInfo) = Nothing, Optional ct As CancellationToken = Nothing) As _
-                                    (latCount As Integer, lonCount As Integer, cellSizeDeg As Double, flags As CacheFlags, height As Single(), tid As Single(), landMask As Byte())
+                                    (latCount As Integer, lonCount As Integer, cellSizeDeg As Double, flags As CacheFlags, height As Single(), tid As Byte(), landMask As Byte())
 
         If Not File.Exists(binPath) Then
             Throw New FileNotFoundException("Cache-Datei nicht gefunden.", binPath)
@@ -200,7 +201,7 @@ Public NotInheritable Class EarthSurfaceCacheFormat
                 Dim n As Integer = latCount * lonCount
 
                 Dim height As Single() = Nothing
-                Dim tid As Single() = Nothing
+                Dim tid As Byte() = Nothing
                 Dim landMask As Byte() = Nothing
 
                 Dim totalValues As Integer = 0
@@ -232,12 +233,12 @@ Public NotInheritable Class EarthSurfaceCacheFormat
                 If flags.HasFlag(CacheFlags.HasTid) Then
                     progress?.Report(New ProgressInfo("Cache laden: TID-Feld...", 75))
 
-                    tid = New Single(n - 1) {}
+                    tid = New Byte(n - 1) {}
 
                     For i As Integer = 0 To n - 1
                         ct.ThrowIfCancellationRequested()
 
-                        tid(i) = br.ReadSingle()
+                        tid(i) = br.ReadByte()
                         processed += 1
 
                         If (processed Mod reportEvery) = 0 Then

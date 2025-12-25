@@ -1,4 +1,6 @@
-﻿''' <summary>
+﻿Imports System.IO
+
+''' <summary>
 ''' In-Memory Repräsentation eines gecachten EarthSurface-Rasters
 ''' Indexierung: row-major (latIndex * LonCount + lonIndex)
 ''' </summary>
@@ -10,12 +12,15 @@ Public Class EarthSurfaceCache
     Public ReadOnly Property HeightM As Single()
 
     'Layer: TID (Qualitäts-/Data-ID-Grid; Bedeutung definieren wir später genauer)
-    Public ReadOnly Property Tid As Single()
+    Public ReadOnly Property Tid As Byte()
 
     'Layer: landMask (0=Ocean / 1=Land) - Seen in v0.3 als Land
     Public ReadOnly Property LandMask As Byte()
 
-    Public Sub New(meta As EarthSurfaceCacheMeta, heightM As Single(), tid As Single(), Optional landMask As Byte() = Nothing)
+    Public Sub New(meta As EarthSurfaceCacheMeta, heightM As Single(), tid As Byte(), Optional landMask As Byte() = Nothing)
+        ArgumentNullException.ThrowIfNull(meta)
+        If meta.HasTid AndAlso tid Is Nothing Then Throw New InvalidDataException("meta.HisTid = True, aber tid ist leer")
+
         Me.Meta = meta
         Me.HeightM = heightM
         Me.Tid = tid
