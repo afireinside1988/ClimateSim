@@ -257,6 +257,8 @@ Public Class EarthSurfaceViewModel
     Private _lastViewportH As Double = 0
     Private _pendingFitToViewport As Boolean = False
 
+    Private _renderCts As Threading.CancellationTokenSource
+
     Private _contentWidth As Double
     Public Property ContentWidth As Double
         Get
@@ -588,6 +590,21 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
+    Private NotInheritable Class PreviewRenderResult
+        Public Property Width As Integer
+        Public Property Height As Integer
+
+        Public Property Provider As DataEarthSurfaceProvider
+
+        Public Property Surface As ImageSource
+        Public Property Relief As ImageSource
+        Public Property HillShade As ImageSource
+        Public Property LandMask As ImageSource
+        Public Property ShoreLines As ImageSource
+        Public Property Tid As ImageSource
+
+    End Class
+
 #End Region
 
 #Region "Legend-PopUp"
@@ -825,7 +842,7 @@ Public Class EarthSurfaceViewModel
 
         Try
 
-            Dim result As String = Await BusyRunner.RunAsync(Of String)(
+            Dim openedCache As EarthSurfaceCache = Await BusyRunner.RunAsync(Of EarthSurfaceCache)(
                 Me,
                 "EarthSurface: Cache laden",
                 Function(progress, ct)
@@ -839,22 +856,23 @@ Public Class EarthSurfaceViewModel
                         Throw New InvalidDataException($"Cache konnte nicht gelesen werden: {ek} - {em}")
                     End If
 
-                    'Meta -> VM spiegeln
-                    ApplyLoadedMetaToViewModel(cache.Meta)
+                    Return cache
 
-                    'Cache merken
-                    LoadedCache = cache
-
-                    Dim msg As String = $"Cache geladen: {Path.GetFileName(Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), Nothing))}"
-                    Return msg
                 End Function,
                 canCancel:=True,
                 showOverlay:=True)
 
-            LastReport = result
+
+            'Meta -> VM spiegeln
+            ApplyLoadedMetaToViewModel(openedCache.Meta)
+
+            'Cache merken
+            LoadedCache = openedCache
+
+            LastReport = $"Cache geladen: {Path.GetFileName(Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), Nothing))}"
 
             'Nach dem Laden: Preview neu rendern
-            RenderPreviewFromCache()
+            Await RenderPreviewFromCacheAsync(showOverlay:=True)
 
             Return "Cache geladen."
 
@@ -920,61 +938,144 @@ Public Class EarthSurfaceViewModel
 
 #Region "Rendering"
 
-    Private Sub RenderPreviewFromCache()
+    Private Async Function RenderPreviewFromCacheAsync(Optional showOverlay As Boolean = True) As Task
 
         If LoadedCache Is Nothing Then
             SurfaceLayer = Nothing
-            _provider = Nothing
-            Return
-        End If
-
-
-        _provider = DataEarthSurfaceProvider.CreateFromCache(LoadedCache)
-
-        Dim width As Integer = LoadedCache.Meta.LonCount
-        Dim height As Integer = LoadedCache.Meta.LatCount
-
-        'Surface-Layer in voller Auflösung rendern
-        SurfaceLayer = EarthSurfaceRenderer.RenderSurfaceTypeCamera(_provider, width, height, Camera)
-
-        'Relief und HillShade-Layer rendern
-        ReliefLayer = ReliefRenderer.RenderRelief(LoadedCache)
-        HillShadeLayer = HillShadeRenderer.RenderHillShade(LoadedCache)
-
-        'LandMask und ShoreLines einmalig rendern (wenn vorhanden)
-        If LoadedCache.Meta.HasLandMask AndAlso LoadedCache.LandMask IsNot Nothing Then
-            LandMaskLayer = LandMaskRenderer.RenderLandMask(LoadedCache, alpha:=255)
-            ShoreLineLayer = LandMaskRenderer.RenderShoreLines(LoadedCache, ShoreLineColor, alpha:=160,, includeDiagonal:=True)
-        Else
+            ReliefLayer = Nothing
+            HillShadeLayer = Nothing
             LandMaskLayer = Nothing
             ShoreLineLayer = Nothing
+            TidLayer = Nothing
+            _provider = Nothing
         End If
 
-        'TID-Layer rendern
-        If LoadedCache.Meta.HasTid Then
-            TidLayer = TidRenderer.RenderTidLayer(LoadedCache, alpha:=255)
-        End If
+        'Falls ein Render noch läuft: abbrechen
+        Try
+            _renderCts?.Cancel()
+        Catch ex As Exception
+        End Try
 
+        _renderCts = New Threading.CancellationTokenSource()
+        Dim token = _renderCts.Token
 
-        ContentWidth = width
-        ContentHeight = height
+        Dim cache = LoadedCache
+        Try
 
-        If _lastViewportH <= 0 OrElse _lastViewportW <= 0 Then
-            _pendingFitToViewport = True
-        End If
+            Dim rr As PreviewRenderResult =
+                Await BusyRunner.RunAsync(Of PreviewRenderResult)(
+                Me,
+                "EarthSurface: Preview rendern",
+                Function(progress, ct)
 
-        If _lastViewportW > 0 AndAlso _lastViewportH > 0 Then
-            FitToViewport(_lastViewportW, _lastViewportH)
-            _pendingFitToViewport = False
-        Else
+                    'kombiniere erst ct von BusyRunner + eigenes
+                    token.ThrowIfCancellationRequested()
+                    ct.ThrowIfCancellationRequested()
 
-            Zoom = 1.0
-            PanX = 0
-            PanY = 0
+                    Dim width As Integer = cache.Meta.LonCount
+                    Dim height As Integer = cache.Meta.LatCount
 
-        End If
+                    progress?.Report(New ProgressInfo("Provider initialisieren...", 0))
+                    Dim provider As DataEarthSurfaceProvider = DataEarthSurfaceProvider.CreateFromCache(cache)
 
-    End Sub
+                    token.ThrowIfCancellationRequested()
+                    ct.ThrowIfCancellationRequested()
+
+                    progress?.Report(New ProgressInfo("Surface-Layer rendern...", 15))
+                    Dim surfaceBmp = EarthSurfaceRenderer.RenderSurfaceTypeCamera(provider, width, height, Camera)
+                    surfaceBmp.Freeze()
+
+                    token.ThrowIfCancellationRequested()
+                    ct.ThrowIfCancellationRequested()
+
+                    progress?.Report(New ProgressInfo("Relief-Layer rendern...", 40))
+                    Dim reliefBmp = ReliefRenderer.RenderRelief(cache)
+                    reliefBmp.Freeze()
+
+                    token.ThrowIfCancellationRequested()
+                    ct.ThrowIfCancellationRequested()
+
+                    progress?.Report(New ProgressInfo("HillShade-Layer rendern...", 55))
+                    Dim hillBmp = HillShadeRenderer.RenderHillShade(cache)
+                    hillBmp.Freeze()
+
+                    token.ThrowIfCancellationRequested()
+                    ct.ThrowIfCancellationRequested()
+
+                    progress?.Report(New ProgressInfo("LandMask/Küstenlinien rendern...", 70))
+                    Dim lm As ImageSource = Nothing
+                    Dim sl As ImageSource = Nothing
+
+                    If cache.Meta.HasLandMask AndAlso cache.LandMask IsNot Nothing Then
+                        Dim lmBmp = LandMaskRenderer.RenderLandMask(cache)
+                        lmBmp.Freeze()
+                        lm = lmBmp
+
+                        Dim slBmp = LandMaskRenderer.RenderShoreLines(cache, ShoreLineColor, alpha:=160, includeDiagonal:=True)
+                        slBmp.Freeze()
+                        sl = slBmp
+                    End If
+
+                    token.ThrowIfCancellationRequested()
+                    ct.ThrowIfCancellationRequested()
+
+                    progress?.Report(New ProgressInfo("TID-Layer rendern...", 85))
+                    Dim tid As ImageSource = Nothing
+                    If cache.Meta.HasTid Then
+                        Dim tidBmp = TidRenderer.RenderTidLayer(cache, alpha:=255)
+                        tidBmp.Freeze()
+                        tid = tidBmp
+                    End If
+
+                    progress?.Report(New ProgressInfo("Fertig.", 100))
+
+                    Return New PreviewRenderResult With {
+                        .Width = width,
+                        .Height = height,
+                        .Provider = provider,
+                        .Surface = surfaceBmp,
+                        .Relief = reliefBmp,
+                        .HillShade = hillBmp,
+                        .LandMask = lm,
+                        .ShoreLines = sl,
+                        .Tid = tid
+                    }
+                End Function,
+                canCancel:=True,
+                showOverlay:=showOverlay)
+
+            If Not Object.ReferenceEquals(cache, LoadedCache) Then Return
+
+            'UI-Thread: VM befüllen
+            _provider = rr.Provider
+
+            SurfaceLayer = rr.Surface
+            ReliefLayer = rr.Relief
+            HillShadeLayer = rr.HillShade
+            LandMaskLayer = rr.LandMask
+            ShoreLineLayer = rr.ShoreLines
+            TidLayer = rr.Tid
+
+            ContentWidth = rr.Width
+            ContentHeight = rr.Height
+
+            'Fit/Viewport
+            If _lastViewportW > 0 AndAlso _lastViewportH > 0 Then
+                FitToViewport(_lastViewportW, _lastViewportH)
+                _pendingFitToViewport = False
+            Else
+                _pendingFitToViewport = True
+                Zoom = 1.0
+                PanX = 0
+                PanY = 0
+            End If
+        Catch ex As OperationCanceledException
+            'Abbruch
+        Catch ex As Exception
+            LastReport = $"Fehler beim Rendern: {ex.Message}"
+        End Try
+
+    End Function
 
     Private Sub OnMapMouseMove(param As Object)
 
@@ -1249,25 +1350,7 @@ Public Class EarthSurfaceViewModel
 
             If cache IsNot Nothing Then
                 LoadedCache = cache
-                RenderPreviewFromCache()
-
-                ContentWidth = cache.Meta.LonCount
-                ContentHeight = cache.Meta.LatCount
-
-                If _lastViewportH <= 0 OrElse _lastViewportW <= 0 Then
-                    _pendingFitToViewport = True
-                End If
-
-                If _lastViewportW > 0 AndAlso _lastViewportH > 0 Then
-                    FitToViewport(_lastViewportW, _lastViewportH)
-                    _pendingFitToViewport = False
-                Else
-
-                    Zoom = 1.0
-                    PanX = 0
-                    PanY = 0
-
-                End If
+                Await RenderPreviewFromCacheAsync(showOverlay:=True)
             Else
                 LastReport = "Cache konnte nicht generiert werden."
                 Return Nothing
@@ -1442,26 +1525,6 @@ Public Class EarthSurfaceViewModel
 
     End Function
 
-    Private Shared Sub GeoToCell_Floor(geoLat As Double,
-                                            geoLon As Double,
-                                            cellSizeDeg As Double,
-                                            latCount As Integer,
-                                            lonCount As Integer,
-                                            ByRef latIdx As Integer,
-                                            ByRef lonIdx As Integer)
-
-        'lat: +90---90 (nord->süd)
-        latIdx = CInt(Math.Floor((90.0 - geoLat) / cellSizeDeg))
-        If latIdx < 0 Then latIdx = 0
-        If latIdx > latCount - 1 Then latIdx = latCount - 1
-
-        'lon: -180..+180 (west->ost)
-        lonIdx = CInt(Math.Floor((geoLon + 180.0) / cellSizeDeg))
-        If lonIdx < 0 Then lonIdx = 0
-        If lonIdx > lonCount - 1 Then lonIdx = lonCount - 1
-
-    End Sub
-
     Private Sub ClampPan(viewportW As Double, viewportH As Double)
 
         If LoadedCache Is Nothing Then Return
@@ -1561,9 +1624,6 @@ Public Class EarthSurfaceViewModel
         StatusSurfaceText = $"Surface: {surface}"
         StatusZoomText = $"Zoom: {zoom * 100:0.##}%"
     End Sub
-
-
-
 
 #End Region
 

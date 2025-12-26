@@ -153,7 +153,7 @@ Public NotInheritable Class HillShadeRenderer
                     d = Clamp(d, 0.0, 1.0)
 
                     'Alpha-Kurve (macht schwache Schattierung fast transparent
-                    Dim a As Double = ReliefRenderSettings.HillSahdeAlphaLandMax * Math.Pow(d, ReliefRenderSettings.HillShadeAlphaLandPower)
+                    Dim a As Double = ReliefRenderSettings.HillShadeAlphaLandMax * Math.Pow(d, ReliefRenderSettings.HillShadeAlphaLandPower)
 
                     alpha = Clamp(CInt(Math.Round(a)), 0, 255)
 

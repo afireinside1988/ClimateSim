@@ -52,7 +52,7 @@
     Public Const HillShadeOceanFactor As Double = 0.55
 
     Public Const HillShadeAlphaOcean As Byte = 30            'statisches Alpha für Ozeane
-    Public Const HillSahdeAlphaLandMax As Byte = 70         'dynamisches Alpha
+    Public Const HillShadeAlphaLandMax As Byte = 70         'dynamisches Alpha
     Public Const HillShadeAlphaLandPower As Double = 1.3      ' >1 = stärkerer Fokus auf echte Kanten, <1 = flächiger
 
 
