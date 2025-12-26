@@ -2,6 +2,7 @@
 Imports System.Globalization
 Imports System.IO
 Imports System.Text
+Imports System.Windows.Media.Media3D
 Imports Microsoft.Win32
 
 Public Class EarthSurfaceViewModel
@@ -323,6 +324,16 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
+    Private _reliefLayer As ImageSource
+    Public Property ReliefLayer As ImageSource
+        Get
+            Return _reliefLayer
+        End Get
+        Set(value As ImageSource)
+            SetProperty(_reliefLayer, value)
+        End Set
+    End Property
+
     Private _useHillShading As Boolean = True
     Public Property UseHillShading As Boolean
         Get
@@ -330,6 +341,16 @@ Public Class EarthSurfaceViewModel
         End Get
         Set(value As Boolean)
             SetProperty(_useHillShading, value)
+        End Set
+    End Property
+
+    Private _hillShadeLayer As ImageSource
+    Public Property HillShadeLayer As ImageSource
+        Get
+            Return _hillShadeLayer
+        End Get
+        Set(value As ImageSource)
+            SetProperty(_hillShadeLayer, value)
         End Set
     End Property
 
@@ -916,6 +937,10 @@ Public Class EarthSurfaceViewModel
         'Surface-Layer in voller Auflösung rendern
         SurfaceLayer = EarthSurfaceRenderer.RenderSurfaceTypeCamera(_provider, width, height, Camera)
 
+        'Relief und HillShade-Layer rendern
+        ReliefLayer = ReliefRenderer.RenderRelief(LoadedCache)
+        HillShadeLayer = HillShadeRenderer.RenderHillShade(LoadedCache)
+
         'LandMask und ShoreLines einmalig rendern (wenn vorhanden)
         If LoadedCache.Meta.HasLandMask AndAlso LoadedCache.LandMask IsNot Nothing Then
             LandMaskLayer = LandMaskRenderer.RenderLandMask(LoadedCache, alpha:=255)
@@ -929,6 +954,7 @@ Public Class EarthSurfaceViewModel
         If LoadedCache.Meta.HasTid Then
             TidLayer = TidRenderer.RenderTidLayer(LoadedCache, alpha:=255)
         End If
+
 
         ContentWidth = width
         ContentHeight = height
@@ -1221,10 +1247,33 @@ Public Class EarthSurfaceViewModel
             Dim cache As EarthSurfaceCache = resultTuple.Item1
             Dim report As String = resultTuple.Item2
 
-            LoadedCache = cache
-            LastReport = report
+            If cache IsNot Nothing Then
+                LoadedCache = cache
+                RenderPreviewFromCache()
 
-            RenderPreviewFromCache()
+                ContentWidth = cache.Meta.LonCount
+                ContentHeight = cache.Meta.LatCount
+
+                If _lastViewportH <= 0 OrElse _lastViewportW <= 0 Then
+                    _pendingFitToViewport = True
+                End If
+
+                If _lastViewportW > 0 AndAlso _lastViewportH > 0 Then
+                    FitToViewport(_lastViewportW, _lastViewportH)
+                    _pendingFitToViewport = False
+                Else
+
+                    Zoom = 1.0
+                    PanX = 0
+                    PanY = 0
+
+                End If
+            Else
+                LastReport = "Cache konnte nicht generiert werden."
+                Return Nothing
+            End If
+
+            LastReport = report
 
             Return cache
 

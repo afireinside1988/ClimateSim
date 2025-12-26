@@ -171,23 +171,24 @@ Public Class EarthSurfaceRenderer
         Return bmp
     End Function
 
-    'Farben exakt wie eure Referenz (SurfaceTypeRenderer), damit Vergleiche leicht bleiben.
     Private Shared Function ColorForSurface(surface As SurfaceType) As Color
         Select Case surface
             Case SurfaceType.Ocean
                 Return Colors.MidnightBlue
+
             Case SurfaceType.SeaIce
-                Return Colors.LightCyan
+                Return Color.FromRgb(210, 235, 240)
             Case SurfaceType.LandPlain
-                Return Colors.OliveDrab
+                Return Color.FromRgb(70, 140, 65)
             Case SurfaceType.LandForest
-                Return Colors.ForestGreen
+                Return Color.FromRgb(30, 95, 45)
             Case SurfaceType.LandDesert
-                Return Colors.SandyBrown
+                Return Color.FromRgb(200, 165, 110)
             Case SurfaceType.LandMountain
-                Return Colors.SaddleBrown
+                Return Color.FromRgb(120, 85, 55)
             Case SurfaceType.LandIce
-                Return Colors.White
+                Return Color.FromRgb(245, 245, 245)
+
             Case SurfaceType.Unknown
                 Return Colors.Magenta
             Case Else

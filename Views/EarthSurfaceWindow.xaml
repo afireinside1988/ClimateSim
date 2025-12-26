@@ -160,19 +160,23 @@
                                 <!-- Layer 1: Surface -->
                                 <Image Source="{Binding SurfaceLayer}" x:Name="SurfaceMap"/>
 
-                                <!-- Layer 2: Relief (später) -->
+                                <!-- Layer 2: Relief -->
                                 <Image Source="{Binding ReliefLayer}"
                                        Visibility="{Binding ShowReliefLayer, Converter={StaticResource BoolToVis}}"/>
+                                
+                                <!-- Layer 3: HillShade -->
+                                <Image Source="{Binding HillShadeLayer}"
+                                       Visibility="{Binding UseHillShading, Converter={StaticResource BoolToVis}}"/>
 
-                                <!-- Layer 3: LandMask -->
+                                <!-- Layer 4: LandMask -->
                                 <Image Source="{Binding LandMaskLayer}"
                                        Visibility="{Binding ShowLandMaskLayer, Converter={StaticResource BoolToVis}}"/>
 
-                                <!-- Layer 4: Küstenlinien -->
+                                <!-- Layer 5: Küstenlinien -->
                                 <Image Source="{Binding ShoreLineLayer}"
                                        Visibility="{Binding ShowShoreLines, Converter={StaticResource BoolToVis}}"/>
 
-                                <!-- Layer 5: TID -->
+                                <!-- Layer 6: TID -->
                                 <Image Source="{Binding TidLayer}"
                                        Visibility="{Binding ShowTidLayer, Converter={StaticResource BoolToVis}}"/>
 
