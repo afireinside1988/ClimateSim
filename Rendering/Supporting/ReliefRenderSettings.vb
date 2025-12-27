@@ -16,7 +16,7 @@
     ' gamma > 1: kleine Werte gedämpft, Berge bleiben sichtbar
     '---------------------------------------------------------
 
-    Public Const ReliefGammaLand As Double = 1.5
+    Public Const ReliefGammaLand As Double = 1.05
     Public Const ReliefGammaOcean As Double = 1.3
 
     'Optional: Deadzone in normalisiertem t (0..1)
@@ -28,14 +28,18 @@
     ' neutral ist 128 (mid-grey), delta addiert/subtrahiert
     '------------------------------------------------------
 
-    Public Const ReliefAlpha As Byte = 105
-    Public Const ReliefNeutral As Byte = 105
-    Public Const ReliefBaseGrayLand As Byte = 80
+    Public Const ReliefAlpha As Byte = 125
+    Public Const ReliefNeutral As Byte = 110
+    Public Const ReliefBaseGrayLand As Byte = 100
     Public Const ReliefBaseGryOcean As Byte = 90
 
     'Maximale Aufhellung Land / Abdunklung Ozean ist in Graustufen-Delta (0..127 sinnvoll)
-    Public Const ReliefDeltaLandMax As Double = 100.0
+    Public Const ReliefDeltaLandMax As Double = 127.0
     Public Const ReliefDeltaOceanMax As Double = 75.0
+
+    'Tail-Verhalten (für Hochgebirge/Tiefsee)
+    Public Const ReliefTailPower As Double = 1.7          'Tail-Krümmung: >1 = flacher Start, stärkerer Fokus auf echte Hochgebirge/Tiefsee
+    Public Const ReliefTailWeight As Double = 0.55        'wie viel "extra Raum" bekommt der Tail
 
     '-----------------
     ' HillShade: Sonne
