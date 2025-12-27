@@ -9,216 +9,305 @@ Public NotInheritable Class ReliefRenderer
     End Sub
 
     ''' <summary>
-    ''' Rendert ein halbtransparentes Graustufen-Overlay basierend auf Höhe:
-    ''' - 0m ist neutral (mid-gray)
-    ''' - Land (höher) wird heller
-    ''' - Ozean (tiefer) wird dunkler
-    ''' 
-    ''' - Skalen werden per Histogramm aus Height-Vorzeichen bestimmt
-    ''' - Pro Pixel wird die Richtung (Land/Ozean) bevorzugt über LandMask entschieden, falls vorhanden:
-    '''     LandMask=1 -> Land-Branch (auch wenn h kleiner 0)
-    '''     LandMask=0 -> Ocean-Branch
-    '''     LandMask=2/unknown -> transparent
-    '''     
-    ''' -Kurve: Power (gamma) + optional Deadzone, um kleine Hügel ruhig zu halten
+    ''' Kombiniertes Overlay: HillShade + ReliefEnergy als Alpha-Maske.
+    ''' Ergebnis ist ein einzelnes BGRA-Overlay, das über Topo gelegt wird.
     ''' </summary>
     Public Shared Function RenderRelief(cache As EarthSurfaceCache,
+                                        Optional includeHillShade As Boolean = True,
                                         Optional dpi As Double = 96.0) As WriteableBitmap
 
         If cache Is Nothing OrElse cache.Meta Is Nothing Then
-            Throw New ArgumentNullException(NameOf(cache), "Cache oder Cache.Meta fehlt.")
+            Throw New ArgumentNullException(NameOf(cache))
         End If
 
         Dim width As Integer = cache.Meta.LonCount
         Dim height As Integer = cache.Meta.LatCount
         If width <= 0 OrElse height <= 0 Then
-            Throw New ArgumentOutOfRangeException(NameOf(cache), "Cache-Raster ungültig.")
+            Throw New ArgumentOutOfRangeException(NameOf(cache), "Ungültiges Raster.")
         End If
-
-        If dpi <= 0 Then dpi = 96.0
 
         Dim hArr As Single() = cache.HeightM
         If hArr Is Nothing OrElse hArr.Length <> width * height Then
-            Throw New InvalidOperationException("Cache.HeightM fehlt oder hat falsche Länge")
+            Throw New InvalidOperationException("Cache.HeightM fehlt oder hat falsche Länge.")
         End If
 
         Dim lmArr As Byte() = cache.LandMask
-        Dim hasLm As Boolean = (lmArr IsNot Nothing AndAlso lmArr.Length = width * height)
+        Dim hasLm As Boolean = (lmArr IsNot Nothing AndAlso lmArr.Length = hArr.Length)
 
-        '--------------------------
-        ' A) Skalen aus Historgramm
-        '--------------------------
+        If dpi <= 0 Then dpi = 96.0
 
-        Dim stats = HeightHistogramStats.ComputeScalesFromHeight(hArr)
-        Dim landScale As Double = stats.LandScaleM
-        Dim oceanScale As Double = stats.OceanScaleM
+        '----------------------------------------
+        ' A) ReliefEnergy berechnen (Sobel magnitude)
+        '----------------------------------------
+        ' Wir berechnen Energie pro Pixel: sqrt(dx^2 + dy^2)
+        ' und sammeln Min/Max via Histogramm getrennt für Land/Ozean.
 
-        Dim landMax As Double = stats.LandMaxM
-        Dim oceanMax As Double = stats.OceanMaxDepthM
+        Dim energy(width * height - 1) As Double
 
-        'Sicherheits-Fallback:
-        If Double.IsNaN(landScale) OrElse landScale <= 1 Then landScale = 1000.0
-        If Double.IsNaN(oceanScale) OrElse oceanScale <= 1 Then oceanScale = 5000.0
-        If Double.IsNaN(landMax) OrElse landMax <= 1 Then landMax = landScale
-        If Double.IsNaN(oceanMax) OrElse oceanMax <= 1 Then oceanMax = oceanScale
+        Dim landHist(ReliefRenderSettings.EnergyBins - 1) As Integer
+        Dim oceanHist(ReliefRenderSettings.EnergyBins - 1) As Integer
 
-        '------------------------
-        ' B) Bitmap + Pixelbuffer
-        '------------------------
+        'Pass 1: Energie grob, dabei maxE für Bin-Mapping bestimmen
+        Dim maxE As Double = 1.0
+
+        For y As Integer = 0 To height - 1
+
+            Dim ym As Integer = If(y > 0, y - 1, y)
+            Dim yp As Integer = If(y < height - 1, y + 1, y)
+
+            For x As Integer = 0 To width - 1
+
+                Dim xm As Integer = If(x > 0, x - 1, x)
+                Dim xp As Integer = If(x < width - 1, x + 1, x)
+
+                Dim i As Integer = y * width + x
+                Dim h0 As Double = CDbl(hArr(i))
+                If Double.IsNaN(h0) OrElse Double.IsInfinity(h0) Then
+                    energy(i) = Double.NaN
+                    Continue For
+                End If
+
+                'Nachbarn
+                Dim hA As Double = CDbl(hArr(ym * width + xm))
+                Dim hB As Double = CDbl(hArr(ym * width + x))
+                Dim hC As Double = CDbl(hArr(ym * width + xp))
+                Dim hD As Double = CDbl(hArr(y * width + xm))
+                Dim hE As Double = CDbl(hArr(y * width + xp))
+                Dim hF As Double = CDbl(hArr(yp * width + xm))
+                Dim hG As Double = CDbl(hArr(yp * width + x))
+                Dim hH As Double = CDbl(hArr(yp * width + xp))
+
+                If Double.IsNaN(hA) OrElse Double.IsNaN(hB) OrElse Double.IsNaN(hC) OrElse
+                   Double.IsNaN(hD) OrElse Double.IsNaN(hE) OrElse
+                   Double.IsNaN(hF) OrElse Double.IsNaN(hG) OrElse Double.IsNaN(hH) Then
+                    energy(i) = 0.0
+                    Continue For
+                End If
+
+                Dim dx As Double = (hC + 2 * hE + hH) - (hA + 2 * hD + hF)
+                Dim dy As Double = (hF + 2 * hG + hH) - (hA + 2 * hB + hC)
+
+                Dim e As Double = Math.Sqrt(dx * dx + dy * dy)
+                energy(i) = e
+                If e > maxE Then maxE = e
+            Next
+        Next
+
+        'Pass 2: Histogramm füllen (land/ocean getrennt)
+        For i As Integer = 0 To energy.Length - 1
+
+            Dim e As Double = energy(i)
+            If Double.IsNaN(e) OrElse e <= 0 Then Continue For
+
+            Dim isOcean As Boolean
+            If hasLm Then
+                isOcean = (lmArr(i) = 0)
+            Else
+                isOcean = (CDbl(hArr(i)) < 0)
+            End If
+
+            Dim bin As Integer = CInt(Math.Floor((e / maxE) * (ReliefRenderSettings.EnergyBins - 1)))
+            bin = Clamp(bin, 0, ReliefRenderSettings.EnergyBins - 1)
+
+            If isOcean Then
+                oceanHist(bin) += 1
+            Else
+                landHist(bin) += 1
+            End If
+        Next
+
+        'Perzentile -> Energieschwellen (in "E" Einheiten)
+        Dim landElo As Double, landEhi As Double
+        Dim oceanElo As Double, oceanEhi As Double
+
+        landElo = PercentileFromHist(landHist, ReliefRenderSettings.EnergyLandPlo) * maxE
+        landEhi = PercentileFromHist(landHist, ReliefRenderSettings.EnergyLandPhi) * maxE
+        oceanElo = PercentileFromHist(oceanHist, ReliefRenderSettings.EnergyOceanPlo) * maxE
+        oceanEhi = PercentileFromHist(oceanHist, ReliefRenderSettings.EnergyOceanPhi) * maxE
+
+        'Fallbacks:
+        If landEhi <= landElo Then landEhi = landElo + 1.0
+        If oceanEhi <= oceanElo Then oceanEhi = oceanElo + 1.0
+
+        '----------------------------------------
+        ' B) HillShade rendern, Alpha mit Energy maskieren
+        '----------------------------------------
+
+        Dim az As Double = ReliefRenderSettings.SunAzimutDeg * Math.PI / 180.0
+        Dim el As Double = ReliefRenderSettings.SunElevationDeg * Math.PI / 180.0
+
+        Dim lx As Double = Math.Cos(el) * Math.Sin(az)
+        Dim ly As Double = Math.Cos(el) * Math.Cos(az)
+        Dim lz As Double = Math.Sin(el)
+
+        Dim neutral As Integer = ReliefRenderSettings.HillShadeNeutral
+        Dim amp As Double = ReliefRenderSettings.HillShadeAmplitude
+        Dim oceanFactor As Double = ReliefRenderSettings.HillShadeOceanFactor
 
         Dim bmp As New WriteableBitmap(width, height, dpi, dpi, PixelFormats.Bgra32, Nothing)
         Dim pixels(width * height - 1) As Integer
 
+        For y As Integer = 0 To height - 1
 
-        Dim aLandMin As Integer = CInt(ReliefRenderSettings.ReliefAlphaLandMin)
-        Dim aLandMax As Integer = CInt(ReliefRenderSettings.ReliefAlphaLandMax)
-        Dim aLandPower As Double = ReliefRenderSettings.ReliefAlphaLandPower
+            Dim ym As Integer = If(y > 0, y - 1, y)
+            Dim yp As Integer = If(y < height - 1, y + 1, y)
 
-        Dim aOceanMin As Integer = CInt(ReliefRenderSettings.ReliefAlphaOceanMin)
-        Dim aOceanMax As Integer = CInt(ReliefRenderSettings.ReliefAlphaOceanMax)
-        Dim aOceanPower As Double = ReliefRenderSettings.ReliefAlphaOceanPower
+            For x As Integer = 0 To width - 1
 
-        Dim neutral As Integer = CInt(ReliefRenderSettings.ReliefNeutral)
-        Dim baseGrayLand As Integer = CInt(ReliefRenderSettings.ReliefBaseGrayLand)
-        Dim baseGrayOcean As Integer = CInt(ReliefRenderSettings.ReliefBaseGryOcean)
+                Dim xm As Integer = If(x > 0, x - 1, x)
+                Dim xp As Integer = If(x < width - 1, x + 1, x)
 
-        Dim gammaLandBase As Double = ReliefRenderSettings.ReliefGammaLandBase
-        Dim gammaOceanBase As Double = ReliefRenderSettings.ReliefGammaOceanBase
+                Dim i As Integer = y * width + x
+                Dim h0 As Double = CDbl(hArr(i))
 
-        Dim tailWeight As Double = ReliefRenderSettings.ReliefTailWeight
-        Dim tailPower As Double = ReliefRenderSettings.ReliefTailPower
-
-        Dim deadLand As Double = ReliefRenderSettings.ReliefDeadzoneLandT
-        Dim deadOcean As Double = ReliefRenderSettings.ReliefDeadzoneOceanT
-
-        Dim dLandMax As Double = ReliefRenderSettings.ReliefDeltaLandMax
-        Dim dOceanMax As Double = ReliefRenderSettings.ReliefDeltaOceanMax
-
-        For i As Integer = 0 To hArr.Length - 1
-
-            Dim h As Double = CDbl(hArr(i))
-
-            If Double.IsNaN(h) OrElse Double.IsInfinity(h) Then
-                pixels(i) = 0        'transparent
-                Continue For
-            End If
-
-            'Branch-Entscheidung:
-            ' - bevorzugt LandMask
-            ' - sonst Height-Vorzeichen
-            Dim isLand As Boolean
-            Dim isOcean As Boolean
-
-            If hasLm Then
-                Select Case lmArr(i)
-                    Case 1
-                        isLand = True : isOcean = False
-                    Case 0
-                        isLand = False : isOcean = True
-                    Case Else
-                        'unknown (2) oder anderes -> transparent
-                        pixels(i) = 0
-                        Continue For
-                End Select
-            Else
-                isLand = (h > 0)
-                isOcean = (h < 0)
-                If Not isLand AndAlso Not isOcean Then
-                    'h=0 -> neutral
-                    Dim g0 As Integer = neutral
-                    pixels(i) = PackBgra(255, g0, g0, g0)
+                If Double.IsNaN(h0) OrElse Double.IsInfinity(h0) Then
+                    pixels(i) = 0
                     Continue For
                 End If
-            End If
 
-            Dim gray As Integer
-
-            If isLand Then
-                'Land: auch wenn h < 0 (Depressionen) nicht abdunkeln, sondern neutral bleiben
-                Dim hh As Double = Math.Max(0.0, h)
-
-                'Deadzone relativ zur Scale interpretieren
-                Dim t0 As Double = hh / landScale
-                If t0 <= deadLand Then t0 = 0.0
-
-                Dim w As Double = Clamp(tailWeight, 0.0, 0.95)
-
-                Dim t As Double
-
-                If t0 <= 1.0 Then
-                    'Basisbereich: Gamma auf t0 anwenden
-                    t = (1.0 - w) * Math.Pow(Clamp(t0, 0.0, 1.0), gammaLandBase)
+                Dim isocean As Boolean
+                If hasLm Then
+                    If lmArr(i) = 2 Then
+                        pixels(i) = 0
+                        Continue For
+                    End If
+                    isocean = (lmArr(i) = 0)
                 Else
-                    'Tail (Hochgebirge): weiche Annäherung an 1, ohne hart zu clippen
-                    'u = 0..1 für [landScale..landMax]
-                    Dim denom As Double = Math.Max(1.0, landMax - landScale)
-                    Dim u As Double = (hh - landScale) / denom
-                    u = Clamp(u, 0.0, 1.0)
-
-                    'Tail-Krümmung
-                    Dim tail As Double = 1.0 - Math.Pow(1.0 - u, tailPower)
-
-                    'Wichtig: wieder 0..1 zurück mappen
-                    t = (1.0 - w) + w * tail
+                    isocean = (h0 < 0)
                 End If
 
+                'Energy -> eNorm (0..1) getrennt für Land/Ocean
+                Dim e As Double = energy(i)
+                Dim eNorm As Double
 
-                Dim delta As Double = dLandMax * t
-                gray = CInt(Math.Round(baseGrayLand + delta))
-                gray = Clamp(gray, 0, 255)
-
-                Dim aT As Double = Math.Pow(Clamp(t, 0.0, 1.0), aLandPower)
-                Dim aPix As Integer = CInt(Math.Round(aLandMin + (aLandMax - aLandMin) * aT))
-                aPix = Clamp(aPix, 0, 255)
-
-                pixels(i) = PackBgra(aPix, gray, gray, gray)
-            ElseIf isOcean Then
-                'Ozean: Tiefe als positiv
-                Dim dd As Double = Math.Max(0.0, -h)
-
-                'Deadzone relativ zur Scale interpretieren
-                Dim t0 As Double = dd / oceanScale
-                If t0 <= deadOcean Then t0 = 0.0
-
-                Dim w As Double = Clamp(tailWeight, 0.0, 0.95)
-
-                Dim t As Double
-
-                If t0 <= 1.0 Then
-                    'Basisbereich: Gamma auf t0 anwenden
-                    t = (1.0 - w) * Math.Pow(Clamp(t0, 0.0, 1.0), gammaOceanBase)
+                If Double.IsNaN(e) OrElse e <= 0 Then
+                    eNorm = 0.0
+                ElseIf isocean Then
+                    eNorm = (e - oceanElo) / (oceanEhi - oceanElo)
+                    eNorm = Clamp(eNorm, 0.0, 1.0)
+                    If eNorm <= ReliefRenderSettings.EnergyOceanDeadzoneT Then eNorm = 0.0
+                    eNorm = Math.Pow(eNorm, ReliefRenderSettings.EnergyOceanPower)
                 Else
-                    'Tail (Tiefsee): weiche Annäherung an 1, ohne hart zu clippen
-                    'u = 0..1 für [oceanScale..oceanMax]
-                    Dim denom As Double = Math.Max(1.0, oceanMax - oceanScale)
-                    Dim u As Double = (dd - oceanScale) / denom
-                    u = Clamp(u, 0.0, 1.0)
-
-                    'Tail-Krümmung
-                    Dim tail As Double = 1.0 - Math.Pow(1.0 - u, tailPower)
-
-                    'Wichtig: wieder 0..1 zurück mappen
-                    t = (1.0 - w) + w * tail
+                    eNorm = (e - landElo) / (landEhi - landElo)
+                    eNorm = Clamp(eNorm, 0.0, 1.0)
+                    If eNorm <= ReliefRenderSettings.EnergyLandDeadzoneT Then eNorm = 0.0
+                    eNorm = Math.Pow(eNorm, ReliefRenderSettings.EnergyLandPower)
                 End If
 
-                Dim delta As Double = dOceanMax * t
-                gray = CInt(Math.Round(baseGrayOcean - delta))
+                If Not includeHillShade Then
+                    'Nur Energy als "Kantenmaske": wir zeichnen neutral-grau mit sehr kleinem Alpha
+                    Dim aOnly As Integer = CInt(Math.Round(Clamp(18.0 * eNorm, 0.0, 18.0)))
+                    If aOnly <= 1 Then
+                        pixels(i) = 0
+                    Else
+                        pixels(i) = PackBgra(aOnly, 128, 128, 128)
+                    End If
+                    Continue For
+                End If
+
+                'HillShade Nachbarn
+                Dim hA As Double = CDbl(hArr(ym * width + xm))
+                Dim hB As Double = CDbl(hArr(ym * width + x))
+                Dim hC As Double = CDbl(hArr(ym * width + xp))
+                Dim hD As Double = CDbl(hArr(y * width + xm))
+                Dim hE As Double = CDbl(hArr(y * width + xp))
+                Dim hF As Double = CDbl(hArr(yp * width + xm))
+                Dim hG As Double = CDbl(hArr(yp * width + x))
+                Dim hH As Double = CDbl(hArr(yp * width + xp))
+
+                If Double.IsNaN(hA) OrElse Double.IsNaN(hB) OrElse Double.IsNaN(hC) OrElse
+                   Double.IsNaN(hD) OrElse Double.IsNaN(hE) OrElse
+                   Double.IsNaN(hF) OrElse Double.IsNaN(hG) OrElse Double.IsNaN(hH) Then
+                    pixels(i) = 0
+                    Continue For
+                End If
+
+                Dim dx As Double = (hC + 2 * hE + hH) - (hA + 2 * hD + hF)
+                Dim dy As Double = (hF + 2 * hG + hH) - (hA + 2 * hB + hC)
+
+                Dim nx As Double = -dx
+                Dim ny As Double = -dy
+                Dim nz As Double = 1.0
+
+                Dim invLen As Double = 1.0 / Math.Sqrt(nx * nx + ny * ny + nz * nz)
+                nx *= invLen
+                ny *= invLen
+                nz *= invLen
+
+                Dim shade As Double = nx * lx + ny * ly + nz * lz
+                shade = Clamp(shade, -1.0, 1.0)
+
+                Dim localAmp As Double = amp
+                If isocean Then localAmp *= oceanFactor
+
+                Dim gray As Integer = CInt(Math.Round(neutral + shade * localAmp))
                 gray = Clamp(gray, 0, 255)
 
-                Dim aT As Double = Math.Pow(Clamp(t, 0.0, 1.0), aOceanPower)
-                Dim aPix As Integer = CInt(Math.Round(aOceanMin + (aOceanMax - aOceanMin) * aT))
-                aPix = Clamp(aPix, 0, 255)
+                Dim alpha As Integer
 
-                pixels(i) = PackBgra(aPix, gray, gray, gray)
-            End If
+                If isocean Then
+                    'Ozean: euer statisches Alpha, aber leicht über Energy maskiert
+                    Dim a0 As Double = ReliefRenderSettings.HillShadeAlphaOcean
+                    Dim maskStrength As Double = ReliefRenderSettings.EnergyMaskStrengthOcean
+                    Dim a As Double = a0 * ((1.0 - maskStrength) + maskStrength * eNorm)
+                    alpha = Clamp(CInt(Math.Round(a)), 0, 255)
 
+                    If alpha <= 1 Then
+                        pixels(i) = 0
+                    Else
+                        pixels(i) = PackBgra(alpha, gray, gray, gray)
+                    End If
 
+                Else
+                    'Land: euer dynamisches Alpha + Energy-Maske
+                    Dim d As Double = Math.Abs(gray - neutral) / Math.Max(0.000001, localAmp)
+                    d = Clamp(d, 0.0, 1.0)
+
+                    Dim aHill As Double = ReliefRenderSettings.HillShadeAlphaLandMax *
+                                          Math.Pow(d, ReliefRenderSettings.HillShadeAlphaLandPower)
+
+                    Dim maskStrength As Double = ReliefRenderSettings.EnergyMaskStrengthLand
+                    Dim aFinal As Double = aHill * ((1.0 - maskStrength) + maskStrength * eNorm)
+
+                    alpha = Clamp(CInt(Math.Round(aFinal)), 0, 255)
+
+                    If alpha <= 1 Then
+                        pixels(i) = 0
+                    Else
+                        pixels(i) = PackBgra(alpha, gray, gray, gray)
+                    End If
+                End If
+
+            Next
         Next
 
-        Dim stride As Integer = width * 4
-        bmp.WritePixels(New Int32Rect(0, 0, width, height), pixels, stride, 0)
+        bmp.WritePixels(New Int32Rect(0, 0, width, height), pixels, width * 4, 0)
         Return bmp
 
+    End Function
+    '-----------------------
+    ' Histogram percentile
+    '-----------------------
+    Private Shared Function PercentileFromHist(hist() As Integer, p As Double) As Double
+        p = Clamp(p, 0.0, 1.0)
+
+        Dim total As Long = 0
+        For i As Integer = 0 To hist.Length - 1
+            total += hist(i)
+        Next
+        If total <= 0 Then Return 0.0
+
+        Dim target As Long = CLng(Math.Round(total * p))
+        Dim acc As Long = 0
+
+        For i As Integer = 0 To hist.Length - 1
+            acc += hist(i)
+            If acc >= target Then
+                Return i / CDbl(hist.Length - 1) '0..1
+            End If
+        Next
+
+        Return 1.0
     End Function
 
     ''' <summary>

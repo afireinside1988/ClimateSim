@@ -1,78 +1,43 @@
 ﻿Public Module ReliefRenderSettings
 
-    '------------------
-    ' Perzentile (0..1)
-    '------------------
 
-    Public Const LandPlo As Double = 0.02
-    Public Const LandPhi As Double = 0.98
+    '========================
+    ' ReliefEnergy (Steilheit)
+    '========================
+    Public Const EnergyBins As Integer = 2048
 
-    Public Const OceanPlo As Double = 0.02
-    Public Const OceanPhi As Double = 0.98
+    'Perzentile für Normalisierung der Energie
+    Public Const EnergyLandPlo As Double = 0.02
+    Public Const EnergyLandPhi As Double = 0.98
+    Public Const EnergyOceanPlo As Double = 0.02
+    Public Const EnergyOceanPhi As Double = 0.98
 
+    'Energie->Alpha Kurve (größer = weniger Fläche, mehr Fokus auf echte Kanten)
+    Public Const EnergyLandPower As Double = 1.2
+    Public Const EnergyOceanPower As Double = 1.3
 
-    '---------------------------------------------------------
-    ' Relief: Kurvenform
-    ' gamma > 1: kleine Werte gedämpft, Berge bleiben sichtbar
-    '---------------------------------------------------------
+    'Energie-Deadzone (0..1 im normalisierten Energieraum)
+    Public Const EnergyLandDeadzoneT As Double = 0.03
+    Public Const EnergyOceanDeadzoneT As Double = 0.04
 
-    Public Const ReliefGammaLandBase As Double = 0.7
-    Public Const ReliefGammaOceanBase As Double = 1.3
+    'Wie stark die Energie den HillShade-Alpha dämpft (0..1)
+    '0 = HillShade unverändert, 1 = HillShade vollständig über Energie "maskiert"
+    Public Const EnergyMaskStrengthLand As Double = 0.35
+    Public Const EnergyMaskStrengthOcean As Double = 0.35
 
-    'Optional: Deadzone in normalisiertem t (0..1)
-    Public Const ReliefDeadzoneLandT As Double = 0.03
-    Public Const ReliefDeadzoneOceanT As Double = 0.02
+    '=================
+    ' HillShade (wie gehabt)
+    '=================
+    Public Const SunAzimutDeg As Double = 45.0
+    Public Const SunElevationDeg As Double = 45.0
 
-    '------------------------------------------------------
-    ' Relief: Stärke
-    ' neutral ist 128 (mid-grey), delta addiert/subtrahiert
-    '------------------------------------------------------
-
-    'Alpha-Extremwerte
-    Public Const ReliefAlphaLandMin As Byte = 20
-    Public Const ReliefAlphaLandMax As Byte = 200
-    Public Const ReliefAlphaOceanMin As Byte = 60
-    Public Const ReliefAlphaOceanMax As Byte = 200
-
-    'Alpha-Kurve: >1 = Fokus auf Extreme, <1 => flächiger
-    Public Const ReliefAlphaLandPower As Double = 1.4
-    Public Const ReliefAlphaOceanPower As Double = 1.4
-
-    Public Const ReliefNeutral As Byte = 128
-    Public Const ReliefBaseGrayLand As Byte = 200
-    Public Const ReliefBaseGryOcean As Byte = 80
-
-    'Maximale Aufhellung Land / Abdunklung Ozean ist in Graustufen-Delta (0..127 sinnvoll)
-    Public Const ReliefDeltaLandMax As Double = 100.0
-    Public Const ReliefDeltaOceanMax As Double = 100.0
-
-    'Tail-Verhalten (für Hochgebirge/Tiefsee)
-    Public Const ReliefTailPower As Double = 0.9         'Tail-Krümmung: >1 = flacher Start, stärkerer Fokus auf echte Hochgebirge/Tiefsee
-    Public Const ReliefTailWeight As Double = 0.45        'wie viel "extra Raum" bekommt der Tail
-
-    '-----------------
-    ' HillShade: Sonne
-    '-----------------
-
-    Public Const SunAzimutDeg As Double = 45.0      '0=North, 90=East
-    Public Const SunElevationDeg As Double = 45.0   '0=Horizont, 90=Zenit
-
-    'HillShade wird als mid-grey +/- amplitude gemappt
     Public Const HillShadeNeutral As Byte = 90
     Public Const HillShadeAmplitude As Double = 21.0
 
-    'Ozean gedämpft, Beziehung Land/Ozean bleibt erhalten
-    Public Const HillShadeOceanFactor As Double = 0.55      'bei 0 deaktiviert
+    Public Const HillShadeOceanFactor As Double = 0.55
 
-    Public Const HillShadeAlphaOcean As Byte = 5            'statisches Alpha für Ozeane
-    Public Const HillShadeAlphaLandMax As Byte = 40         'dynamisches Alpha
-    Public Const HillShadeAlphaLandPower As Double = 1.3      ' >1 = stärkerer Fokus auf echte Kanten, <1 = flächiger
-
-
-    '-----------
-    ' Histogramm
-    '-----------
-
-    Public Const HistogramBins As Integer = 4096
+    Public Const HillShadeAlphaOcean As Byte = 5
+    Public Const HillShadeAlphaLandMax As Byte = 60        'leicht reduziert (dezent!)
+    Public Const HillShadeAlphaLandPower As Double = 1.3
 
 End Module

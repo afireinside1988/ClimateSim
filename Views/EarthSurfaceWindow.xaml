@@ -71,9 +71,8 @@
                             
                                 <WrapPanel Grid.Column="0" VerticalAlignment="Bottom">
                                     <CheckBox Content="Topografie" IsChecked="{Binding ShowTopoLayer}" Margin="0,0,12,0" />
-                                    <CheckBox Content="Höhen-Relief" IsChecked="{Binding ShowReliefLayer}" Margin="0,0,12,0" />
-                                    <CheckBox Content="Hill-Shading" IsChecked="{Binding UseHillShading}" Margin="0,0,12,0" IsEnabled="{Binding ShowReliefLayer}"/>
-                                    <CheckBox Content="Land-Maske" IsChecked="{Binding ShowLandMaskLayer}" Margin="0,0,12,0"/>
+                                <CheckBox Content="Höhen-Relief" IsChecked="{Binding ShowReliefLayer}" Margin="0,0,12,0" />
+                                <CheckBox Content="Land-Maske" IsChecked="{Binding ShowLandMaskLayer}" Margin="0,0,12,0"/>
                                     <CheckBox Content="Küstenlinien" IsChecked="{Binding ShowShoreLines}" Margin="0,0,12,0" IsEnabled="{Binding ShowLandMaskLayer}"/>
                                     <CheckBox Content="TID (Quell-Info)" IsChecked="{Binding ShowTidLayer}" Margin="0,0,12,0"/>
                                     <CheckBox Content="Gitternetz" IsChecked="{Binding ShowGridLayer}" />

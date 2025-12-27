@@ -336,14 +336,7 @@ Public Class EarthSurfaceViewModel
             Return _showReliefLayer
         End Get
         Set(value As Boolean)
-            If SetProperty(_showReliefLayer, value) Then
-
-                If value = False Then
-                    UseHillShading = False
-                End If
-
-                OnPropertyChanged(NameOf(UseHillShading))
-            End If
+            SetProperty(_showReliefLayer, value)
         End Set
     End Property
 
@@ -354,26 +347,6 @@ Public Class EarthSurfaceViewModel
         End Get
         Set(value As ImageSource)
             SetProperty(_reliefLayer, value)
-        End Set
-    End Property
-
-    Private _useHillShading As Boolean = False
-    Public Property UseHillShading As Boolean
-        Get
-            Return _useHillShading
-        End Get
-        Set(value As Boolean)
-            SetProperty(_useHillShading, value)
-        End Set
-    End Property
-
-    Private _hillShadeLayer As ImageSource
-    Public Property HillShadeLayer As ImageSource
-        Get
-            Return _hillShadeLayer
-        End Get
-        Set(value As ImageSource)
-            SetProperty(_hillShadeLayer, value)
         End Set
     End Property
 
@@ -620,7 +593,6 @@ Public Class EarthSurfaceViewModel
         Public Property Surface As ImageSource
         Public Property Topo As ImageSource
         Public Property Relief As ImageSource
-        Public Property HillShade As ImageSource
         Public Property LandMask As ImageSource
         Public Property ShoreLines As ImageSource
         Public Property Tid As ImageSource
@@ -966,7 +938,6 @@ Public Class EarthSurfaceViewModel
             SurfaceLayer = Nothing
             TopoLayer = Nothing
             ReliefLayer = Nothing
-            HillShadeLayer = Nothing
             LandMaskLayer = Nothing
             ShoreLineLayer = Nothing
             TidLayer = Nothing
@@ -1020,13 +991,6 @@ Public Class EarthSurfaceViewModel
                     token.ThrowIfCancellationRequested()
                     ct.ThrowIfCancellationRequested()
 
-                    progress?.Report(New ProgressInfo("HillShade-Layer rendern...", 55))
-                    Dim hillBmp = HillShadeRenderer.RenderHillShade(cache)
-                    hillBmp.Freeze()
-
-                    token.ThrowIfCancellationRequested()
-                    ct.ThrowIfCancellationRequested()
-
                     progress?.Report(New ProgressInfo("LandMask/Küstenlinien rendern...", 70))
                     Dim lm As ImageSource = Nothing
                     Dim sl As ImageSource = Nothing
@@ -1060,7 +1024,6 @@ Public Class EarthSurfaceViewModel
                         .Surface = surfaceBmp,
                         .Topo = topoBmp,
                         .Relief = reliefBmp,
-                        .HillShade = hillBmp,
                         .LandMask = lm,
                         .ShoreLines = sl,
                         .Tid = tid
@@ -1077,7 +1040,6 @@ Public Class EarthSurfaceViewModel
             SurfaceLayer = rr.Surface
             TopoLayer = rr.Topo
             ReliefLayer = rr.Relief
-            HillShadeLayer = rr.HillShade
             LandMaskLayer = rr.LandMask
             ShoreLineLayer = rr.ShoreLines
             TidLayer = rr.Tid
