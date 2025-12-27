@@ -39,29 +39,54 @@ End Structure
 ''' </summary>
 Public Class EarthSurfaceRenderer
 
-    Public Shared Function RenderSurfaceTypeWorld(provider As IEarthSurfaceProvider,
-                                                  width As Integer,
-                                                  height As Integer,
-                                                  Optional dpi As Double = 96.0) As WriteableBitmap
+    '=========================================================
+    ' Public: einfachste Overloads (Cache → Cache-Raster)
+    '=========================================================
 
-        Dim cam As New CameraState With {
-            .CenterLat = 0.0,
-            .CenterLon = 0.0,
-            .SpanLat = 180.0,
-            .SpanLon = 360.0
-        }
+    ''' <summary>
+    ''' Rendert den BaseLayer exakt im Cache-Raster (LonCount x LatCount) mit World-Camera.
+    ''' </summary>
+    Public Shared Function RenderBaseLayer(cache As EarthSurfaceCache,
+                                           Optional dpi As Double = 96.0) As WriteableBitmap
 
-        Return RenderSurfaceTypeCamera(provider, width, height, cam, dpi)
+        ArgumentNullException.ThrowIfNull(cache)
+        If cache.Meta Is Nothing Then Throw New ArgumentNullException(NameOf(cache), "cache.Meta darf nicht Nothing sein.")
 
+        Dim w As Integer = cache.Meta.LonCount
+        Dim h As Integer = cache.Meta.LatCount
+
+        Return RenderBaseLayerCamera(cache, w, h, CameraState.World, dpi)
     End Function
 
-    Public Shared Function RenderSurfaceTypeCamera(provider As IEarthSurfaceProvider,
-                                                   width As Integer,
-                                                   height As Integer,
-                                                   camera As CameraState,
-                                                   Optional dpi As Double = 96.0) As WriteableBitmap
+    ''' <summary>
+    ''' Rendert den BaseLayer exakt im Cache-Raster, aber mit frei wählbarer Camera.
+    ''' (Praktisch, falls du im Cache-Editor später mal wirklich crop/preview willst.)
+    ''' </summary>
+    Public Shared Function RenderBaseLayer(cache As EarthSurfaceCache,
+                                           camera As CameraState,
+                                           Optional dpi As Double = 96.0) As WriteableBitmap
 
-        ArgumentNullException.ThrowIfNull(provider)
+        ArgumentNullException.ThrowIfNull(cache)
+        If cache.Meta Is Nothing Then Throw New ArgumentNullException(NameOf(cache), "cache.Meta darf nicht Nothing sein.")
+
+        Dim w As Integer = cache.Meta.LonCount
+        Dim h As Integer = cache.Meta.LatCount
+
+        Return RenderBaseLayerCamera(cache, w, h, camera, dpi)
+    End Function
+
+    '=========================================================
+    ' Public: Camera-Variante (bleibt drin)
+    '=========================================================
+
+    Public Shared Function RenderBaseLayerCamera(cache As EarthSurfaceCache,
+                                                 width As Integer,
+                                                 height As Integer,
+                                                 camera As CameraState,
+                                                 Optional dpi As Double = 96.0) As WriteableBitmap
+
+        ArgumentNullException.ThrowIfNull(cache)
+        If cache.Meta Is Nothing Then Throw New ArgumentNullException(NameOf(cache), "cache.Meta darf nicht Nothing sein.")
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width)
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height)
 
@@ -72,12 +97,6 @@ Public Class EarthSurfaceRenderer
         Dim bmp As New WriteableBitmap(width, height, dpi, dpi, PixelFormats.Bgra32, Nothing)
         Dim pixels(width * height - 1) As Integer
 
-        'Pixelzentren -> norm [0..1]
-        'xNorm = (x+0.5)/width, yNorm = (y+0.5)/height
-        'lon = CenterLon + (xNorm - 0.5) * SpanLon
-        'lat = CenterLat + (0.5 - yNorm) * SpanLat
-        '
-        'danach: lon wrap, lat clamp
         Dim idx As Integer = 0
 
         For y As Integer = 0 To height - 1
@@ -92,108 +111,69 @@ Public Class EarthSurfaceRenderer
                 Dim lon As Double = camera.CenterLon + (xNorm - 0.5) * camera.SpanLon
                 lon = WrapLon180(lon)
 
-                Dim info As SurfaceInfo = provider.GetSurfaceInfo(lat, lon)
-                Dim c As Color = ColorForSurface(info.Surface)
+                'Cache-basiertes Sampling (Zellindex) – keine Provider-Abhängigkeit
+                Dim c As Color = SampleBaseColorFromCache(cache, lat, lon)
 
-                'BGRA32 in Int32: AARRGGBB wird von WritePixels als BGRA interpretiert,
-                'aber in der Praxis ist dieses Packing (A<<24 | R<<16 | G<<8 | B) das übliche für Bgra32-Int32-Puffer.
-                Dim argb As Integer =
+                pixels(idx) =
                     (CInt(c.A) << 24) Or
                     (CInt(c.R) << 16) Or
                     (CInt(c.G) << 8) Or
                     CInt(c.B)
 
-                pixels(idx) = argb
                 idx += 1
             Next
         Next
 
-        Dim stride As Integer = width * 4
-        bmp.WritePixels(New Int32Rect(0, 0, width, height), pixels, stride, 0)
-        Return bmp
-
-    End Function
-
-    Friend Shared Function RenderSurfaceType(provider As IEarthSurfaceProvider,
-                                             width As Integer,
-                                             height As Integer,
-                                             extent As GeoExtent,
-                                             dpi As Double) As WriteableBitmap
-
-        ArgumentNullException.ThrowIfNull(provider)
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width)
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height)
-        If dpi <= 0 Then dpi = 96.0     'Wenn DPI ungültig auf Default setzen
-
-        Dim bmp As New WriteableBitmap(width, height, dpi, dpi, PixelFormats.Bgra32, Nothing)
-        Dim pixels(width * height - 1) As Integer
-
-        Dim lonSpan As Double = extent.LonMax - extent.LonMin
-        Dim latSpan As Double = extent.LatMax - extent.LatMin
-
-        'Pixeltzentren -> Geo (half-cell-centered Logik)
-        Dim dLonPerPx As Double = lonSpan / width
-        Dim dLatPerPx As Double = latSpan / height
-
-        Dim idx As Integer = 0
-
-        For y As Integer = 0 To height - 1
-
-            'y=0 ist oben -> lat nahe LatMax
-            Dim lat As Double = extent.LatMax - (y + 0.5) * dLatPerPx
-
-            For x As Integer = 0 To width - 1
-
-                'DEBUG:
-                'Dim lon As Double = extent.LonMax + (x + 0.5) * dLonPerPx
-                Dim lon As Double = extent.LonMin + (x + 0.5) * dLonPerPx
-
-                'Provider-Contract: liefert SurfaceInfo für Geo
-                Dim info As SurfaceInfo = provider.GetSurfaceInfo(lat, lon)
-
-                Dim c As Color = ColorForSurface(info.Surface)
-
-                'ARGB in INt32 (WriteableBitmap Bgra32 akzeptiert Int3-Puffer via WritePixels)
-                Dim argb As Integer =
-                    (CInt(c.A) << 24) Or
-                    (CInt(c.R) << 16) Or
-                    (CInt(c.G) << 8) Or
-                    CInt(c.B)
-
-                pixels(idx) = argb
-                idx += 1
-            Next
-        Next
-
-        Dim stride As Integer = width * 4
-        bmp.WritePixels(New Int32Rect(0, 0, width, height), pixels, stride, 0)
-
+        bmp.WritePixels(New Int32Rect(0, 0, width, height), pixels, width * 4, 0)
         Return bmp
     End Function
 
-    Private Shared Function ColorForSurface(surface As SurfaceType) As Color
-        Select Case surface
-            Case SurfaceType.Ocean
-                Return Colors.MidnightBlue
+    '=========================================================
+    ' Intern: Cache-Sampling + Farben
+    '=========================================================
 
-            Case SurfaceType.SeaIce
-                Return Color.FromRgb(210, 235, 240)
-            Case SurfaceType.LandPlain
-                Return Color.FromRgb(85, 125, 55)
-            Case SurfaceType.LandForest
-                Return Color.FromRgb(30, 95, 45)
-            Case SurfaceType.LandDesert
-                Return Color.FromRgb(200, 165, 110)
-            Case SurfaceType.LandMountain
-                Return Color.FromRgb(140, 100, 65)
-            Case SurfaceType.LandIce
-                Return Color.FromRgb(245, 245, 245)
+    Private Shared Function SampleBaseColorFromCache(cache As EarthSurfaceCache, lat As Double, lon As Double) As Color
+        Dim m = cache.Meta
+        Dim cell As Double = m.CellSizeDeg
 
-            Case SurfaceType.Unknown
-                Return Colors.Magenta
-            Case Else
-                Return Colors.Gray
-        End Select
+        Dim latIdx As Integer = CInt(Math.Floor((90.0 - lat) / cell))
+        latIdx = Clamp(latIdx, 0, m.LatCount - 1)
+
+        Dim lonIdx As Integer = CInt(Math.Floor((lon + 180.0) / cell))
+        lonIdx = Clamp(lonIdx, 0, m.LonCount - 1)
+
+        Dim idx As Integer = latIdx * m.LonCount + lonIdx
+
+        'Land/Ocean/Unknown aus Cache bestimmen
+        Dim isLand As Boolean = False
+        Dim isOcean As Boolean = False
+        Dim isUnknown As Boolean = False
+
+        If cache.LandMask IsNot Nothing AndAlso idx >= 0 AndAlso idx < cache.LandMask.Length Then
+            Select Case cache.LandMask(idx)
+                Case 1 : isLand = True
+                Case 0 : isOcean = True
+                Case Else : isUnknown = True
+            End Select
+        ElseIf cache.HeightM IsNot Nothing AndAlso idx >= 0 AndAlso idx < cache.HeightM.Length Then
+            Dim h As Double = cache.HeightM(idx)
+            If Double.IsNaN(h) OrElse Double.IsInfinity(h) Then
+                isUnknown = True
+            ElseIf h < 0 Then
+                isOcean = True
+            ElseIf h > 0 Then
+                isLand = True
+            Else
+                isUnknown = True
+            End If
+        Else
+            isUnknown = True
+        End If
+
+        If isUnknown Then Return Colors.Magenta
+        If isOcean Then Return Colors.MidnightBlue
+
+        'Land (BaseLayer bewusst “nur Land”, kein Mountain-Quatsch mehr)
+        Return Color.FromRgb(85, 125, 55)
     End Function
-
 End Class

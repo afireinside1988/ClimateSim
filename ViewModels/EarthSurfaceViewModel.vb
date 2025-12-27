@@ -983,7 +983,7 @@ Public Class EarthSurfaceViewModel
                     ct.ThrowIfCancellationRequested()
 
                     progress?.Report(New ProgressInfo("Surface-Layer rendern...", 15))
-                    Dim surfaceBmp = EarthSurfaceRenderer.RenderSurfaceTypeCamera(provider, width, height, Camera)
+                    Dim surfaceBmp = EarthSurfaceRenderer.RenderBaseLayer(cache)
                     surfaceBmp.Freeze()
 
                     token.ThrowIfCancellationRequested()
@@ -1150,27 +1150,18 @@ Public Class EarthSurfaceViewModel
         'D) Statusbar-Info aus genau dieser Zelle:
         '-----------------------------------------
 
-        'Height: wenn möglich aus Cache (exakt zur Zelle)
+        'Height: wenn möglich aus Cache
         Dim h As Double = Double.NaN
         If LoadedCache.HeightM IsNot Nothing AndAlso idx >= 0 AndAlso idx < LoadedCache.HeightM.Length Then
             h = LoadedCache.HeightM(idx)
         End If
 
-        'SurfaceType: am Zellzentrum sampeln (nicht am Cursor)
-        Dim latC As Double = 90.0 - (latIdx + 0.5) * cell
-        Dim lonC As Double = -180.0 + (lonIdx + 0.5) * cell
+        'Surface-Info aus dem Cache
+        Dim surfaceText As String = SurfaceTextFromCache(LoadedCache, idx)
 
-        'TODO: AUsnhame nach Cache-Generierung: Ausnahme ausgelöst: "System.NullReferenceException" in ClimateSim.dll
-        'Object reference Not set to an instance of an object.
-
-        If _provider Is Nothing Then
-            _provider = DataEarthSurfaceProvider.CreateFromCache(LoadedCache)
-        End If
-        If _provider Is Nothing Then Return
-        Dim info As SurfaceInfo = _provider.GetSurfaceInfo(latC, lonC)
 
         'Status: Cursor-Geo weiter anzeigen (f+r Gefühl), aber Werte aus Zell-Info
-        SetStatusBar(geo.Lat, geo.Lon, h, info.Surface.ToString(), Zoom)
+        SetStatusBar(geo.Lat, geo.Lon, h, surfaceText, Zoom)
 
     End Sub
 
@@ -1628,6 +1619,27 @@ Public Class EarthSurfaceViewModel
         StatusZoomText = $"Zoom: {zoom * 100:0.##}%"
     End Sub
 
+    Private Shared Function SurfaceTextFromCache(cache As EarthSurfaceCache, idx As Integer) As String
+        If cache Is Nothing OrElse idx < 0 Then Return "Unbekannt"
+
+        If cache.LandMask IsNot Nothing AndAlso idx < cache.LandMask.Length Then
+            Select Case cache.LandMask(idx)
+                Case 1 : Return "Land"
+                Case 0 : Return "Ozean"
+                Case Else : Return "Unbekannt"
+            End Select
+        End If
+
+        'Fallback für alte Caches ohne LandMask
+        If cache.HeightM IsNot Nothing AndAlso idx < cache.HeightM.Length Then
+            Dim h As Double = cache.HeightM(idx)
+            If Double.IsNaN(h) OrElse Double.IsInfinity(h) Then Return "Unbekannt"
+            If h < 0 Then Return "Ocean"
+            If h > 0 Then Return "Land"
+        End If
+
+        Return "Unbekannt"
+    End Function
 #End Region
 
 End Class
