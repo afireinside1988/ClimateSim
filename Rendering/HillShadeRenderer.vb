@@ -24,7 +24,7 @@ Public NotInheritable Class HillShadeRenderer
         Dim width As Integer = cache.Meta.LonCount
         Dim height As Integer = cache.Meta.LatCount
         If width <= 0 OrElse height <= 0 Then
-            Throw New ArgumentOutOfRangeException("Ungültiges Raster.")
+            Throw New ArgumentOutOfRangeException(NameOf(cache), "Ungültiges Raster.")
         End If
 
         Dim hArr As Single() = cache.HeightM
@@ -130,7 +130,7 @@ Public NotInheritable Class HillShadeRenderer
                 Dim gray As Integer = CInt(Math.Round(neutral + shade * localAmp))
                 gray = Clamp(gray, 0, 255)
 
-                Dim isOcean As Boolean = False
+                Dim isOcean As Boolean
                 If hasLm Then
                     isOcean = (lmArr(i) = 0)
                 Else

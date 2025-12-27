@@ -62,12 +62,6 @@ Public NotInheritable Class ReliefRenderer
         If Double.IsNaN(landMax) OrElse landMax <= 1 Then landMax = landScale
         If Double.IsNaN(oceanMax) OrElse oceanMax <= 1 Then oceanMax = oceanScale
 
-        'Denominator für Log-Normierung vorbereiten
-        Dim landDen As Double = Math.Log(1.0 + (landMax / landScale))
-        If landDen <= 0.0 Then landDen = 1.0
-        Dim oceanDen As Double = Math.Log(1.0 + (landMax / landScale))
-        If oceanDen <= 0.0 Then oceanDen = 1.0
-
         '------------------------
         ' B) Bitmap + Pixelbuffer
         '------------------------
@@ -75,13 +69,24 @@ Public NotInheritable Class ReliefRenderer
         Dim bmp As New WriteableBitmap(width, height, dpi, dpi, PixelFormats.Bgra32, Nothing)
         Dim pixels(width * height - 1) As Integer
 
-        Dim alpha As Integer = CInt(ReliefRenderSettings.ReliefAlpha)
+
+        Dim aLandMin As Integer = CInt(ReliefRenderSettings.ReliefAlphaLandMin)
+        Dim aLandMax As Integer = CInt(ReliefRenderSettings.ReliefAlphaLandMax)
+        Dim aLandPower As Double = ReliefRenderSettings.ReliefAlphaLandPower
+
+        Dim aOceanMin As Integer = CInt(ReliefRenderSettings.ReliefAlphaOceanMin)
+        Dim aOceanMax As Integer = CInt(ReliefRenderSettings.ReliefAlphaOceanMax)
+        Dim aOceanPower As Double = ReliefRenderSettings.ReliefAlphaOceanPower
+
         Dim neutral As Integer = CInt(ReliefRenderSettings.ReliefNeutral)
         Dim baseGrayLand As Integer = CInt(ReliefRenderSettings.ReliefBaseGrayLand)
         Dim baseGrayOcean As Integer = CInt(ReliefRenderSettings.ReliefBaseGryOcean)
 
-        Dim gammaLand As Double = ReliefRenderSettings.ReliefGammaLand
-        Dim gammaOcean As Double = ReliefRenderSettings.ReliefGammaOcean
+        Dim gammaLandBase As Double = ReliefRenderSettings.ReliefGammaLandBase
+        Dim gammaOceanBase As Double = ReliefRenderSettings.ReliefGammaOceanBase
+
+        Dim tailWeight As Double = ReliefRenderSettings.ReliefTailWeight
+        Dim tailPower As Double = ReliefRenderSettings.ReliefTailPower
 
         Dim deadLand As Double = ReliefRenderSettings.ReliefDeadzoneLandT
         Dim deadOcean As Double = ReliefRenderSettings.ReliefDeadzoneOceanT
@@ -121,12 +126,12 @@ Public NotInheritable Class ReliefRenderer
                 If Not isLand AndAlso Not isOcean Then
                     'h=0 -> neutral
                     Dim g0 As Integer = neutral
-                    pixels(i) = PackBgra(alpha, g0, g0, g0)
+                    pixels(i) = PackBgra(255, g0, g0, g0)
                     Continue For
                 End If
             End If
 
-            Dim gray As Integer = neutral
+            Dim gray As Integer
 
             If isLand Then
                 'Land: auch wenn h < 0 (Depressionen) nicht abdunkeln, sondern neutral bleiben
@@ -136,13 +141,13 @@ Public NotInheritable Class ReliefRenderer
                 Dim t0 As Double = hh / landScale
                 If t0 <= deadLand Then t0 = 0.0
 
-                Dim w As Double = Clamp(ReliefRenderSettings.ReliefTailWeight, 0.0, 0.95)
+                Dim w As Double = Clamp(tailWeight, 0.0, 0.95)
 
                 Dim t As Double
 
                 If t0 <= 1.0 Then
                     'Basisbereich: Gamma auf t0 anwenden
-                    t = (1.0 - w) * Math.Pow(Clamp(t0, 0.0, 1.0), gammaLand)
+                    t = (1.0 - w) * Math.Pow(Clamp(t0, 0.0, 1.0), gammaLandBase)
                 Else
                     'Tail (Hochgebirge): weiche Annäherung an 1, ohne hart zu clippen
                     'u = 0..1 für [landScale..landMax]
@@ -151,10 +156,7 @@ Public NotInheritable Class ReliefRenderer
                     u = Clamp(u, 0.0, 1.0)
 
                     'Tail-Krümmung
-                    Dim tail As Double = 1.0 - Math.Pow(1.0 - u, ReliefRenderSettings.ReliefTailPower)
-
-                    'tBase ist exakt 1.0 am Knee (weil t0=1), wir geben dem Tail nur noch einen zusatzanteil
-                    t = 1.0 + ReliefRenderSettings.ReliefTailWeight * tail
+                    Dim tail As Double = 1.0 - Math.Pow(1.0 - u, tailPower)
 
                     'Wichtig: wieder 0..1 zurück mappen
                     t = (1.0 - w) + w * tail
@@ -163,6 +165,13 @@ Public NotInheritable Class ReliefRenderer
 
                 Dim delta As Double = dLandMax * t
                 gray = CInt(Math.Round(baseGrayLand + delta))
+                gray = Clamp(gray, 0, 255)
+
+                Dim aT As Double = Math.Pow(Clamp(t, 0.0, 1.0), aLandPower)
+                Dim aPix As Integer = CInt(Math.Round(aLandMin + (aLandMax - aLandMin) * aT))
+                aPix = Clamp(aPix, 0, 255)
+
+                pixels(i) = PackBgra(aPix, gray, gray, gray)
             ElseIf isOcean Then
                 'Ozean: Tiefe als positiv
                 Dim dd As Double = Math.Max(0.0, -h)
@@ -171,11 +180,13 @@ Public NotInheritable Class ReliefRenderer
                 Dim t0 As Double = dd / oceanScale
                 If t0 <= deadOcean Then t0 = 0.0
 
+                Dim w As Double = Clamp(tailWeight, 0.0, 0.95)
+
                 Dim t As Double
 
                 If t0 <= 1.0 Then
                     'Basisbereich: Gamma auf t0 anwenden
-                    t = Math.Pow(Clamp(t0, 0.0, 1.0), gammaOcean)
+                    t = (1.0 - w) * Math.Pow(Clamp(t0, 0.0, 1.0), gammaOceanBase)
                 Else
                     'Tail (Tiefsee): weiche Annäherung an 1, ohne hart zu clippen
                     'u = 0..1 für [oceanScale..oceanMax]
@@ -184,22 +195,24 @@ Public NotInheritable Class ReliefRenderer
                     u = Clamp(u, 0.0, 1.0)
 
                     'Tail-Krümmung
-                    Dim tail As Double = 1.0 - Math.Pow(1.0 - u, ReliefRenderSettings.ReliefTailPower)
-
-                    'tBase ist exakt 1.0 am Knee (weil t0=1), wir geben dem Tail nur noch einen zusatzanteil
-                    t = 1.0 + ReliefRenderSettings.ReliefTailWeight * tail
+                    Dim tail As Double = 1.0 - Math.Pow(1.0 - u, tailPower)
 
                     'Wichtig: wieder 0..1 zurück mappen
-                    t = t / (1.0 + ReliefRenderSettings.ReliefTailWeight)
+                    t = (1.0 - w) + w * tail
                 End If
 
                 Dim delta As Double = dOceanMax * t
                 gray = CInt(Math.Round(baseGrayOcean - delta))
+                gray = Clamp(gray, 0, 255)
+
+                Dim aT As Double = Math.Pow(Clamp(t, 0.0, 1.0), aOceanPower)
+                Dim aPix As Integer = CInt(Math.Round(aOceanMin + (aOceanMax - aOceanMin) * aT))
+                aPix = Clamp(aPix, 0, 255)
+
+                pixels(i) = PackBgra(aPix, gray, gray, gray)
             End If
 
-            gray = Clamp(gray, 0, 255)
 
-            pixels(i) = PackBgra(alpha, gray, gray, gray)
         Next
 
         Dim stride As Integer = width * 4
@@ -219,4 +232,5 @@ Public NotInheritable Class ReliefRenderer
     Private Shared Function PackBgra(a As Integer, r As Integer, g As Integer, b As Integer) As Integer
         Return (a << 24) Or (r << 16) Or (g << 8) Or b
     End Function
+
 End Class

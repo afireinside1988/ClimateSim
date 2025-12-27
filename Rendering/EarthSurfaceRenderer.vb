@@ -179,13 +179,13 @@ Public Class EarthSurfaceRenderer
             Case SurfaceType.SeaIce
                 Return Color.FromRgb(210, 235, 240)
             Case SurfaceType.LandPlain
-                Return Color.FromRgb(70, 140, 65)
+                Return Color.FromRgb(85, 125, 55)
             Case SurfaceType.LandForest
                 Return Color.FromRgb(30, 95, 45)
             Case SurfaceType.LandDesert
                 Return Color.FromRgb(200, 165, 110)
             Case SurfaceType.LandMountain
-                Return Color.FromRgb(120, 85, 55)
+                Return Color.FromRgb(140, 100, 65)
             Case SurfaceType.LandIce
                 Return Color.FromRgb(245, 245, 245)
 

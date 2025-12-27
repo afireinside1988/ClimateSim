@@ -14,7 +14,7 @@ Public Class DataEarthSurfaceProvider
     '--- einfache Regeln (später konfigurierbar machen) ---
     Private ReadOnly _seaIceNorthLatDeg As Double = 80.0
     Private ReadOnly _seaIceSouthLatDeg As Double = -70.0
-    Private Shared ReadOnly _mountainDecisionHeight As Double = 2000.0
+    Private Shared ReadOnly _mountainDecisionHeight As Double = 2500.0
 
     'LandIce grob (wie ToyEarth; später durch echte Eis-Modelle ersetzen)
     Private ReadOnly _antarcticaLatDeg As Double = -70.0

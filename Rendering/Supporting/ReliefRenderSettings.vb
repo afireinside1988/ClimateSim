@@ -16,8 +16,8 @@
     ' gamma > 1: kleine Werte gedämpft, Berge bleiben sichtbar
     '---------------------------------------------------------
 
-    Public Const ReliefGammaLand As Double = 1.05
-    Public Const ReliefGammaOcean As Double = 1.3
+    Public Const ReliefGammaLandBase As Double = 0.7
+    Public Const ReliefGammaOceanBase As Double = 1.3
 
     'Optional: Deadzone in normalisiertem t (0..1)
     Public Const ReliefDeadzoneLandT As Double = 0.03
@@ -28,18 +28,27 @@
     ' neutral ist 128 (mid-grey), delta addiert/subtrahiert
     '------------------------------------------------------
 
-    Public Const ReliefAlpha As Byte = 125
-    Public Const ReliefNeutral As Byte = 110
-    Public Const ReliefBaseGrayLand As Byte = 100
-    Public Const ReliefBaseGryOcean As Byte = 90
+    'Alpha-Extremwerte
+    Public Const ReliefAlphaLandMin As Byte = 20
+    Public Const ReliefAlphaLandMax As Byte = 200
+    Public Const ReliefAlphaOceanMin As Byte = 60
+    Public Const ReliefAlphaOceanMax As Byte = 200
+
+    'Alpha-Kurve: >1 = Fokus auf Extreme, <1 => flächiger
+    Public Const ReliefAlphaLandPower As Double = 1.4
+    Public Const ReliefAlphaOceanPower As Double = 1.4
+
+    Public Const ReliefNeutral As Byte = 128
+    Public Const ReliefBaseGrayLand As Byte = 200
+    Public Const ReliefBaseGryOcean As Byte = 80
 
     'Maximale Aufhellung Land / Abdunklung Ozean ist in Graustufen-Delta (0..127 sinnvoll)
-    Public Const ReliefDeltaLandMax As Double = 127.0
-    Public Const ReliefDeltaOceanMax As Double = 75.0
+    Public Const ReliefDeltaLandMax As Double = 100.0
+    Public Const ReliefDeltaOceanMax As Double = 100.0
 
     'Tail-Verhalten (für Hochgebirge/Tiefsee)
-    Public Const ReliefTailPower As Double = 1.7          'Tail-Krümmung: >1 = flacher Start, stärkerer Fokus auf echte Hochgebirge/Tiefsee
-    Public Const ReliefTailWeight As Double = 0.55        'wie viel "extra Raum" bekommt der Tail
+    Public Const ReliefTailPower As Double = 0.9         'Tail-Krümmung: >1 = flacher Start, stärkerer Fokus auf echte Hochgebirge/Tiefsee
+    Public Const ReliefTailWeight As Double = 0.45        'wie viel "extra Raum" bekommt der Tail
 
     '-----------------
     ' HillShade: Sonne
