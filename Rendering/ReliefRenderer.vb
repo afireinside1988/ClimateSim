@@ -65,8 +65,8 @@ Public NotInheritable Class ReliefRenderer
 
         Dim alpha As Integer = CInt(ReliefRenderSettings.ReliefAlpha)
         Dim neutral As Integer = CInt(ReliefRenderSettings.ReliefNeutral)
-        Dim baseGrayLand As Integer = 120
-        Dim baseGrayOcean As Integer = 100
+        Dim baseGrayLand As Integer = CInt(ReliefRenderSettings.ReliefBaseGrayLand)
+        Dim baseGrayOcean As Integer = CInt(ReliefRenderSettings.ReliefBaseGryOcean)
 
         Dim gammaLand As Double = ReliefRenderSettings.ReliefGammaLand
         Dim gammaOcean As Double = ReliefRenderSettings.ReliefGammaOcean
@@ -106,7 +106,7 @@ Public NotInheritable Class ReliefRenderer
             Else
                 isLand = (h > 0)
                 isOcean = (h < 0)
-                If Not isLand AndAlso isOcean Then
+                If Not isLand AndAlso Not isOcean Then
                     'h=0 -> neutral
                     Dim g0 As Integer = neutral
                     pixels(i) = PackBgra(alpha, g0, g0, g0)

@@ -113,6 +113,7 @@ Public Class EarthSurfaceViewModel
                 Case CellSizePreset.Deg0_5 : Return 0.5
                 Case CellSizePreset.Deg0_25 : Return 0.25
                 Case CellSizePreset.Deg0_125 : Return 0.125
+                Case CellSizePreset.Deg0_0625 : Return 0.0625
                 Case Else : Return 1.0
             End Select
         End Get
@@ -336,7 +337,7 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
-    Private _useHillShading As Boolean = True
+    Private _useHillShading As Boolean = False
     Public Property UseHillShading As Boolean
         Get
             Return _useHillShading
@@ -1479,6 +1480,8 @@ Public Class EarthSurfaceViewModel
             Return CellSizePreset.Deg0_25
         ElseIf Math.Abs(cellSizeDeg - 0.125) < eps Then
             Return CellSizePreset.Deg0_125
+        ElseIf Math.Abs(cellSizeDeg - 0.0625) < eps Then
+            Return CellSizePreset.Deg0_0625
         End If
 
         Throw New InvalidDataException($"Unbekannte CellSizeDeg in Meta: {cellSizeDeg}. Erwarten: 1.0, 0.5 oder 0.25.")
