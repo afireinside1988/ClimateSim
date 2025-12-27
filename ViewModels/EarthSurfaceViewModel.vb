@@ -310,7 +310,27 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
-    Private _showReliefLayer As Boolean = True
+    Private _showTopoLayer As Boolean = True
+    Public Property ShowTopoLayer As Boolean
+        Get
+            Return _showTopoLayer
+        End Get
+        Set(value As Boolean)
+            SetProperty(_showTopoLayer, value)
+        End Set
+    End Property
+
+    Private _topoLayer As ImageSource
+    Public Property TopoLayer As ImageSource
+        Get
+            Return _topoLayer
+        End Get
+        Set(value As ImageSource)
+            SetProperty(_topoLayer, value)
+        End Set
+    End Property
+
+    Private _showReliefLayer As Boolean = False
     Public Property ShowReliefLayer As Boolean
         Get
             Return _showReliefLayer
@@ -598,6 +618,7 @@ Public Class EarthSurfaceViewModel
         Public Property Provider As DataEarthSurfaceProvider
 
         Public Property Surface As ImageSource
+        Public Property Topo As ImageSource
         Public Property Relief As ImageSource
         Public Property HillShade As ImageSource
         Public Property LandMask As ImageSource
@@ -943,6 +964,7 @@ Public Class EarthSurfaceViewModel
 
         If LoadedCache Is Nothing Then
             SurfaceLayer = Nothing
+            TopoLayer = Nothing
             ReliefLayer = Nothing
             HillShadeLayer = Nothing
             LandMaskLayer = Nothing
@@ -976,15 +998,17 @@ Public Class EarthSurfaceViewModel
                     Dim width As Integer = cache.Meta.LonCount
                     Dim height As Integer = cache.Meta.LatCount
 
-                    progress?.Report(New ProgressInfo("Provider initialisieren...", 0))
-                    Dim provider As DataEarthSurfaceProvider = DataEarthSurfaceProvider.CreateFromCache(cache)
+
+                    progress?.Report(New ProgressInfo("Surface-Layer rendern...", 15))
+                    Dim surfaceBmp = BaseMapRenderer.RenderBaseMapLayer(cache)
+                    surfaceBmp.Freeze()
 
                     token.ThrowIfCancellationRequested()
                     ct.ThrowIfCancellationRequested()
 
-                    progress?.Report(New ProgressInfo("Surface-Layer rendern...", 15))
-                    Dim surfaceBmp = EarthSurfaceRenderer.RenderBaseLayer(cache)
-                    surfaceBmp.Freeze()
+                    progress?.Report(New ProgressInfo("Topografie-Layer rendern...", 30))
+                    Dim topoBmp = TopoRenderer.RenderTopoLayer(cache)
+                    topoBmp.Freeze()
 
                     token.ThrowIfCancellationRequested()
                     ct.ThrowIfCancellationRequested()
@@ -1033,8 +1057,8 @@ Public Class EarthSurfaceViewModel
                     Return New PreviewRenderResult With {
                         .Width = width,
                         .Height = height,
-                        .Provider = provider,
                         .Surface = surfaceBmp,
+                        .Topo = topoBmp,
                         .Relief = reliefBmp,
                         .HillShade = hillBmp,
                         .LandMask = lm,
@@ -1051,6 +1075,7 @@ Public Class EarthSurfaceViewModel
             _provider = rr.Provider
 
             SurfaceLayer = rr.Surface
+            TopoLayer = rr.Topo
             ReliefLayer = rr.Relief
             HillShadeLayer = rr.HillShade
             LandMaskLayer = rr.LandMask
@@ -1640,6 +1665,7 @@ Public Class EarthSurfaceViewModel
 
         Return "Unbekannt"
     End Function
+
 #End Region
 
 End Class

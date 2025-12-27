@@ -179,14 +179,5 @@ Public Class DataEarthSurfaceProvider
         Return i
     End Function
 
-    ''' <summary>
-    ''' Wrap auf [-180,+180]
-    ''' </summary>
-    Private Shared Function WrapLon180(lonDeg As Double) As Double
-        Dim x As Double = lonDeg
-        x = ((x + 180.0) Mod 360.0 + 360.0) Mod 360.0
-        Return x - 180.0
-    End Function
-
 #End Region
 End Class

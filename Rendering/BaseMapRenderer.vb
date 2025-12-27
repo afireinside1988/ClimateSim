@@ -37,7 +37,7 @@ End Structure
 ''' Minimaler Provider-basierter Renderer (C1)
 ''' *Best-of-Both*: Public minimal, intern schon mit Extent erweiterbar.
 ''' </summary>
-Public Class EarthSurfaceRenderer
+Public Class BaseMapRenderer
 
     '=========================================================
     ' Public: einfachste Overloads (Cache → Cache-Raster)
@@ -46,7 +46,7 @@ Public Class EarthSurfaceRenderer
     ''' <summary>
     ''' Rendert den BaseLayer exakt im Cache-Raster (LonCount x LatCount) mit World-Camera.
     ''' </summary>
-    Public Shared Function RenderBaseLayer(cache As EarthSurfaceCache,
+    Public Shared Function RenderBaseMapLayer(cache As EarthSurfaceCache,
                                            Optional dpi As Double = 96.0) As WriteableBitmap
 
         ArgumentNullException.ThrowIfNull(cache)
@@ -55,14 +55,14 @@ Public Class EarthSurfaceRenderer
         Dim w As Integer = cache.Meta.LonCount
         Dim h As Integer = cache.Meta.LatCount
 
-        Return RenderBaseLayerCamera(cache, w, h, CameraState.World, dpi)
+        Return RenderBaseLayerMapCamera(cache, w, h, CameraState.World, dpi)
     End Function
 
     ''' <summary>
     ''' Rendert den BaseLayer exakt im Cache-Raster, aber mit frei wählbarer Camera.
     ''' (Praktisch, falls du im Cache-Editor später mal wirklich crop/preview willst.)
     ''' </summary>
-    Public Shared Function RenderBaseLayer(cache As EarthSurfaceCache,
+    Public Shared Function RenderBaseMapLayer(cache As EarthSurfaceCache,
                                            camera As CameraState,
                                            Optional dpi As Double = 96.0) As WriteableBitmap
 
@@ -72,14 +72,14 @@ Public Class EarthSurfaceRenderer
         Dim w As Integer = cache.Meta.LonCount
         Dim h As Integer = cache.Meta.LatCount
 
-        Return RenderBaseLayerCamera(cache, w, h, camera, dpi)
+        Return RenderBaseLayerMapCamera(cache, w, h, camera, dpi)
     End Function
 
     '=========================================================
     ' Public: Camera-Variante (bleibt drin)
     '=========================================================
 
-    Public Shared Function RenderBaseLayerCamera(cache As EarthSurfaceCache,
+    Public Shared Function RenderBaseLayerMapCamera(cache As EarthSurfaceCache,
                                                  width As Integer,
                                                  height As Integer,
                                                  camera As CameraState,
@@ -145,7 +145,7 @@ Public Class EarthSurfaceRenderer
         Dim idx As Integer = latIdx * m.LonCount + lonIdx
 
         'Land/Ocean/Unknown aus Cache bestimmen
-        Dim isLand As Boolean = False
+        Dim isLand As Boolean
         Dim isOcean As Boolean = False
         Dim isUnknown As Boolean = False
 
@@ -173,7 +173,7 @@ Public Class EarthSurfaceRenderer
         If isUnknown Then Return Colors.Magenta
         If isOcean Then Return Colors.MidnightBlue
 
-        'Land (BaseLayer bewusst “nur Land”, kein Mountain-Quatsch mehr)
+        'Land (BaseLayer bewusst “nur Land”)
         Return Color.FromRgb(85, 125, 55)
     End Function
 End Class

@@ -70,6 +70,7 @@
                             </Grid.ColumnDefinitions>
                             
                                 <WrapPanel Grid.Column="0" VerticalAlignment="Bottom">
+                                    <CheckBox Content="Topografie" IsChecked="{Binding ShowTopoLayer}" Margin="0,0,12,0" />
                                     <CheckBox Content="Höhen-Relief" IsChecked="{Binding ShowReliefLayer}" Margin="0,0,12,0" />
                                     <CheckBox Content="Hill-Shading" IsChecked="{Binding UseHillShading}" Margin="0,0,12,0" IsEnabled="{Binding ShowReliefLayer}"/>
                                     <CheckBox Content="Land-Maske" IsChecked="{Binding ShowLandMaskLayer}" Margin="0,0,12,0"/>
@@ -159,6 +160,10 @@
 
                                 <!-- Layer 1: Surface -->
                                 <Image Source="{Binding SurfaceLayer}" x:Name="SurfaceMap"/>
+
+                                <!-- Layer 2: Topografie-->
+                                <Image Source="{Binding TopoLayer}"
+                                       Visibility="{Binding ShowTopoLayer, Converter={StaticResource BoolToVis}}"/>
 
                                 <!-- Layer 2: Relief -->
                                 <Image Source="{Binding ReliefLayer}"
