@@ -97,32 +97,35 @@ Public Class BaseMapRenderer
         Dim bmp As New WriteableBitmap(width, height, dpi, dpi, PixelFormats.Bgra32, Nothing)
         Dim pixels(width * height - 1) As Integer
 
-        Dim idx As Integer = 0
+        Parallel.For(
+            0, height,
+            Sub(y)
 
-        For y As Integer = 0 To height - 1
 
-            Dim yNorm As Double = (y + 0.5) / height
-            Dim lat As Double = camera.CenterLat + (0.5 - yNorm) * camera.SpanLat
-            lat = Clamp(lat, -90.0, 90.0)
 
-            For x As Integer = 0 To width - 1
+                Dim yNorm As Double = (y + 0.5) / height
+                Dim lat As Double = camera.CenterLat + (0.5 - yNorm) * camera.SpanLat
+                lat = Clamp(lat, -90.0, 90.0)
 
-                Dim xNorm As Double = (x + 0.5) / width
-                Dim lon As Double = camera.CenterLon + (xNorm - 0.5) * camera.SpanLon
-                lon = WrapLon180(lon)
+                Dim row As Integer = y * width
 
-                'Cache-basiertes Sampling (Zellindex) – keine Provider-Abhängigkeit
-                Dim c As Color = SampleBaseColorFromCache(cache, lat, lon)
+                For x As Integer = 0 To width - 1
 
-                pixels(idx) =
-                    (CInt(c.A) << 24) Or
-                    (CInt(c.R) << 16) Or
-                    (CInt(c.G) << 8) Or
-                    CInt(c.B)
+                    Dim xNorm As Double = (x + 0.5) / width
+                    Dim lon As Double = camera.CenterLon + (xNorm - 0.5) * camera.SpanLon
+                    lon = WrapLon180(lon)
 
-                idx += 1
-            Next
-        Next
+                    'Cache-basiertes Sampling (Zellindex) – keine Provider-Abhängigkeit
+                    Dim c As Color = SampleBaseColorFromCache(cache, lat, lon)
+
+                    pixels(row + x) =
+                        (CInt(c.A) << 24) Or
+                        (CInt(c.R) << 16) Or
+                        (CInt(c.G) << 8) Or
+                        CInt(c.B)
+
+                Next
+            End Sub)
 
         bmp.WritePixels(New Int32Rect(0, 0, width, height), pixels, width * 4, 0)
         Return bmp

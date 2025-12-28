@@ -108,9 +108,9 @@ Public Class GeoGridOverlay
         'Pens (1px und 2px in Screen-Space)
         Dim minorPen As Pen = Nothing
         If minorStepCells > 0 Then
-            Dim b As Brush = New SolidColorBrush(Color.FromArgb(80, 255, 255, 255))
+            Dim b As Brush = New SolidColorBrush(Color.FromArgb(40, 255, 255, 255))
             b.Freeze()
-            minorPen = New Pen(b, 0.5)
+            minorPen = New Pen(b, 1.0)
             minorPen.Freeze()
         End If
 

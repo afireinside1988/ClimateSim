@@ -30,10 +30,11 @@
         Dim greyArgb As Integer = aShift Or (&HE6 << 16) Or (&HE6 << 8) Or &HE6
         Dim blackArgb As Integer = aShift        'RGB=0
 
-        For i As Integer = 0 To pixels.Length - 1
-            Dim island As Boolean = (mask(i) <> 0)
-            pixels(i) = If(island, greyArgb, blackArgb)
-        Next
+        Parallel.For(
+            0, pixels.Length,
+            Sub(i)
+                pixels(i) = If((mask(i) <> 0), greyArgb, blackArgb)
+            End Sub)
 
         bmp.WritePixels(New Int32Rect(0, 0, w, h), pixels, w * 4, 0)
         bmp.Freeze()
@@ -83,48 +84,51 @@
         Dim pixels(w * h - 1) As Integer    'default = 0 -> transparent
 
         'Rand lassen wir transparent (1..h-2 / 1..w-2), damit kein Out-of-Range
-        For y As Integer = 1 To h - 2
+        Parallel.For(
+            1, h - 1,
+            Sub(y)
 
-            Dim row As Integer = y * w
+                Dim row As Integer = y * w
 
-            For x As Integer = 1 To w - 2
+                For x As Integer = 1 To w - 2
 
-                Dim i As Integer = row + x
+                    Dim i As Integer = row + x
 
-                Dim isLand As Boolean = (mask(i) <> 0)
+                    Dim isLand As Boolean = (mask(i) <> 0)
 
-                'die 4 Nachbarn wenn keine Diagonalen
-                Dim north As Boolean = (mask(i - w) <> 0)
-                Dim south As Boolean = (mask(i + w) <> 0)
-                Dim west As Boolean = (mask(i - 1) <> 0)
-                Dim east As Boolean = (mask(i + 1) <> 0)
+                    'die 4 Nachbarn wenn keine Diagonalen
+                    Dim north As Boolean = (mask(i - w) <> 0)
+                    Dim south As Boolean = (mask(i + w) <> 0)
+                    Dim west As Boolean = (mask(i - 1) <> 0)
+                    Dim east As Boolean = (mask(i + 1) <> 0)
 
-                Dim isEdge As Boolean = False
+                    Dim isEdge As Boolean = False
 
-                If isLand Then
-                    isEdge = (north = False) OrElse
-                             (south = False) OrElse
-                             (west = False) OrElse
-                             (east = False)
-                End If
+                    If isLand Then
+                        isEdge = (north = False) OrElse
+                                 (south = False) OrElse
+                                 (west = False) OrElse
+                                 (east = False)
+                    End If
 
 
-                If isLand AndAlso Not isEdge AndAlso includeDiagonal Then
-                    'Optional die Diagonalen
-                    Dim northwest As Boolean = (mask(i - w - 1) <> 0)
-                    Dim northeast As Boolean = (mask(i - w + 1) <> 0)
-                    Dim southwest As Boolean = (mask(i + w - 1) <> 0)
-                    Dim southeast As Boolean = (mask(i + w + 1) <> 0)
+                    If isLand AndAlso Not isEdge AndAlso includeDiagonal Then
+                        'Optional die Diagonalen
+                        Dim northwest As Boolean = (mask(i - w - 1) <> 0)
+                        Dim northeast As Boolean = (mask(i - w + 1) <> 0)
+                        Dim southwest As Boolean = (mask(i + w - 1) <> 0)
+                        Dim southeast As Boolean = (mask(i + w + 1) <> 0)
 
-                    isEdge = (northwest = False) OrElse
-                             (northeast = False) OrElse
-                             (southwest = False) OrElse
-                             (southeast = False)
-                End If
+                        isEdge = (northwest = False) OrElse
+                                 (northeast = False) OrElse
+                                 (southwest = False) OrElse
+                                 (southeast = False)
+                    End If
 
-                If isEdge Then pixels(i) = edgeArgb
-            Next
-        Next
+                    If isEdge Then pixels(i) = edgeArgb
+                Next
+
+            End Sub)
 
         bmp.WritePixels(New Int32Rect(0, 0, w, h), pixels, w * 4, 0)
         bmp.Freeze()

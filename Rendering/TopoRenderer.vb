@@ -83,41 +83,44 @@
             Dim lmArr As Byte() = cache.LandMask
             Dim hasLm As Boolean = (lmArr IsNot Nothing AndAlso lmArr.Length = hArr.Length)
 
-            For i As Integer = 0 To pixels.Length - 1
+            Parallel.For(
+                0, pixels.Length,
+                Sub(i)
 
-                Dim hs As Single = hArr(i)
-                If Single.IsNaN(hs) OrElse Single.IsInfinity(hs) Then
-                    pixels(i) = Magenta    'Magenta als Void
-                    Continue For
-                End If
 
-                Dim isLand As Boolean
-                If hasLm Then
-                    'LandMask: 1=Land, 0=Ocean, sonst unknown -> Magenta
-                    Dim lm As Byte = lmArr(i)
-                    If lm = 1 Then
-                        isLand = True
-                    ElseIf lm = 0 Then
-                        isLand = False
-                    Else
-                        pixels(i) = Magenta         'Magenta als Void
-                        Continue For
+
+                    Dim hs As Single = hArr(i)
+                    If Single.IsNaN(hs) OrElse Single.IsInfinity(hs) Then
+                        pixels(i) = Magenta    'Magenta als Void
+                        Return
                     End If
-                Else
-                    isLand = (hs > 0)
-                End If
 
-                If isLand Then
-                    Dim h As Integer = CInt(hs)
-                    h = Clamp(h, 0, 7000)
-                    pixels(i) = _landLut(h)
-                Else
-                    Dim d As Integer = CInt(-hs)
-                    d = Clamp(d, 0, 8000)
-                    pixels(i) = _oceanLut(d)
-                End If
+                    Dim isLand As Boolean
+                    If hasLm Then
+                        'LandMask: 1=Land, 0=Ocean, sonst unknown -> Magenta
+                        Dim lm As Byte = lmArr(i)
+                        If lm = 1 Then
+                            isLand = True
+                        ElseIf lm = 0 Then
+                            isLand = False
+                        Else
+                            pixels(i) = Magenta         'Magenta als Void
+                            Return
+                        End If
+                    Else
+                        isLand = (hs > 0)
+                    End If
 
-            Next
+                    If isLand Then
+                        Dim h As Integer = CInt(hs)
+                        h = Clamp(h, 0, 7000)
+                        pixels(i) = _landLut(h)
+                    Else
+                        Dim d As Integer = CInt(-hs)
+                        d = Clamp(d, 0, 8000)
+                        pixels(i) = _oceanLut(d)
+                    End If
+                End Sub)
 
             bmp.WritePixels(New Int32Rect(0, 0, width, height), pixels, width * 4, 0)
             Return bmp
@@ -128,27 +131,30 @@
         'Slow Path (Camera-Sample)
         '-------------------------
 
-        Dim idx As Integer = 0
 
-        For y As Integer = 0 To height - 1
+        Parallel.For(
+            0, height,
+            Sub(y)
 
-            Dim yNorm As Double = (y + 0.5) / height
-            Dim lat As Double = camera.CenterLat + (0.5 - yNorm) * camera.SpanLat
-            lat = Clamp(lat, -90.0, 90.0)
+                Dim yNorm As Double = (y + 0.5) / height
+                Dim lat As Double = camera.CenterLat + (0.5 - yNorm) * camera.SpanLat
+                lat = Clamp(lat, -90.0, 90.0)
 
-            For x As Integer = 0 To width - 1
+                Dim row As Integer = y * width
 
-                Dim xNorm As Double = (x + 0.5) / width
-                Dim lon As Double = camera.CenterLon + (xNorm - 0.5) * camera.SpanLon
-                lon = WrapLon180(lon)
+                For x As Integer = 0 To width - 1
 
-                Dim c As Color = SampleTopoColor(cache, lat, lon)
+                    Dim xNorm As Double = (x + 0.5) / width
+                    Dim lon As Double = camera.CenterLon + (xNorm - 0.5) * camera.SpanLon
+                    lon = WrapLon180(lon)
 
-                pixels(idx) = (255 << 24) Or (CInt(c.R) << 16) Or (CInt(c.G) << 8) Or CInt(c.B)
+                    Dim c As Color = SampleTopoColor(cache, lat, lon)
 
-                idx += 1
-            Next
-        Next
+                    pixels(row + x) = (&HFF << 24) Or (CInt(c.R) << 16) Or (CInt(c.G) << 8) Or CInt(c.B)
+
+                Next
+            End Sub)
+
 
         bmp.WritePixels(New Int32Rect(0, 0, width, height), pixels, width * 4, 0)
         Return bmp
@@ -309,7 +315,7 @@
         t = Math.Pow(t, 1.15) ' >1: mehr Fokus auf Tiefsee, <1: mehr Fokus auf Schelf
 
         Return LerpColor(
-            Color.FromRgb(50, 70, 95),        'flach
+            Color.FromRgb(50, 70, 95),          'flach
             Color.FromRgb(12, 18, 35), t)       'tief
 
     End Function

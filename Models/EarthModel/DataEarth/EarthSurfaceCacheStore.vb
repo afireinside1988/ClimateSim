@@ -34,7 +34,8 @@ Public Class EarthSurfaceCacheStore
     ''' <returns></returns>
     Public Shared Function BuildCacheBaseName(source As String, cellSizeDeg As Double, resampling As String,
                                               Optional landMaskVariant As String = Nothing) As String
-        Dim cs As String = cellSizeDeg.ToString("0.###", Globalization.CultureInfo.InvariantCulture)
+
+        Dim cs As String = CellSizeFileTokenFromDeg(cellSizeDeg)
 
         Dim lm As String = NormalizeNamePart(landMaskVariant)
         Dim lmPart As String = If(String.IsNullOrWhiteSpace(lm), "", "_" & lm)

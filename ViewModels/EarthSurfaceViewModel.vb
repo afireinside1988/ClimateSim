@@ -108,14 +108,7 @@ Public Class EarthSurfaceViewModel
     End Property
     Public ReadOnly Property CellSizeDeg As Double
         Get
-            Select Case SelectedCellSize
-                Case CellSizePreset.Deg1 : Return 1.0
-                Case CellSizePreset.Deg0_5 : Return 0.5
-                Case CellSizePreset.Deg0_25 : Return 0.25
-                Case CellSizePreset.Deg0_125 : Return 0.125
-                Case CellSizePreset.Deg0_0625 : Return 0.0625
-                Case Else : Return 1.0
-            End Select
+            Return CellSizeDegFromPreset(SelectedCellSize)
         End Get
     End Property
 
@@ -1480,24 +1473,6 @@ Public Class EarthSurfaceViewModel
     Private Shared Function LonCenterDeg(lonIndex As Integer, cellSizeDeg As Double) As Double
         'lonIndex 0 = West (links)
         Return -180 + (lonIndex + 0.5) * cellSizeDeg
-    End Function
-
-    Private Shared Function CellSizePresetFromDeg(cellSizeDeg As Double) As CellSizePreset
-        Const eps As Double = 0.0000001
-
-        If Math.Abs(cellSizeDeg - 1.0) < eps Then
-            Return CellSizePreset.Deg1
-        ElseIf Math.Abs(cellSizeDeg - 0.5) < eps Then
-            Return CellSizePreset.Deg0_5
-        ElseIf Math.Abs(cellSizeDeg - 0.25) < eps Then
-            Return CellSizePreset.Deg0_25
-        ElseIf Math.Abs(cellSizeDeg - 0.125) < eps Then
-            Return CellSizePreset.Deg0_125
-        ElseIf Math.Abs(cellSizeDeg - 0.0625) < eps Then
-            Return CellSizePreset.Deg0_0625
-        End If
-
-        Throw New InvalidDataException($"Unbekannte CellSizeDeg in Meta: {cellSizeDeg}. Erwarten: 1.0, 0.5 oder 0.25.")
     End Function
 
     Public Shared Function ScreenToGeo(mousePos As Point,
