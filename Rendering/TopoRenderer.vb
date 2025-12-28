@@ -1,5 +1,11 @@
 ﻿Public NotInheritable Class TopoRenderer
 
+    Private Const A255 As Integer = &HFF000000
+    Private Const Magenta As Integer = &HFFFF00FF
+
+    Private Shared ReadOnly _landLut As Integer() = BuildLandLut()
+    Private Shared ReadOnly _oceanLut As Integer() = BuildOceanLut()
+
     Public Sub New()
 
     End Sub
@@ -59,11 +65,68 @@
 
         If dpi <= 0 Then dpi = 96.0
 
+        Dim meta = cache.Meta
         Dim bmp As New WriteableBitmap(width, height, dpi, dpi, PixelFormats.Bgra32, Nothing)
         Dim pixels(width * height - 1) As Integer
 
-        Dim meta = cache.Meta
-        Dim cell As Double = meta.CellSizeDeg
+        '------------------------
+        'Fast Path (direct Cache)
+        '------------------------
+
+        If width = meta.LonCount AndAlso height = meta.LatCount AndAlso IsWorldCamera(camera) Then
+
+            Dim hArr As Single() = cache.HeightM
+            If hArr Is Nothing OrElse hArr.Length <> width * height Then
+                Throw New InvalidOperationException("Cache.HeightM fehlt oder hat falsche Länge.")
+            End If
+
+            Dim lmArr As Byte() = cache.LandMask
+            Dim hasLm As Boolean = (lmArr IsNot Nothing AndAlso lmArr.Length = hArr.Length)
+
+            For i As Integer = 0 To pixels.Length - 1
+
+                Dim hs As Single = hArr(i)
+                If Single.IsNaN(hs) OrElse Single.IsInfinity(hs) Then
+                    pixels(i) = Magenta    'Magenta als Void
+                    Continue For
+                End If
+
+                Dim isLand As Boolean
+                If hasLm Then
+                    'LandMask: 1=Land, 0=Ocean, sonst unknown -> Magenta
+                    Dim lm As Byte = lmArr(i)
+                    If lm = 1 Then
+                        isLand = True
+                    ElseIf lm = 0 Then
+                        isLand = False
+                    Else
+                        pixels(i) = Magenta         'Magenta als Void
+                        Continue For
+                    End If
+                Else
+                    isLand = (hs > 0)
+                End If
+
+                If isLand Then
+                    Dim h As Integer = CInt(hs)
+                    h = Clamp(h, 0, 7000)
+                    pixels(i) = _landLut(h)
+                Else
+                    Dim d As Integer = CInt(-hs)
+                    d = Clamp(d, 0, 8000)
+                    pixels(i) = _oceanLut(d)
+                End If
+
+            Next
+
+            bmp.WritePixels(New Int32Rect(0, 0, width, height), pixels, width * 4, 0)
+            Return bmp
+        End If
+
+
+        '-------------------------
+        'Slow Path (Camera-Sample)
+        '-------------------------
 
         Dim idx As Integer = 0
 
@@ -173,6 +236,68 @@
         End If
     End Function
 
+    Private Shared Function BuildLandLut() As Integer()
+        'Skalen für Farbwechsel
+        Const hMid As Integer = 1700
+        Const hHigh As Integer = 3000
+        Const hMax As Integer = 7000
+
+        Dim lut(hMax) As Integer
+
+        'Skalenfarben
+        Dim g0 = (110, 130, 90)       'grün
+        Dim y0 = (200, 185, 120)      'ocker
+        Dim br = (140, 100, 65)       'braun
+        Dim wh = (245, 245, 245)      'fast weiß
+
+        Const p As Double = 2.2       'Power für Peak-Stufe, damit Tibet nicht so hell wird
+
+        For h As Integer = 0 To hMax
+
+            Dim r As Integer, g As Integer, b As Integer
+
+            If h < hMid Then
+                Dim t As Double = h / CDbl(hMid)
+                LerpRGB(g0, y0, t, r, g, b)
+
+            ElseIf h < hHigh Then
+                Dim t As Double = (h - hMid) / CDbl(hHigh - hMid)
+                LerpRGB(y0, br, t, r, g, b)
+
+            Else
+                Dim tLin As Double = (h - hHigh) / CDbl(hMax - hHigh)
+                Dim t As Double = Math.Pow(Clamp(tLin, 0.0, 1.0), p)
+                LerpRGB(br, wh, t, r, g, b)
+            End If
+
+            lut(h) = PackArgb(r, g, b)
+        Next
+
+        Return lut
+
+    End Function
+
+    Private Shared Function BuildOceanLut() As Integer()
+        Const dMax As Integer = 8000
+        Dim lut(dMax) As Integer
+
+        Dim shallow = (50, 70, 95)        'hellblau - Küste
+        Dim deep = (12, 18, 35)           'Dunkelblau - Tiefen
+
+        For d As Integer = 0 To dMax
+
+            Dim t As Double = d / CDbl(dMax)
+            t = Math.Pow(Clamp(t, 0.0, 1.0), 1.15)
+
+            Dim r As Integer, g As Integer, b As Integer
+            LerpRGB(shallow, deep, t, r, g, b)
+            lut(d) = PackArgb(r, g, b)
+
+        Next
+
+        Return lut
+    End Function
+
     Private Shared Function ColorForOceanDepth(d As Double) As Color
 
         d = Math.Max(0.0, d)
@@ -203,4 +328,36 @@
         Return Color.FromRgb(CByte(r), CByte(g), CByte(bb))
     End Function
 
+    Private Shared Sub LerpRGB(a As (Integer, Integer, Integer),
+                                    b As (Integer, Integer, Integer),
+                                    t As Double,
+                                    ByRef r As Integer,
+                                    ByRef g As Integer,
+                                    ByRef bb As Integer)
+
+        t = Clamp(t, 0.0, 1.0)
+
+        r = CInt(a.Item1 + (b.Item1 - a.Item1) * t)
+        g = CInt(a.Item2 + (b.Item2 - a.Item2) * t)
+        bb = CInt(a.Item3 + (b.Item3 - a.Item3) * t)
+
+        r = Clamp(r, 0, 255)
+        g = Clamp(g, 0, 255)
+        bb = Clamp(bb, 0, 255)
+    End Sub
+
+    Private Shared Function PackArgb(r As Integer, g As Integer, b As Integer) As Integer
+        Return A255 Or ((r And 255) << 16) Or ((g And 255) << 8) Or (b And 255)
+    End Function
+    '========
+    ' Helper
+    '========
+
+    Private Shared Function IsWorldCamera(cam As CameraState) As Boolean
+        Const eps As Double = 0.00000001
+        Return Math.Abs(cam.CenterLat - 0.0) < eps AndAlso
+               Math.Abs(cam.CenterLon - 0.0) < eps AndAlso
+               Math.Abs(cam.SpanLat - 180.0) < eps AndAlso
+               Math.Abs(cam.SpanLon - 360.0) < eps
+    End Function
 End Class

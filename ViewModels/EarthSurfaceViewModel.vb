@@ -588,7 +588,7 @@ Public Class EarthSurfaceViewModel
         Public Property Width As Integer
         Public Property Height As Integer
 
-        Public Property Provider As DataEarthSurfaceProvider
+        Public Property TimingReport As String
 
         Public Property Surface As ImageSource
         Public Property Topo As ImageSource
@@ -962,6 +962,10 @@ Public Class EarthSurfaceViewModel
                 "EarthSurface: Preview rendern",
                 Function(progress, ct)
 
+                    'DEBUG
+                    Dim timings As New List(Of RenderTiming)()
+                    Dim wH As String = $"{cache.Meta.LonCount}x{cache.Meta.LatCount}"
+
                     'kombiniere erst ct von BusyRunner + eigenes
                     token.ThrowIfCancellationRequested()
                     ct.ThrowIfCancellationRequested()
@@ -970,23 +974,30 @@ Public Class EarthSurfaceViewModel
                     Dim height As Integer = cache.Meta.LatCount
 
 
-                    progress?.Report(New ProgressInfo("Surface-Layer rendern...", 15))
-                    Dim surfaceBmp = BaseMapRenderer.RenderBaseMapLayer(cache)
-                    surfaceBmp.Freeze()
-
-                    token.ThrowIfCancellationRequested()
-                    ct.ThrowIfCancellationRequested()
-
-                    progress?.Report(New ProgressInfo("Topografie-Layer rendern...", 30))
-                    Dim topoBmp = TopoRenderer.RenderTopoLayer(cache)
-                    topoBmp.Freeze()
+                    progress?.Report(New ProgressInfo("Topografie-Layer rendern...", 15))
+                    'Dim topoBmp = TopoRenderer.RenderTopoLayer(cache)
+                    'topoBmp.Freeze()
+                    'DEBUG:
+                    Dim topoBmp = WithTiming("Topo", timings,
+                                             Function()
+                                                 Dim bmp = TopoRenderer.RenderTopoLayer(cache)
+                                                 bmp.Freeze()
+                                                 Return bmp
+                                             End Function, extra:=wH)
 
                     token.ThrowIfCancellationRequested()
                     ct.ThrowIfCancellationRequested()
 
                     progress?.Report(New ProgressInfo("Relief-Layer rendern...", 40))
-                    Dim reliefBmp = ReliefRenderer.RenderRelief(cache)
-                    reliefBmp.Freeze()
+                    'Dim reliefBmp = ReliefRenderer.RenderRelief(cache)
+                    'reliefBmp.Freeze()
+                    'DEBUG:
+                    Dim reliefBmp = WithTiming("Relief", timings,
+                                             Function()
+                                                 Dim bmp = ReliefRenderer.RenderRelief(cache)
+                                                 bmp.Freeze()
+                                                 Return bmp
+                                             End Function, extra:=wH)
 
                     token.ThrowIfCancellationRequested()
                     ct.ThrowIfCancellationRequested()
@@ -996,12 +1007,26 @@ Public Class EarthSurfaceViewModel
                     Dim sl As ImageSource = Nothing
 
                     If cache.Meta.HasLandMask AndAlso cache.LandMask IsNot Nothing Then
-                        Dim lmBmp = LandMaskRenderer.RenderLandMask(cache)
-                        lmBmp.Freeze()
+                        'Dim lmBmp = LandMaskRenderer.RenderLandMask(cache)
+                        'lmBmp.Freeze()
+                        'DEBUG:
+                        Dim lmBmp = WithTiming("LandMask", timings,
+                                             Function()
+                                                 Dim bmp = LandMaskRenderer.RenderLandMask(cache)
+                                                 bmp.Freeze()
+                                                 Return bmp
+                                             End Function, extra:=wH)
                         lm = lmBmp
 
-                        Dim slBmp = LandMaskRenderer.RenderShoreLines(cache, ShoreLineColor, alpha:=160, includeDiagonal:=True)
-                        slBmp.Freeze()
+                        'Dim slBmp = LandMaskRenderer.RenderShoreLines(cache, ShoreLineColor, alpha:=160, includeDiagonal:=True)
+                        'slBmp.Freeze()
+                        'DEBUG:
+                        Dim slBmp = WithTiming("ShoreLines", timings,
+                                             Function()
+                                                 Dim bmp = LandMaskRenderer.RenderShoreLines(cache)
+                                                 bmp.Freeze()
+                                                 Return bmp
+                                             End Function, extra:=wH)
                         sl = slBmp
                     End If
 
@@ -1011,17 +1036,27 @@ Public Class EarthSurfaceViewModel
                     progress?.Report(New ProgressInfo("TID-Layer rendern...", 85))
                     Dim tid As ImageSource = Nothing
                     If cache.Meta.HasTid Then
-                        Dim tidBmp = TidRenderer.RenderTidLayer(cache, alpha:=255)
-                        tidBmp.Freeze()
+                        'Dim tidBmp = TidRenderer.RenderTidLayer(cache, alpha:=255)
+                        'tidBmp.Freeze()
+                        'DEBUG:
+                        Dim tidBmp = WithTiming("TID", timings,
+                                             Function()
+                                                 Dim bmp = TidRenderer.RenderTidLayer(cache)
+                                                 bmp.Freeze()
+                                                 Return bmp
+                                             End Function, extra:=wH)
                         tid = tidBmp
                     End If
 
                     progress?.Report(New ProgressInfo("Fertig.", 100))
+                    'DEBUG:
+                    Dim timingReport As String = FormatTimings(timings)
 
                     Return New PreviewRenderResult With {
                         .Width = width,
                         .Height = height,
-                        .Surface = surfaceBmp,
+                        .TimingReport = timingReport,
+                        .Surface = Nothing,
                         .Topo = topoBmp,
                         .Relief = reliefBmp,
                         .LandMask = lm,
@@ -1035,9 +1070,7 @@ Public Class EarthSurfaceViewModel
             If Not Object.ReferenceEquals(cache, LoadedCache) Then Return
 
             'UI-Thread: VM befüllen
-            _provider = rr.Provider
-
-            SurfaceLayer = rr.Surface
+            SurfaceLayer = Nothing
             TopoLayer = rr.Topo
             ReliefLayer = rr.Relief
             LandMaskLayer = rr.LandMask
@@ -1046,6 +1079,8 @@ Public Class EarthSurfaceViewModel
 
             ContentWidth = rr.Width
             ContentHeight = rr.Height
+
+            Debug.WriteLine(rr.TimingReport)
 
             'Fit/Viewport
             If _lastViewportW > 0 AndAlso _lastViewportH > 0 Then

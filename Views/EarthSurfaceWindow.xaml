@@ -68,23 +68,30 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
                             
-                                <WrapPanel Grid.Column="0" VerticalAlignment="Bottom">
-                                    <CheckBox Content="Topografie" IsChecked="{Binding ShowTopoLayer}" Margin="0,0,12,0" />
-                                <CheckBox Content="Höhen-Relief" IsChecked="{Binding ShowReliefLayer}" Margin="0,0,12,0" />
-                                <CheckBox Content="Land-Maske" IsChecked="{Binding ShowLandMaskLayer}" Margin="0,0,12,0"/>
-                                    <CheckBox Content="Küstenlinien" IsChecked="{Binding ShowShoreLines}" Margin="0,0,12,0" IsEnabled="{Binding ShowLandMaskLayer}"/>
-                                    <CheckBox Content="TID (Quell-Info)" IsChecked="{Binding ShowTidLayer}" Margin="0,0,12,0"/>
-                                    <CheckBox Content="Gitternetz" IsChecked="{Binding ShowGridLayer}" />
-                                </WrapPanel>
+                            <WrapPanel Grid.Column="0" Grid.Row="0" VerticalAlignment="Bottom">
+                                <RadioButton x:Name="RadioTopo" Content="Topografie" IsChecked="{Binding ShowTopoLayer}" Margin="0,0,12,0" />
+                                <RadioButton Content="Land-Maske" IsChecked="{Binding ShowLandMaskLayer}" Margin="0,0,12,0"/>
+                                <RadioButton Content="TID (Quell-Info)" IsChecked="{Binding ShowTidLayer}" Margin="0,0,12,0"/>
+                            </WrapPanel>
+                            <WrapPanel Grid.Column="0" Grid.Row="1" VerticalAlignment="Bottom" Margin="0,5,0,0">
+                                <CheckBox Content="Gitternetz" IsChecked="{Binding ShowGridLayer}" Margin="0,0,12,0"
+                                          Width="{Binding ElementName=RadioTopo, Path=ActualWidth}"/>
+                                
+                                <CheckBox Content="Höhen-Relief" IsChecked="{Binding ShowReliefLayer}" Margin="0,0,12,0"
+                                          Visibility="{Binding ShowTopoLayer, Converter={StaticResource BoolToVis}}"/>
+                                <CheckBox Content="Küstenlinien" IsChecked="{Binding ShowShoreLines}" Margin="0,0,12,0"
+                                          IsEnabled="{Binding ShowLandMaskLayer}"
+                                          Visibility="{Binding ShowLandMaskLayer, Converter={StaticResource BoolToVis}}"/>
+                                <CheckBox Content="TID-Legende"
+                                          Visibility="{Binding ShowTidLayer, Converter={StaticResource BoolToVis}}"
+                                          Command="{Binding ToggleTidLegendCommand}"/>
+                            </WrapPanel>
                             
-                                <Button Grid.Column="1"
-                                        Width="80"
-                                        MaxHeight="25"
-                                        HorizontalAlignment="Right"
-                                        VerticalAlignment="Bottom"
-                                        Content="TID-Legende" Visibility="{Binding ShowTidLayer, Converter={StaticResource BoolToVis}}"
-                                        Command="{Binding ToggleTidLegendCommand}"/>
                         </Grid>
                     
                     </StackPanel>
@@ -164,13 +171,9 @@
                                 <Image Source="{Binding TopoLayer}"
                                        Visibility="{Binding ShowTopoLayer, Converter={StaticResource BoolToVis}}"/>
 
-                                <!-- Layer 2: Relief -->
+                                <!-- Layer 3: Relief -->
                                 <Image Source="{Binding ReliefLayer}"
                                        Visibility="{Binding ShowReliefLayer, Converter={StaticResource BoolToVis}}"/>
-                                
-                                <!-- Layer 3: HillShade -->
-                                <Image Source="{Binding HillShadeLayer}"
-                                       Visibility="{Binding UseHillShading, Converter={StaticResource BoolToVis}}"/>
 
                                 <!-- Layer 4: LandMask -->
                                 <Image Source="{Binding LandMaskLayer}"
@@ -364,7 +367,7 @@
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding SurfaceLayer}" Value="{x:Null}">
+                                                <DataTrigger Binding="{Binding TopoLayer}" Value="{x:Null}">
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
