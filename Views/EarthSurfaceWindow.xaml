@@ -16,6 +16,28 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <conv:EnumToBooleanConverter x:Key="EnumToBool"/>
         <conv:BooleanAndToVisibilityConverter x:Key="AndToVis"/>
+
+        <Style x:Key="IconButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="25"/>
+            <Setter Property="Height" Value="25"/>
+            <Setter Property="Padding" Value="1"/>
+            <Setter Property="Margin" Value="0,0,2,0"/>
+            <Setter Property="ToolTipService.ShowDuration" Value="20000"/>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.5"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="IconImageStyle" TargetType="Image">
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Stretch" Value="Uniform"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="RenderOptions.BitmapScalingMode" Value="NearestNeighbor"/>
+        </Style>
+        
     </Window.Resources>
 
     <Grid>
@@ -61,27 +83,31 @@
                     </Grid.RowDefinitions>
 
                     <!-- Header + Layer-Toggles -->
-                    <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                    <StackPanel x:Name="HeaderStack" Grid.Row="0" Margin="0,0,0,10">
                         <TextBlock Text="Vorschau" FontSize="16" FontWeight="Bold" Margin="0,0,0,5"/>
-                        <Grid MinHeight="25">
+                        <Grid MinHeight="25" Width="{Binding ElementName=HeaderStack, Path=ActualWidth}">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/> <!-- Layer-Auswahl -->
+                                <RowDefinition Height="Auto"/> <!-- Layer-Optionen -->
+                                <RowDefinition Height="Auto"/> <!-- Werkzeugleiste für Editor -->
                             </Grid.RowDefinitions>
                             
+                            <!-- Layer-Auswhal -->
                             <WrapPanel Grid.Column="0" Grid.Row="0" VerticalAlignment="Bottom">
                                 <RadioButton x:Name="RadioTopo" Content="Topografie" IsChecked="{Binding ShowTopoLayer}" Margin="0,0,12,0" />
                                 <RadioButton Content="Land-Maske" IsChecked="{Binding ShowLandMaskLayer}" Margin="0,0,12,0"/>
                                 <RadioButton Content="TID (Quell-Info)" IsChecked="{Binding ShowTidLayer}" Margin="0,0,12,0"/>
                             </WrapPanel>
+                            <CheckBox Content="Editor-Modus" Grid.Column="1" Grid.Row="0" IsChecked="{Binding IsEditMode}"/>
+
+                            <!-- Layer-Optionen -->
                             <WrapPanel Grid.Column="0" Grid.Row="1" VerticalAlignment="Bottom" Margin="0,5,0,0">
                                 <CheckBox Content="Gitternetz" IsChecked="{Binding ShowGridLayer}" Margin="0,0,12,0"
                                           Width="{Binding ElementName=RadioTopo, Path=ActualWidth}"/>
-                                
                                 <CheckBox Content="Höhen-Relief" IsChecked="{Binding ShowReliefLayer}" Margin="0,0,12,0"
                                           Visibility="{Binding ShowTopoLayer, Converter={StaticResource BoolToVis}}"/>
                                 <CheckBox Content="Küstenlinien" IsChecked="{Binding ShowShoreLines}" Margin="0,0,12,0"
@@ -90,6 +116,52 @@
                                 <CheckBox Content="TID-Legende"
                                           Visibility="{Binding ShowTidLayer, Converter={StaticResource BoolToVis}}"
                                           Command="{Binding ToggleTidLegendCommand}"/>
+                            </WrapPanel>
+                            
+                            <!-- Toolbar für Editor -->
+                            <WrapPanel Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="2" VerticalAlignment="Bottom" Margin="0,10,0,0"
+                                       Visibility="{Binding IsEditMode, Converter={StaticResource BoolToVis}}">
+                                <Button Style="{StaticResource IconButtonStyle}"
+                                        Command="{Binding SaveEditsCommand}"
+                                        IsEnabled="{Binding CanSaveEdits}"
+                                        ToolTip="Speichern">
+                                    <Image Style="{StaticResource IconImageStyle}"
+                                           Source="pack://application:,,,/Assets/Icons/Save.png"/>
+                                </Button>
+                                <Button Style="{StaticResource IconButtonStyle}"
+                                        Command="{Binding SaveEditsAsCommand}"
+                                        IsEnabled="{Binding CanSaveEdits}"
+                                        ToolTip="Speichern Als">    
+                                    <Image Style="{StaticResource IconImageStyle}"
+                                           Source="pack://application:,,,/Assets/Icons/SaveAs.png"/>
+                                </Button>
+                                
+                                <Separator Margin="4,0,4,0"/>
+                                
+                                <Button Style="{StaticResource IconButtonStyle}"
+                                        Command="{Binding UndoEditsCommand}"
+                                        IsEnabled="{Binding CanUndoEdits}"
+                                        ToolTip="Rückgängig">
+                                    <Image Style="{StaticResource IconImageStyle}"
+                                           Source="pack://application:,,,/Assets/Icons/Undo.png"/>
+                                </Button>
+                                <Button Style="{StaticResource IconButtonStyle}"
+                                        Command="{Binding RedoEditsCommand}"
+                                        IsEnabled="{Binding CanRedoEdits}"
+                                        ToolTip="Wiederholen">
+                                    <Image Style="{StaticResource IconImageStyle}"
+                                           Source="pack://application:,,,/Assets/Icons/Redo.png"/>
+                                </Button>
+
+                                <Separator Margin="4,0,4,0"/>
+                                
+                                <TextBlock Text="Kanal:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox Width="140"
+                                          VerticalContentAlignment="Center"
+                                          ItemsSource="{Binding EditChannels}"
+                                          SelectedItem="{Binding SelectedEditChannel, Mode=TwoWay}"
+                                          IsEnabled="True">
+                                </ComboBox>
                             </WrapPanel>
                             
                         </Grid>
@@ -131,7 +203,8 @@
                                     EndPanCommand="{Binding EndPanCommand}"
                                     ZoomCommand="{Binding ZoomCommand}"
                                     HoverCommand="{Binding MapMouseMoveCommand}"
-                                    ViewportChangedCommand="{Binding ViewportChangedCommand}" />
+                                    ViewportChangedCommand="{Binding ViewportChangedCommand}" 
+                                    MouseDownCommand="{Binding MapMouseDownCommand}" />
                             </i:Interaction.Behaviors>
 
 
@@ -186,6 +259,11 @@
                                 <!-- Layer 6: TID -->
                                 <Image Source="{Binding TidLayer}"
                                        Visibility="{Binding ShowTidLayer, Converter={StaticResource BoolToVis}}"/>
+                                
+                                <!-- Layer 7: EditOverlay -->
+                                <Image Source="{Binding EditOverlayLayer}"
+                                       Visibility="{Binding IsEditMode, Converter={StaticResource BoolToVis}}"
+                                       IsHitTestVisible="False"/>
 
                                 <!-- Hover-Zelle als Overlay für Editing -->
                                 <Rectangle Width="1"
@@ -560,9 +638,6 @@
                             Width="140" Height="32" Margin="0,0,8,0"
                             Command="{Binding GenerateCacheCommand}"
                             IsEnabled="{Binding CanGenerateCache}"/>
-                        <Button Content="Cache-Ordner"
-                            Width="110" Height="32"
-                            Command="{Binding OpenCacheFolderCommand}"/>
                     </StackPanel>
 
                     <!-- Status -->

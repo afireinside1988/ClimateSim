@@ -60,8 +60,10 @@ Public MustInherit Class ViewModelBase
             Return _isBusy
         End Get
         Set(value As Boolean)
-            SetProperty(_isBusy, value)
-            CommandManager.InvalidateRequerySuggested()
+            If SetProperty(_isBusy, value) Then
+                OnIsBusyChanged()
+                CommandManager.InvalidateRequerySuggested()
+            End If
         End Set
     End Property
     Public Property BusyTitle As String
@@ -118,6 +120,10 @@ Public MustInherit Class ViewModelBase
             Return _cancelBusyCommand
         End Get
     End Property
+
+    Protected Overridable Sub OnIsBusyChanged()
+
+    End Sub
 #End Region
 
 End Class

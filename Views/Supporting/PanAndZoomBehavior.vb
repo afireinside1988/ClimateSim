@@ -72,6 +72,17 @@ Public Class PanAndZoomBehavior
     Public Shared ReadOnly ViewportChangedCommandProperty As DependencyProperty =
         DependencyProperty.Register(NameOf(ViewportChangedCommand), GetType(ICommand), GetType(PanAndZoomBehavior))
 
+    Public Property MouseDownCommand As ICommand
+        Get
+            Return CType(GetValue(MouseDownCommandProperty), ICommand)
+        End Get
+        Set(value As ICommand)
+            SetValue(MouseDownCommandProperty, value)
+        End Set
+    End Property
+    Public Shared ReadOnly MouseDownCommandProperty As DependencyProperty =
+        DependencyProperty.Register(NameOf(MouseDownCommand), GetType(ICommand), GetType(PanAndZoomBehavior))
+
 
     Protected Overrides Sub OnAttached()
         MyBase.OnAttached()
@@ -83,6 +94,8 @@ Public Class PanAndZoomBehavior
         AddHandler AssociatedObject.MouseMove, AddressOf OnMouseMove
         AddHandler AssociatedObject.MouseLeftButtonUp, AddressOf OnMouseUp
         AddHandler AssociatedObject.MouseWheel, AddressOf OnMouseWheel
+        AddHandler AssociatedObject.MouseLeave, AddressOf OnMouseLeave
+        AddHandler AssociatedObject.LostMouseCapture, AddressOf OnLostMouseCapture
 
 
     End Sub
@@ -96,8 +109,8 @@ Public Class PanAndZoomBehavior
         RemoveHandler AssociatedObject.MouseMove, AddressOf OnMouseMove
         RemoveHandler AssociatedObject.MouseLeftButtonUp, AddressOf OnMouseUp
         RemoveHandler AssociatedObject.MouseWheel, AddressOf OnMouseWheel
-
-
+        RemoveHandler AssociatedObject.MouseLeave, AddressOf OnMouseLeave
+        RemoveHandler AssociatedObject.LostMouseCapture, AddressOf OnLostMouseCapture
 
         MyBase.OnDetaching()
     End Sub
@@ -112,6 +125,32 @@ Public Class PanAndZoomBehavior
 
     Private Sub OnMouseDown(sender As Object, e As MouseButtonEventArgs)
 
+        If e.ChangedButton <> MouseButton.Left Then Return
+
+        Dim mods As ModifierKeys = Keyboard.Modifiers
+        Dim ctrl As Boolean = (mods And ModifierKeys.Control) = ModifierKeys.Control
+        Dim alt As Boolean = (mods And ModifierKeys.Alt) = ModifierKeys.Alt
+
+        'A) Edit-Click (Strg oder Alt) -> VM informieren, KEIN Panning starten
+        If ctrl OrElse alt Then
+
+            Dim req As New MapMouseDownRequest With {
+                .MousePos = e.GetPosition(AssociatedObject),
+                .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height),
+                .IsLeftButton = True,
+                .Ctrl = ctrl,
+                .Alt = alt
+            }
+
+            If MouseDownCommand IsNot Nothing AndAlso MouseDownCommand.CanExecute(req) Then
+                MouseDownCommand.Execute(req)
+                e.Handled = True
+            End If
+
+            Return
+        End If
+
+        'B) normales Panning (ohne Modifier)
         _isPanning = True
 
         AssociatedObject.CaptureMouse()
@@ -131,8 +170,12 @@ Public Class PanAndZoomBehavior
 
     Private Sub OnMouseMove(sender As Object, e As MouseEventArgs)
 
+
+
+
         'Hover immer melden (Position relativ zu MapHost!)
-        If HoverCommand IsNot Nothing Then
+        Dim isDragging As Boolean = _isPanning OrElse e.LeftButton = MouseButtonState.Pressed
+        If Not isDragging AndAlso HoverCommand IsNot Nothing Then
             Dim hover As New HoverRequest With {
                 .MousePos = e.GetPosition(AssociatedObject),
                 .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height)
@@ -142,8 +185,8 @@ Public Class PanAndZoomBehavior
         End If
 
         '2) Panning nur bei gedrückter linker Maustaste
+        If Not _isPanning Then Return
         If e.LeftButton <> MouseButtonState.Pressed Then Return
-
 
         Dim payload As New PanRequest With {
             .MousePos = e.GetPosition(AssociatedObject),
@@ -191,6 +234,21 @@ Public Class PanAndZoomBehavior
 
     End Sub
 
+    Private Sub OnLostMouseCapture(sender As Object, e As MouseEventArgs)
+        If _isPanning Then
+            _isPanning = False
+            If EndPanCommand IsNot Nothing AndAlso EndPanCommand.CanExecute(Nothing) Then
+                EndPanCommand.Execute(Nothing)
+            End If
+        End If
+    End Sub
+
+    Private Sub OnMouseLeave(sender As Object, e As MouseEventArgs)
+        If _isPanning AndAlso AssociatedObject.IsMouseCaptured Then
+            AssociatedObject.ReleaseMouseCapture()
+        End If
+    End Sub
+
     Private Sub FireViewportChanged()
 
         If ViewportChangedCommand Is Nothing Then Return
@@ -222,6 +280,15 @@ End Class
 
 Public Class ViewportChangedRequest
     Public Property ViewPortSize As Size
+End Class
+
+Public Class MapMouseDownRequest
+    Public Property MousePos As Point
+    Public Property ViewPortSize As Size
+    Public Property IsLeftButton As Boolean
+    Public Property Ctrl As Boolean
+    Public Property Alt As Boolean
+
 End Class
 
 #Enable Warning CA1416 ' Plattformkompatibilität überprüfen

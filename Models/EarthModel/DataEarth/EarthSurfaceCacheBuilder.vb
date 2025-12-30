@@ -141,16 +141,17 @@ Public NotInheritable Class EarthSurfaceCacheBuilder
         Dim reqNearestByTile As List(Of TileRequests(Of NearestRequestPacked)) = Nothing
 
         If hasTid OrElse resampling = "nearest" Then
-            pReq.Report(New ProgressInfo("Baue Nearest-Mapping...", ProgressInfo.Indeterminate))
+            pReq.Report(New ProgressInfo("Erstelle Nearest-Mapping...", ProgressInfo.Indeterminate))
             reqNearestByTile = GebcoNearestRequestBuilder.BuildRequests(heightTiles, opts.CellSizeDeg, latCount, lonCount)
         Else
-            pReq.Report(New ProgressInfo("Baue Bilinear-Mapping...", ProgressInfo.Indeterminate))
+            pReq.Report(New ProgressInfo("Erstelle Bilinear-Mapping...", ProgressInfo.Indeterminate))
         End If
 
         'Height-Requests je nach Resampling
         Dim reqBilinearByTile As List(Of TileRequests(Of BilinearRequestPacked)) = Nothing
 
         If resampling = "bilinear" Then
+            pReq.Report(New ProgressInfo("Erstelle Bilinear-Mapping...", ProgressInfo.Indeterminate))
             reqBilinearByTile = GebcoBilinearRequestBuilder.BuildRequests(heightTiles, opts.CellSizeDeg, latCount, lonCount)
         End If
 

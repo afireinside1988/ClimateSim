@@ -25,6 +25,9 @@ Public NotInheritable Class TidLegend
         '--- Land ---
         SetTid(0, "Land (terrestrische Rasterzelle)", "Land", Color.FromRgb(&H3B, &H8F, &H3B)) 'grün
 
+        '--- Manuell gesetzt ---
+        SetTid(254, "Manuell editierte Zelle", "Manuell", Colors.Red)
+
         '=========================
         ' Direktmessungen (10–17)
         '=========================
@@ -73,7 +76,7 @@ Public NotInheritable Class TidLegend
         Dim order As Integer() = New Integer() {0,
                                                  10, 11, 12, 13, 14, 15, 16, 17,
                                                  40, 41, 42, 43, 44, 45, 46, 47,
-                                                 70, 71, 72, 255}
+                                                 70, 71, 72, 254, 255}
 
         Dim list As New List(Of TidLegendItemViewModel)(order.Length)
 

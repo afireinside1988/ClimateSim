@@ -1,12 +1,20 @@
 ﻿Imports System.Collections.ObjectModel
 Imports System.Globalization
 Imports System.IO
+Imports System.Runtime.InteropServices.JavaScript
+Imports System.Security.Cryptography.X509Certificates
 Imports System.Text
 Imports System.Windows.Media.Media3D
 Imports Microsoft.Win32
 
 Public Class EarthSurfaceViewModel
     Inherits ViewModelBase
+
+    Protected Overrides Sub OnIsBusyChanged()
+        MyBase.OnIsBusyChanged()
+        RefreshEditCommandState()
+        RaiseEditCommandCanExecuteChanged()
+    End Sub
 
 #Region "Input"
 
@@ -76,8 +84,17 @@ Public Class EarthSurfaceViewModel
             Return _loadedCache
         End Get
         Set(value As EarthSurfaceCache)
-            SetProperty(_loadedCache, value)
-            OnPropertyChanged(NameOf(CacheMeta))
+            If SetProperty(_loadedCache, value) Then
+                OnPropertyChanged(NameOf(CacheMeta))
+
+                ResetEditState()
+                EnsureEditSession()
+
+                RefreshEditCommandState()
+
+                _editOverlayWb = Nothing
+                EditOverlayLayer = Nothing
+            End If
         End Set
     End Property
 
@@ -86,8 +103,6 @@ Public Class EarthSurfaceViewModel
             Return LoadedCache?.Meta
         End Get
     End Property
-
-    Private _provider As DataEarthSurfaceProvider
 
 #End Region
 
@@ -594,6 +609,267 @@ Public Class EarthSurfaceViewModel
 
 #End Region
 
+#Region "Editor"
+
+    Private _editDirty As Boolean = False
+    Public Property EditDirty As Boolean
+        Get
+            Return _editDirty
+        End Get
+        Set(value As Boolean)
+            If SetProperty(_editDirty, value) Then
+                RefreshEditCommandState()
+            End If
+        End Set
+    End Property
+
+    Private _undoCount As Integer = 0
+    Public Property UndoCount As Integer
+        Get
+            Return _undoCount
+        End Get
+        Set(value As Integer)
+            value = Math.Max(0, value)
+            If SetProperty(_undoCount, value) Then RefreshEditCommandState()
+        End Set
+    End Property
+
+    Private _redoCount As Integer = 0
+    Public Property RedoCount As Integer
+        Get
+            Return _redoCount
+        End Get
+        Set(value As Integer)
+            value = Math.Max(0, value)
+            If SetProperty(_redoCount, value) Then RefreshEditCommandState()
+        End Set
+    End Property
+
+
+    Private _isEditMode As Boolean = False
+    Public Property IsEditMode As Boolean
+        Get
+            Return _isEditMode
+        End Get
+        Set(value As Boolean)
+            If value = _isEditMode Then Return
+
+            'Nur beim Ausschalten fragen
+            If _isEditMode AndAlso Not value AndAlso EditDirty Then
+
+                Dim res = MessageBox.Show(
+                $"Der Editor hat noch nicht gespeicherte Änderungen.{vbCrLf}{vbCrLf}Sollen die Änderungen gespeichert werden?",
+                "Änderungen speichern?",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Warning)
+
+                Select Case res
+                    Case MessageBoxResult.Cancel
+                        Return
+
+                    Case MessageBoxResult.No
+                        'weiter unten wird ausgeschaltet
+                        Exit Select
+                    Case MessageBoxResult.Yes
+                        'TODO: Speichern. Wenn Speichern fehlschlägt oder abgebrochen -> Return
+                        'If Not SaveEditsInternal() Then Return
+                End Select
+            End If
+
+            If SetProperty(_isEditMode, value) Then
+                EnsureEditSession()
+                RefreshEditCommandState()
+
+                If _isEditMode Then
+                    RebuildEditOverlay()
+                Else
+                    EditOverlayLayer = Nothing
+                End If
+            End If
+
+        End Set
+    End Property
+
+    Private _editOverlayWb As WriteableBitmap
+    Private _editOverlayLayer As ImageSource
+    Public Property EditOverlayLayer As ImageSource
+        Get
+            Return _editOverlayLayer
+        End Get
+        Set(value As ImageSource)
+            SetProperty(_editOverlayLayer, value)
+        End Set
+    End Property
+
+    Private _selectedEditChannel As EditChannel = EditChannel.LandMask
+    Public Property SelectedEditChannel As EditChannel
+        Get
+            Return _selectedEditChannel
+        End Get
+        Set(value As EditChannel)
+            SetProperty(_selectedEditChannel, value)
+        End Set
+    End Property
+    Public ReadOnly Property EditChannels As IEnumerable(Of EditChannel)
+        Get
+            Return [Enum].GetValues(Of EditChannel)().Cast(Of EditChannel)()
+        End Get
+    End Property
+
+    Private _canUndoEdits As Boolean = False
+    Public Property CanUndoEdits As Boolean
+        Get
+            Return _canUndoEdits
+        End Get
+        Set(value As Boolean)
+            SetProperty(_canUndoEdits, value)
+        End Set
+    End Property
+
+    Private _canRedoEdits As Boolean = False
+    Public Property CanRedoEdits As Boolean
+        Get
+            Return _canRedoEdits
+        End Get
+        Set(value As Boolean)
+            SetProperty(_canRedoEdits, value)
+        End Set
+    End Property
+
+    Private _canSaveEdits As Boolean = False
+    Public Property CanSaveEdits As Boolean
+        Get
+            Return _canSaveEdits
+        End Get
+        Set(value As Boolean)
+            SetProperty(_canSaveEdits, value)
+        End Set
+    End Property
+
+    Private _editSession As EarthSurfaceEditSession
+
+    Public ReadOnly Property HasEditSession As Boolean
+        Get
+            Return _editSession IsNot Nothing
+        End Get
+    End Property
+
+    Private Sub RefreshEditCommandState()
+        CanUndoEdits = IsEditMode AndAlso _undoCount > 0 AndAlso Not IsBusy
+        CanRedoEdits = IsEditMode AndAlso _redoCount > 0 AndAlso Not IsBusy
+        CanSaveEdits = IsEditMode AndAlso _editDirty AndAlso LoadedCache IsNot Nothing AndAlso Not IsBusy
+        RaiseEditCommandCanExecuteChanged()
+    End Sub
+
+    Private Sub RaiseEditCommandCanExecuteChanged()
+        TryCast(SaveEditsCommand, RelayCommand(Of Object))?.RaiseCanExecuteChanged()
+        TryCast(SaveEditsAsCommand, RelayCommand(Of Object))?.RaiseCanExecuteChanged()
+        TryCast(UndoEditsCommand, RelayCommand(Of Object))?.RaiseCanExecuteChanged()
+        TryCast(RedoEditsCommand, RelayCommand(Of Object))?.RaiseCanExecuteChanged()
+    End Sub
+
+    Private Sub SetUndoRedoCounts(undoCount As Integer, redoCount As Integer)
+        undoCount = Math.Max(0, undoCount)
+        redoCount = Math.Max(0, redoCount)
+        If _undoCount = undoCount AndAlso _redoCount = redoCount Then Return
+
+        _undoCount = undoCount
+        _redoCount = redoCount
+        OnPropertyChanged(NameOf(Me.UndoCount))
+        OnPropertyChanged(NameOf(Me.RedoCount))
+        RefreshEditCommandState()
+    End Sub
+
+    Private Sub EnsureEditSession()
+        If Not IsEditMode OrElse LoadedCache Is Nothing Then
+            _editSession = Nothing
+            OnPropertyChanged(NameOf(HasEditSession))
+            SetUndoRedoCounts(0, 0)
+            EditDirty = False
+            Return
+        End If
+
+        'Wenn keine Session existiert ODER Cache gewechselt hat -> neue Session
+        If _editSession Is Nothing OrElse Not Object.ReferenceEquals(_editSession.BaseCache, LoadedCache) Then
+            _editSession = New EarthSurfaceEditSession(LoadedCache)
+            OnPropertyChanged(NameOf(HasEditSession))
+            SyncEditorStateFromSession()
+        End If
+    End Sub
+
+    Private Sub ResetEditState()
+        _editSession = Nothing
+        OnPropertyChanged(NameOf(HasEditSession))
+        SetUndoRedoCounts(0, 0)
+        EditDirty = False
+    End Sub
+
+    Private Sub SyncEditorStateFromSession()
+        If _editSession Is Nothing Then
+            SetUndoRedoCounts(0, 0)
+            EditDirty = False
+            Return
+        End If
+
+        SetUndoRedoCounts(_editSession.UndoCount, _editSession.RedoCount)
+        EditDirty = _editSession.HasUnsavedChanges
+    End Sub
+
+    Private Sub EnsureEditOverlayBitmap()
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then
+            _editOverlayWb = Nothing
+            EditOverlayLayer = Nothing
+            Return
+        End If
+
+        Dim w As Integer = LoadedCache.Meta.LonCount
+        Dim h As Integer = LoadedCache.Meta.LatCount
+        If w <= 0 OrElse h <= 0 Then
+            _editOverlayWb = Nothing
+            EditOverlayLayer = Nothing
+            Return
+        End If
+
+        If _editOverlayWb Is Nothing OrElse _editOverlayWb.PixelWidth <> w OrElse _editOverlayWb.PixelHeight <> h Then
+            _editOverlayWb = New WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, Nothing)
+            EditOverlayLayer = _editOverlayWb
+            EditOverlayRenderer.ClearAll(_editOverlayWb)
+        End If
+    End Sub
+
+    Private Sub RebuildEditOverlay()
+        If Not IsEditMode OrElse _editSession Is Nothing OrElse LoadedCache Is Nothing Then
+            'EditMode aus -> Overlay ausblenden
+            EditOverlayLayer = Nothing
+            Return
+        End If
+
+        EnsureEditOverlayBitmap()
+        If _editOverlayWb Is Nothing Then Return
+
+        Dim w As Integer = LoadedCache.Meta.LonCount
+        Dim h As Integer = LoadedCache.Meta.LatCount
+
+        EditOverlayRenderer.RebuildAll(_editOverlayWb, _editSession, w, h)
+
+        'Layer sicher gesetzt
+        EditOverlayLayer = _editOverlayWb
+    End Sub
+
+    Private Sub UpdateEditOverlayIndex(idx As Integer)
+        If Not IsEditMode OrElse _editSession Is Nothing OrElse LoadedCache Is Nothing Then Return
+        EnsureEditOverlayBitmap()
+
+        If _editOverlayWb Is Nothing Then Return
+
+        Dim w As Integer = LoadedCache.Meta.LonCount
+        Dim h As Integer = LoadedCache.Meta.LatCount
+
+        EditOverlayRenderer.UpdateOne(_editOverlayWb, _editSession, idx, w, h)
+    End Sub
+
+#End Region
+
 #Region "Legend-PopUp"
 
     Private _isTidLegendOpen As Boolean = False
@@ -687,6 +963,8 @@ Public Class EarthSurfaceViewModel
 
     Public ReadOnly Property MapMouseMoveCommand As ICommand
     Public ReadOnly Property MapMouseLeaveCommand As ICommand
+    Public ReadOnly Property MapMouseDownCommand As ICommand
+    Public ReadOnly Property MapMouseUpCommand As ICommand
 
     Public ReadOnly Property BeginPanCommand As ICommand
     Public ReadOnly Property PanCommand As ICommand
@@ -696,6 +974,11 @@ Public Class EarthSurfaceViewModel
 
     Public ReadOnly Property CloseTidLegendCommand As ICommand
     Public ReadOnly Property ToggleTidLegendCommand As ICommand
+
+    Public ReadOnly Property SaveEditsCommand As ICommand
+    Public ReadOnly Property SaveEditsAsCommand As ICommand
+    Public ReadOnly Property UndoEditsCommand As ICommand
+    Public ReadOnly Property RedoEditsCommand As ICommand
 
 #End Region
 
@@ -714,53 +997,99 @@ Public Class EarthSurfaceViewModel
         ZoomCommand = New RelayCommand(Of ZoomRequest)(Sub(z) ZoomAt(z))
         ViewportChangedCommand = New RelayCommand(Of ViewportChangedRequest)(Sub(r) OnViewportChanged(r))
 
-        GenerateCacheCommand = New RelayCommand(Of Object)(
-            Async Sub(o)
-                Await GenerateCacheAsync()
-            End Sub, Function(o) CanGenerateCache AndAlso Not IsBusy)
+        GenerateCacheCommand = New RelayCommand(Of Object)(Async Sub(o)
+                                                               Await GenerateCacheAsync()
+                                                           End Sub, Function(o) CanGenerateCache AndAlso Not IsBusy)
 
-        OpenCacheFolderCommand = New RelayCommand(Of Object)(
-            Sub(o)
-                Try
-                    Dim dir As String = EarthSurfaceCacheStore.CacheDir
-                    If Not Directory.Exists(dir) Then Directory.CreateDirectory(dir)
-                    Process.Start(New ProcessStartInfo(dir) With {.UseShellExecute = True})
-                Catch ex As Exception
-                    MessageBox.Show(ex.Message, "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
-                End Try
-            End Sub)
+        OpenCacheFolderCommand = New RelayCommand(Of Object)(Sub(o)
+                                                                 Try
+                                                                     Dim dir As String = EarthSurfaceCacheStore.CacheDir
+                                                                     If Not Directory.Exists(dir) Then Directory.CreateDirectory(dir)
+                                                                     Process.Start(New ProcessStartInfo(dir) With {.UseShellExecute = True})
+                                                                 Catch ex As Exception
+                                                                     MessageBox.Show(ex.Message, "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+                                                                 End Try
+                                                             End Sub)
 
-        ClearHeightFileCommand = New RelayCommand(Of Object)(
-            Sub(o)
-                If String.IsNullOrWhiteSpace(RawHeightFile) Then Return
-                RawHeightFile = Nothing
-                LastReport = "GEBCO-Height-Datei entfernt."
-            End Sub,
-            Function(o) Not String.IsNullOrWhiteSpace(RawHeightFile))
+        ClearHeightFileCommand = New RelayCommand(Of Object)(Sub(o)
+                                                                 If String.IsNullOrWhiteSpace(RawHeightFile) Then Return
+                                                                 RawHeightFile = Nothing
+                                                                 LastReport = "GEBCO-Height-Datei entfernt."
+                                                             End Sub, Function(o) Not String.IsNullOrWhiteSpace(RawHeightFile))
 
-        ClearTidFileCommand = New RelayCommand(Of Object)(
-            Sub(o)
-                If String.IsNullOrWhiteSpace(RawTidFile) Then Return
-                RawTidFile = Nothing
-                LastReport = "GEBCO-TID-Datei entfernt."
-            End Sub,
-            Function(o) Not String.IsNullOrWhiteSpace(RawTidFile))
+        ClearTidFileCommand = New RelayCommand(Of Object)(Sub(o)
+                                                              If String.IsNullOrWhiteSpace(RawTidFile) Then Return
+                                                              RawTidFile = Nothing
+                                                              LastReport = "GEBCO-TID-Datei entfernt."
+                                                          End Sub, Function(o) Not String.IsNullOrWhiteSpace(RawTidFile))
 
-        LoadCacheCommand = New RelayCommand(Of Object)(
-            Async Sub(o)
-                Await LoadCacheAsync()
-            End Sub,
-            Function(o) Not IsBusy)
+        LoadCacheCommand = New RelayCommand(Of Object)(Async Sub(o)
+                                                           Await LoadCacheAsync()
+                                                       End Sub, Function(o) Not IsBusy)
 
-        CloseTidLegendCommand = New RelayCommand(Of Object)(
-            Sub(o)
-                IsTidLegendOpen = False
-            End Sub)
+        CloseTidLegendCommand = New RelayCommand(Of Object)(Sub(o)
+                                                                IsTidLegendOpen = False
+                                                            End Sub)
 
-        ToggleTidLegendCommand = New RelayCommand(Of Object)(
-            Sub(o)
-                IsTidLegendOpen = Not IsTidLegendOpen
-            End Sub)
+        ToggleTidLegendCommand = New RelayCommand(Of Object)(Sub(o)
+                                                                 IsTidLegendOpen = Not IsTidLegendOpen
+                                                             End Sub)
+
+        MapMouseDownCommand = New RelayCommand(Of Object)(Sub(o) OnMapMouseDown(o))
+
+        MapMouseUpCommand = New RelayCommand(Of Object)(Sub(o)
+                                                            LastReport = "Edit: ...(noch nicht implementiert)"
+                                                        End Sub)
+
+        SaveEditsCommand = New RelayCommand(Of Object)(Sub(o)
+                                                           LastReport = "Edit: ...(noch nicht implementiert)"
+                                                       End Sub, Function(o) CanSaveEdits)
+
+        SaveEditsAsCommand = New RelayCommand(Of Object)(Sub(o)
+                                                             LastReport = "Edit: ...(noch nicht implementiert)"
+                                                         End Sub, Function(o) CanSaveEdits)
+
+        UndoEditsCommand = New RelayCommand(Of Object)(Sub(o)
+                                                           If Not IsEditMode Then Return
+                                                           EnsureEditSession()
+                                                           If _editSession Is Nothing Then Return
+
+                                                           Dim cmd As IEditCommand = Nothing
+                                                           If _editSession.Undo(cmd) Then
+                                                               SyncEditorStateFromSession()
+
+                                                               'Index rausziehen
+                                                               Dim lmCommand = TryCast(cmd, SetLandMaskCommand)
+                                                               If lmCommand IsNot Nothing Then
+                                                                   UpdateEditOverlayIndex(lmCommand.Index)
+                                                               Else
+                                                                   RebuildEditOverlay()
+                                                               End If
+
+                                                               LastReport = "Editor: Rückgängig."
+                                                           End If
+                                                       End Sub, Function(o) CanUndoEdits)
+
+        RedoEditsCommand = New RelayCommand(Of Object)(Sub(o)
+                                                           If Not IsEditMode Then Return
+                                                           EnsureEditSession()
+                                                           If _editSession Is Nothing Then Return
+
+                                                           Dim cmd As IEditCommand = Nothing
+                                                           If _editSession.Redo(cmd) Then
+                                                               SyncEditorStateFromSession()
+
+                                                               'Index rausziehen
+                                                               Dim lmCommand = TryCast(cmd, SetLandMaskCommand)
+                                                               If lmCommand IsNot Nothing Then
+                                                                   UpdateEditOverlayIndex(lmCommand.Index)
+                                                               Else
+                                                                   RebuildEditOverlay()
+                                                               End If
+
+                                                               LastReport = "Editor: Wiederholen."
+                                                           End If
+                                                       End Sub, Function(o) CanRedoEdits)
 
         TidLegendItems = New ObservableCollection(Of TidLegendItemViewModel)(TidLegend.BuildDefaultItems())
 
@@ -934,7 +1263,7 @@ Public Class EarthSurfaceViewModel
             LandMaskLayer = Nothing
             ShoreLineLayer = Nothing
             TidLayer = Nothing
-            _provider = Nothing
+            Return
         End If
 
         'Falls ein Render noch läuft: abbrechen
@@ -967,7 +1296,7 @@ Public Class EarthSurfaceViewModel
                     Dim height As Integer = cache.Meta.LatCount
 
 
-                    progress?.Report(New ProgressInfo("Topografie-Layer rendern...", 15))
+                    progress?.Report(New ProgressInfo("Topografie-Layer rendern...", 0))
                     'Dim topoBmp = TopoRenderer.RenderTopoLayer(cache)
                     'topoBmp.Freeze()
                     'DEBUG:
@@ -981,7 +1310,7 @@ Public Class EarthSurfaceViewModel
                     token.ThrowIfCancellationRequested()
                     ct.ThrowIfCancellationRequested()
 
-                    progress?.Report(New ProgressInfo("Relief-Layer rendern...", 40))
+                    progress?.Report(New ProgressInfo("Relief-Layer rendern...", 45))
                     'Dim reliefBmp = ReliefRenderer.RenderRelief(cache)
                     'reliefBmp.Freeze()
                     'DEBUG:
@@ -995,7 +1324,7 @@ Public Class EarthSurfaceViewModel
                     token.ThrowIfCancellationRequested()
                     ct.ThrowIfCancellationRequested()
 
-                    progress?.Report(New ProgressInfo("LandMask/Küstenlinien rendern...", 70))
+                    progress?.Report(New ProgressInfo("LandMask/Küstenlinien rendern...", 90))
                     Dim lm As ImageSource = Nothing
                     Dim sl As ImageSource = Nothing
 
@@ -1026,7 +1355,7 @@ Public Class EarthSurfaceViewModel
                     token.ThrowIfCancellationRequested()
                     ct.ThrowIfCancellationRequested()
 
-                    progress?.Report(New ProgressInfo("TID-Layer rendern...", 85))
+                    progress?.Report(New ProgressInfo("TID-Layer rendern...", 95))
                     Dim tid As ImageSource = Nothing
                     If cache.Meta.HasTid Then
                         'Dim tidBmp = TidRenderer.RenderTidLayer(cache, alpha:=255)
@@ -1153,7 +1482,7 @@ Public Class EarthSurfaceViewModel
         'C) Hover-Rect
         '-------------
 
-        If ShowLandMaskLayer Then
+        If ShowLandMaskLayer OrElse IsEditMode Then
             HoverCellX = lonIdx
             HoverCellY = latIdx
             IsHoverCellVisible = True
@@ -1172,7 +1501,13 @@ Public Class EarthSurfaceViewModel
         End If
 
         'Surface-Info aus dem Cache
-        Dim surfaceText As String = SurfaceTextFromCache(LoadedCache, idx)
+
+        Dim surfaceText As String
+        If HasEditSession AndAlso IsEditMode Then
+            surfaceText = SurfaceTextFromEditor(_editSession, idx)
+        Else
+            surfaceText = SurfaceTextFromCache(LoadedCache, idx)
+        End If
 
 
         'Status: Cursor-Geo weiter anzeigen (f+r Gefühl), aber Werte aus Zell-Info
@@ -1185,6 +1520,81 @@ Public Class EarthSurfaceViewModel
         ShowHoverOverlay = False
         ClearStatusBar()
         Return
+    End Sub
+
+    Private Sub OnMapMouseDown(param As Object)
+
+        Dim r As MapMouseDownRequest = TryCast(param, MapMouseDownRequest)
+        If r Is Nothing Then Return
+        If Not r.IsLeftButton Then Return
+
+        'Edit nur wenn EditMode aktiv ist
+        If Not IsEditMode Then
+            Return
+        End If
+
+
+        'Nur Strg+Alt sind Edit-Modifier
+        'LMB ohne Modifier bleibt Panning -> also nichts machen
+        If Not r.Ctrl AndAlso Not r.Alt Then Return
+
+        If SelectedEditChannel <> EditChannel.LandMask Then
+            LastReport = "Edit: Dieser Kanal ist noch nicht implementiert."
+            Return
+        End If
+
+        EnsureEditSession()
+
+
+        If _editSession Is Nothing Then Return
+
+        Dim meta = LoadedCache.Meta
+        If LoadedCache.LandMask Is Nothing OrElse LoadedCache.LandMask.Length <> meta.LatCount * meta.LonCount Then
+            LastReport = "Edit nicht möglich: Cache hat keine gültige LandMask."
+            Return
+        End If
+
+
+        'Zielwert bestimmen
+        Dim target As Byte
+        If r.Ctrl Then
+            target = 1  'Land
+        ElseIf r.Alt Then
+            target = 0  'Wasser
+        Else
+            Return
+        End If
+
+        'Zelle bestimmen: gleiche Screen-Geo-Logik wie im Hover
+
+        Dim contentSize As New Size(meta.LonCount, meta.LatCount)
+
+        Dim geo = ScreenToGeo(r.MousePos, r.ViewPortSize, contentSize, Camera, Zoom, PanX, PanY)
+        If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then Return
+
+        Dim cell As Double = meta.CellSizeDeg
+
+        Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / cell))
+        latIdx = Clamp(latIdx, 0, meta.LatCount - 1)
+
+        Dim lonIdx As Integer = CInt(Math.Floor((geo.Lon + 180.0) / cell))
+        lonIdx = Clamp(lonIdx, 0, meta.LonCount - 1)
+
+        Dim idx As Integer = latIdx * meta.LonCount + lonIdx
+
+        'Wenn Base schon den Zielwert hat UND es noch keinen Override gibt -> nichts tun
+        Dim baseVal As Byte = LoadedCache.LandMask(idx)
+        Dim effectiveBefore As Byte = _editSession.GetEffectiveLandMask(idx)
+        If effectiveBefore = target Then Return
+
+        'Command anwenden
+        Dim cmd As New SetLandMaskCommand(idx, target)
+        If _editSession.ApplyCommand(cmd) Then
+            SyncEditorStateFromSession()
+            UpdateEditOverlayIndex(idx)
+            LastReport = $"Edit: LandMask lat={geo.Lat} lon={geo.Lon}, idx={idx} => {target}"
+        End If
+
     End Sub
 
     Private Sub OnViewportChanged(r As ViewportChangedRequest)
@@ -1212,6 +1622,7 @@ Public Class EarthSurfaceViewModel
         _panStartMouse = r.MousePos
         _panStartX = PanX
         _panStartY = PanY
+        ShowHoverOverlay = False
 
     End Sub
 
@@ -1622,7 +2033,7 @@ Public Class EarthSurfaceViewModel
         If cache.LandMask IsNot Nothing AndAlso idx < cache.LandMask.Length Then
             Select Case cache.LandMask(idx)
                 Case 1 : Return "Land"
-                Case 0 : Return "Ozean"
+                Case 0 : Return "Wasser"
                 Case Else : Return "Unbekannt"
             End Select
         End If
@@ -1631,11 +2042,22 @@ Public Class EarthSurfaceViewModel
         If cache.HeightM IsNot Nothing AndAlso idx < cache.HeightM.Length Then
             Dim h As Double = cache.HeightM(idx)
             If Double.IsNaN(h) OrElse Double.IsInfinity(h) Then Return "Unbekannt"
-            If h < 0 Then Return "Ocean"
+            If h < 0 Then Return "Wasser"
             If h > 0 Then Return "Land"
         End If
 
         Return "Unbekannt"
+    End Function
+
+    Private Shared Function SurfaceTextFromEditor(editSession As EarthSurfaceEditSession, idx As Integer) As String
+        If editSession Is Nothing OrElse idx < 0 Then Return "Unbekannt"
+
+        Select Case editSession.GetEffectiveLandMask(idx)
+            Case 0 : Return "Wasser"
+            Case 1 : Return "Land"
+            Case Else : Return "Unbekannt"
+        End Select
+
     End Function
 
 #End Region

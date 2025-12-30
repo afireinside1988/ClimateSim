@@ -1,5 +1,7 @@
 ﻿Module TidHelpers
 
+    Public Const ManualTidCode As Byte = 254
+
     Public Function TidByteToCode(value As Byte) As Integer
 
         If value = 255 Then Return 255
