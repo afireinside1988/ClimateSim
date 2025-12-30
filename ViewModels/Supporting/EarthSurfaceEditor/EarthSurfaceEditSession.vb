@@ -10,6 +10,8 @@ Public NotInheritable Class EarthSurfaceEditSession
     Private ReadOnly _undo As New Stack(Of IEditCommand)()
     Private ReadOnly _redo As New Stack(Of IEditCommand)()
 
+    Private Const TidManual As Byte = 254
+
     Public ReadOnly Property HasUnsavedChanges As Boolean
         Get
             Return Delta.LandMaskOverrides.Count > 0 OrElse _undo.Count > 0
@@ -112,5 +114,46 @@ Public NotInheritable Class EarthSurfaceEditSession
         _undo.Clear()
         _redo.Clear()
     End Sub
+
+    ''' <summary>
+    ''' Wendet die aktuellen Deltas auf den BaseCache an.
+    ''' Setzt für alle editierten Zellen (Overrides) optional TID=254.
+    ''' Danach ist die Session "clean" (Delta+Undo/Redo leer).
+    ''' </summary>
+    ''' <returns>Gibt die Anzahl der Änderungen am Cache zurück</returns>
+    Public Function CommitToBase(Optional markTidManual As Boolean = True) As Integer
+
+        Dim meta = BaseCache.Meta
+        Dim n As Integer = meta.LatCount * meta.LonCount
+
+        If BaseCache.LandMask Is Nothing OrElse BaseCache.LandMask.Length <> n Then
+            Throw New InvalidOperationException("Commit nicht möglich: BaseCache hat keine gültige LandMask.")
+        End If
+
+        Dim hasTid As Boolean = (meta.HasTid AndAlso BaseCache.Tid IsNot Nothing AndAlso BaseCache.Tid.Length = n)
+        Dim editedCount As Integer = 0
+
+        For Each kvp In Delta.LandMaskOverrides
+            Dim idx As Integer = kvp.Key
+            If idx < 0 OrElse idx >= n Then Continue For
+
+            BaseCache.LandMask(idx) = kvp.Value
+
+            If markTidManual AndAlso hasTid Then
+                BaseCache.Tid(idx) = TidManual
+            End If
+
+            editedCount += 1
+        Next
+
+        'Meta anpassen (Optional, aber sinnvoll, damit man später sieht "war manuell")
+        'Wir nutzen LandMaskNotes als Marker:
+        BaseCache.Meta.LandMaskNotes = $"manuel edits commmited; tid={If(markTidManual AndAlso hasTid, TidManual.ToString(), "(unchanged)")}; utc={DateTime.UtcNow:O}"
+
+        'Session cleanen
+        Reset()
+
+        Return editedCount
+    End Function
 
 End Class

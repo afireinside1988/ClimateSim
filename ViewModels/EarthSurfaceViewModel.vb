@@ -4,6 +4,7 @@ Imports System.IO
 Imports System.Runtime.InteropServices.JavaScript
 Imports System.Security.Cryptography.X509Certificates
 Imports System.Text
+Imports System.Text.Json
 Imports System.Windows.Media.Media3D
 Imports Microsoft.Win32
 
@@ -103,6 +104,15 @@ Public Class EarthSurfaceViewModel
             Return LoadedCache?.Meta
         End Get
     End Property
+
+    Private _loadedMetaPath As String
+    Private _loadedBinPath As String
+
+    Private Sub SetLoadedCachePathsFromMetaPath(metaPath As String)
+        _loadedMetaPath = metaPath
+        _loadedBinPath = If(String.IsNullOrWhiteSpace(metaPath), Nothing,
+            Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), "bin"))
+    End Sub
 
 #End Region
 
@@ -671,8 +681,8 @@ Public Class EarthSurfaceViewModel
                         'weiter unten wird ausgeschaltet
                         Exit Select
                     Case MessageBoxResult.Yes
-                        'TODO: Speichern. Wenn Speichern fehlschlägt oder abgebrochen -> Return
-                        'If Not SaveEditsInternal() Then Return
+                        Dim ok As Boolean = SaveEditsInternalAsync(saveAs:=False).GetAwaiter().GetResult()
+                        If Not ok Then Return
                 End Select
             End If
 
@@ -868,6 +878,101 @@ Public Class EarthSurfaceViewModel
         EditOverlayRenderer.UpdateOne(_editOverlayWb, _editSession, idx, w, h)
     End Sub
 
+    Private Async Function SaveEditsInternalAsync(saveAs As Boolean) As Task(Of Boolean)
+
+        If Not IsEditMode Then Return False
+        EnsureEditSession()
+        If _editSession Is Nothing OrElse LoadedCache Is Nothing Then Return False
+
+        If Not _editSession.HasUnsavedChanges Then Return True
+
+        'Pfad bestimmen
+        Dim targetMetaPath As String = _loadedMetaPath
+        Dim targetBinPath As String = _loadedBinPath
+
+        If String.IsNullOrWhiteSpace(targetMetaPath) OrElse String.IsNullOrWhiteSpace(targetBinPath) Then
+            MessageBox.Show("Aktueller Cache-Pfad ist unbekannt. Bitte Cache erneut laden.", "Speichern", MessageBoxButton.OK, MessageBoxImage.Warning)
+            Return False
+        End If
+
+        If saveAs Then
+            Dim dlg As New SaveFileDialog With {
+                .Title = "EarthSurface-Cache speichern unter",
+                .Filter = "EarthSurface Meta-Datei (*.meta.json)|*.meta.json",
+                .InitialDirectory = Path.GetDirectoryName(targetMetaPath),
+                .FileName = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(targetMetaPath)) & "_edited.meta.json",
+                .OverwritePrompt = True
+            }
+
+            If dlg.ShowDialog() <> True Then
+                LastReport = "Speichern unter abgebrochen."
+                Return False
+            End If
+
+            targetMetaPath = dlg.FileName
+            targetBinPath = Path.ChangeExtension(Path.ChangeExtension(targetMetaPath, Nothing), "bin")
+        End If
+
+        Try
+            Dim editedCount As Integer = 0
+
+            Await BusyRunner.RunAsync(Of Object)(
+                Me,
+                If(saveAs, "EarthSurface: Speichern unter", "EarthSurface: Speichern"),
+                Function(progress, ct)
+
+                    ct.ThrowIfCancellationRequested()
+
+                    If saveAs Then
+                        'Save As soll Originaldatei NICHT ändern -> wir speichern eine Kopie
+                        Dim clone As EarthSurfaceCache = CloneCache(LoadedCache)
+                        Dim tmpSession As New EarthSurfaceEditSession(clone)
+
+                        'Deltas rüberkopieren (nur die Overrides reichen)
+                        For Each kvp In _editSession.Delta.LandMaskOverrides
+                            tmpSession.Delta.SetLandMask(kvp.Key, kvp.Value)
+                        Next
+
+                        editedCount = tmpSession.CommitToBase(markTidManual:=True)
+
+                        EarthSurfaceCacheStore.SaveCacheToFiles(targetBinPath, targetMetaPath, clone, progress, ct)
+
+                        'Nach Save As: auf neue Datei wechseln
+                        LoadedCache = clone
+                    Else
+                        'In-place speichern: BaseCache mutieren und in die gleiche Datei schreiben
+                        editedCount = _editSession.CommitToBase(markTidManual:=True)
+
+                        EarthSurfaceCacheStore.SaveCacheToFiles(targetBinPath, targetMetaPath, LoadedCache, progress, ct)
+                    End If
+
+                    Return True
+                End Function,
+                canCancel:=True,
+                showOverlay:=True)
+
+            'Pfade aktualisieren (bei Save As haben wir neue Dateien)
+            SetLoadedCachePathsFromMetaPath(targetMetaPath)
+
+            'Editor-UI sync: Session ist nach Commit reset, im Save-As-Fall wurde LoadedCache getauscht
+            EnsureEditSession()
+            SyncEditorStateFromSession()
+            RebuildEditOverlay()
+
+            LastReport = $"Editor: gespeichert. Änderungen: {editedCount:N0} (TID 254 gesetzt)"
+            Await RenderPreviewFromCacheAsync(showOverlay:=True)
+
+            Return True
+        Catch ex As OperationCanceledException
+            LastReport = "Speichern abgebrochen."
+            Return False
+        Catch ex As Exception
+            Debug.WriteLine(ex.ToString())
+            LastReport = $"Fehler beim Speichern: " & ex.Message & " | Source: " & ex.Source
+            Return False
+        End Try
+    End Function
+
 #End Region
 
 #Region "Legend-PopUp"
@@ -1041,12 +1146,12 @@ Public Class EarthSurfaceViewModel
                                                             LastReport = "Edit: ...(noch nicht implementiert)"
                                                         End Sub)
 
-        SaveEditsCommand = New RelayCommand(Of Object)(Sub(o)
-                                                           LastReport = "Edit: ...(noch nicht implementiert)"
+        SaveEditsCommand = New RelayCommand(Of Object)(Async Sub(o)
+                                                           Await SaveEditsInternalAsync(saveAs:=False)
                                                        End Sub, Function(o) CanSaveEdits)
 
-        SaveEditsAsCommand = New RelayCommand(Of Object)(Sub(o)
-                                                             LastReport = "Edit: ...(noch nicht implementiert)"
+        SaveEditsAsCommand = New RelayCommand(Of Object)(Async Sub(o)
+                                                             Await SaveEditsInternalAsync(saveAs:=True)
                                                          End Sub, Function(o) CanSaveEdits)
 
         UndoEditsCommand = New RelayCommand(Of Object)(Sub(o)
@@ -1156,6 +1261,8 @@ Public Class EarthSurfaceViewModel
 
         Dim metaPath As String = dlg.FileName
 
+
+
         Try
 
             Dim openedCache As EarthSurfaceCache = Await BusyRunner.RunAsync(Of EarthSurfaceCache)(
@@ -1183,6 +1290,7 @@ Public Class EarthSurfaceViewModel
             ApplyLoadedMetaToViewModel(openedCache.Meta)
 
             'Cache merken
+            SetLoadedCachePathsFromMetaPath(metaPath)
             LoadedCache = openedCache
 
             LastReport = $"Cache geladen: {Path.GetFileName(Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), Nothing))}"
@@ -1199,6 +1307,7 @@ Public Class EarthSurfaceViewModel
             LastReport = $"Fehler: {ex.Message}"
             Return $"Fehler: {ex.Message}"
         End Try
+
 
     End Function
 
@@ -1767,6 +1876,9 @@ Public Class EarthSurfaceViewModel
             Dim report As String = resultTuple.Item2
 
             If cache IsNot Nothing Then
+                Dim paths = EarthSurfaceCacheStore.GetCachePaths(SourceName, CellSizeDeg, ResamplingKey, LandMaskVariantTag)
+                SetLoadedCachePathsFromMetaPath(paths.metaPath)
+
                 LoadedCache = cache
                 Await RenderPreviewFromCacheAsync(showOverlay:=True)
             Else
@@ -2060,6 +2172,32 @@ Public Class EarthSurfaceViewModel
 
     End Function
 
+    Private Shared Function CloneCache(src As EarthSurfaceCache) As EarthSurfaceCache
+
+        If src Is Nothing Then Return Nothing
+
+        Dim m As EarthSurfaceCacheMeta = JsonSerializer.Deserialize(Of EarthSurfaceCacheMeta)(
+            JsonSerializer.Serialize(src.Meta, ConfigStore.JsonOptions),
+            ConfigStore.JsonOptions)
+
+        Dim h As Single() = Nothing
+        If src.HeightM IsNot Nothing Then
+            h = CType(src.HeightM.Clone(), Single())
+        End If
+
+        Dim t As Byte() = Nothing
+        If src.Tid IsNot Nothing Then
+            t = CType(src.Tid.Clone(), Byte())
+        End If
+
+        Dim lm As Byte() = Nothing
+        If src.LandMask IsNot Nothing Then
+            lm = CType(src.LandMask.Clone(), Byte())
+        End If
+
+        Return New EarthSurfaceCache(m, h, t, lm)
+
+    End Function
 #End Region
 
 End Class

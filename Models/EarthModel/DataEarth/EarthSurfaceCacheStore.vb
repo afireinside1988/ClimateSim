@@ -278,7 +278,28 @@ Public Class EarthSurfaceCacheStore
         progress?.Report(New ProgressInfo("Cache gespeichert.", 100))
     End Sub
 
+    Public Shared Sub SaveCacheToFiles(binPath As String, metaPath As String, cache As EarthSurfaceCache,
+                                       Optional progress As IProgress(Of ProgressInfo) = Nothing,
+                                       Optional ct As CancellationToken = Nothing)
 
+        If cache Is Nothing OrElse cache.Meta Is Nothing Then Throw New ArgumentNullException(NameOf(cache))
+        If String.IsNullOrWhiteSpace(binPath) Then Throw New ArgumentException("binPath fehlt.")
+        If String.IsNullOrWhiteSpace(metaPath) Then Throw New ArgumentException("metaPath fehlt.")
+
+        '1) Binär
+        progress?.Report(New ProgressInfo("Cache speichern: Binärdaten...", 0))
+        ct.ThrowIfCancellationRequested()
+        EarthSurfaceCacheFormat.WriteCache(binPath, cache, progress, ct)
+
+        '2) Meta
+        progress?.Report(New ProgressInfo("Cache speicher: Meta...", 98))
+        ct.ThrowIfCancellationRequested()
+        Dim metaJson As String = JsonSerializer.Serialize(cache.Meta, ConfigStore.JsonOptions)
+        WriteTextAtomic(metaPath, metaJson, ct)
+
+        progress?.Report(New ProgressInfo("Cache gespeichert.", 100))
+
+    End Sub
 #Region "Helper"
 
     Private Shared Sub WriteTextAtomic(savePath As String, content As String, Optional ct As CancellationToken = Nothing)
