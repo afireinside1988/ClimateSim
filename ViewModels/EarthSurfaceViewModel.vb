@@ -720,7 +720,7 @@ Public Class EarthSurfaceViewModel
             SetProperty(_selectedEditChannel, value)
         End Set
     End Property
-    Public ReadOnly Property EditChannels As IEnumerable(Of EditChannel)
+    Public Shared ReadOnly Property EditChannels As IEnumerable(Of EditChannel)
         Get
             Return [Enum].GetValues(Of EditChannel)().Cast(Of EditChannel)()
         End Get
@@ -911,6 +911,12 @@ Public Class EarthSurfaceViewModel
 
             targetMetaPath = dlg.FileName
             targetBinPath = Path.ChangeExtension(Path.ChangeExtension(targetMetaPath, Nothing), "bin")
+        Else
+            Dim msgResult As MessageBoxResult = MessageBox.Show("Sollen die Änderungen wirklich gespeichert werden?", "Speichern", MessageBoxButton.YesNo, MessageBoxImage.Asterisk)
+            Select Case msgResult
+                Case MessageBoxResult.No : Return False
+                Case MessageBoxResult.Yes : Exit Select
+            End Select
         End If
 
         Try
