@@ -6,16 +6,6 @@ Public Class PanAndZoomBehavior
 
     Private _isPanning As Boolean
 
-    Public Property HoverCommand As ICommand
-        Get
-            Return CType(GetValue(HoverCommandProperty), ICommand)
-        End Get
-        Set(value As ICommand)
-            SetValue(HoverCommandProperty, value)
-        End Set
-    End Property
-    Public Shared ReadOnly HoverCommandProperty As DependencyProperty =
-        DependencyProperty.Register(NameOf(HoverCommand), GetType(ICommand), GetType(PanAndZoomBehavior))
 
     Public Property BeginPanCommand As ICommand
         Get
@@ -72,17 +62,6 @@ Public Class PanAndZoomBehavior
     Public Shared ReadOnly ViewportChangedCommandProperty As DependencyProperty =
         DependencyProperty.Register(NameOf(ViewportChangedCommand), GetType(ICommand), GetType(PanAndZoomBehavior))
 
-    Public Property MouseDownCommand As ICommand
-        Get
-            Return CType(GetValue(MouseDownCommandProperty), ICommand)
-        End Get
-        Set(value As ICommand)
-            SetValue(MouseDownCommandProperty, value)
-        End Set
-    End Property
-    Public Shared ReadOnly MouseDownCommandProperty As DependencyProperty =
-        DependencyProperty.Register(NameOf(MouseDownCommand), GetType(ICommand), GetType(PanAndZoomBehavior))
-
     Public Property MouseMoveCommand As ICommand
         Get
             Return CType(GetValue(MouseMoveCommandProperty), ICommand)
@@ -93,6 +72,17 @@ Public Class PanAndZoomBehavior
     End Property
     Public Shared ReadOnly MouseMoveCommandProperty As DependencyProperty =
         DependencyProperty.Register(NameOf(MouseMoveCommand), GetType(ICommand), GetType(PanAndZoomBehavior))
+
+    Public Property MouseDownCommand As ICommand
+        Get
+            Return CType(GetValue(MouseDownCommandProperty), ICommand)
+        End Get
+        Set(value As ICommand)
+            SetValue(MouseDownCommandProperty, value)
+        End Set
+    End Property
+    Public Shared ReadOnly MouseDownCommandProperty As DependencyProperty =
+        DependencyProperty.Register(NameOf(MouseDownCommand), GetType(ICommand), GetType(PanAndZoomBehavior))
 
     Public Property MouseUpCommand As ICommand
         Get
@@ -148,19 +138,19 @@ Public Class PanAndZoomBehavior
 
         If e.ChangedButton <> MouseButton.Left Then Return
 
-        Dim mods As ModifierKeys = Keyboard.Modifiers
-        Dim ctrl As Boolean = (mods And ModifierKeys.Control) = ModifierKeys.Control
-        Dim alt As Boolean = (mods And ModifierKeys.Alt) = ModifierKeys.Alt
+        Dim ctrl As Boolean, alt As Boolean, shift As Boolean
+        ReadModifiers(ctrl, alt, shift)
 
         'A) Edit-Click (Strg oder Alt) -> VM informieren, KEIN Panning starten
         If ctrl OrElse alt Then
 
             Dim req As New MapMouseDownRequest With {
                 .MousePos = e.GetPosition(AssociatedObject),
-                .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height),
+                .ViewPortSize = CurrentViewportSize(),
                 .IsLeftButton = True,
                 .Ctrl = ctrl,
-                .Alt = alt
+                .Alt = alt,
+                .Shift = shift
             }
 
             If MouseDownCommand IsNot Nothing AndAlso MouseDownCommand.CanExecute(req) Then
@@ -179,7 +169,7 @@ Public Class PanAndZoomBehavior
 
         Dim payload As New PanRequest With {
             .MousePos = e.GetPosition(AssociatedObject),
-            .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height)
+            .ViewPortSize = CurrentViewportSize()
         }
 
         If BeginPanCommand IsNot Nothing AndAlso BeginPanCommand.CanExecute(payload) Then
@@ -191,69 +181,54 @@ Public Class PanAndZoomBehavior
 
     Private Sub OnMouseMove(sender As Object, e As MouseEventArgs)
 
-        '1) Edit-Drag (Ctrl/Alt + LMB Down) -> VM informieren, KEIN Panning
-        Dim mods As ModifierKeys = Keyboard.Modifiers
-        Dim ctrl As Boolean = (mods And ModifierKeys.Control) = ModifierKeys.Control
-        Dim alt As Boolean = (mods And ModifierKeys.Alt) = ModifierKeys.Alt
+        Dim ctrl As Boolean, alt As Boolean, shift As Boolean
+        ReadModifiers(ctrl, alt, shift)
 
-        If (ctrl OrElse alt) AndAlso e.LeftButton = MouseButtonState.Pressed Then
-
+        'A) Immer PointerMove an VM melden
+        If MouseMoveCommand IsNot Nothing Then
             Dim req As New MapMouseMoveRequest With {
                 .MousePos = e.GetPosition(AssociatedObject),
-                .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height),
-                .IsLeftButtonDown = True,
+                .ViewPortSize = CurrentViewportSize(),
+                .IsLeftButtonDown = (e.LeftButton = MouseButtonState.Pressed),
                 .Ctrl = ctrl,
-                .Alt = alt
+                .Alt = alt,
+                .Shift = shift
             }
 
-            If MouseMoveCommand IsNot Nothing AndAlso MouseMoveCommand.CanExecute(req) Then
+            If MouseMoveCommand.CanExecute(req) Then
                 MouseMoveCommand.Execute(req)
-                e.Handled = True
+                'Handled hier nicht setzen, damit Panning weiterhin klappt
             End If
-
         End If
 
-
-        'Hover immer melden (Position relativ zu MapHost!)
-        Dim isDragging As Boolean = _isPanning OrElse e.LeftButton = MouseButtonState.Pressed
-        If Not isDragging AndAlso HoverCommand IsNot Nothing Then
-            Dim hover As New HoverRequest With {
-                .MousePos = e.GetPosition(AssociatedObject),
-                .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height)
-            }
-            If HoverCommand.CanExecute(hover) Then HoverCommand.Execute(hover)
-
-        End If
-
-        '2) Panning nur bei gedrückter linker Maustaste
+        'B) Panning
         If Not _isPanning Then Return
         If e.LeftButton <> MouseButtonState.Pressed Then Return
 
         Dim payload As New PanRequest With {
             .MousePos = e.GetPosition(AssociatedObject),
-            .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height)
+            .ViewPortSize = CurrentViewportSize()
         }
 
         If PanCommand IsNot Nothing AndAlso PanCommand.CanExecute(payload) Then
             PanCommand.Execute(payload)
             e.Handled = True
         End If
-
     End Sub
 
     Private Sub OnMouseUp(sender As Object, e As MouseButtonEventArgs)
 
-        Dim mods As ModifierKeys = Keyboard.Modifiers
-        Dim ctrl As Boolean = (mods And ModifierKeys.Control) = ModifierKeys.Control
-        Dim alt As Boolean = (mods And ModifierKeys.Alt) = ModifierKeys.Alt
+        Dim ctrl As Boolean, alt As Boolean, shift As Boolean
+        ReadModifiers(ctrl, alt, shift)
 
         'Edit-Ende melden (auch wenn nicht gepannt wurde)
         If ctrl OrElse alt Then
             Dim req As New MapMouseUpRequest With {
                 .MousePos = e.GetPosition(AssociatedObject),
-               .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height),
+               .ViewPortSize = CurrentViewportSize(),
                .Ctrl = ctrl,
-               .Alt = alt
+               .Alt = alt,
+               .Shift = shift
             }
 
             If MouseUpCommand IsNot Nothing AndAlso MouseUpCommand.CanExecute(req) Then
@@ -314,12 +289,23 @@ Public Class PanAndZoomBehavior
         If ViewportChangedCommand Is Nothing Then Return
 
         Dim vp As New ViewportChangedRequest With {
-            .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height)
+            .ViewPortSize = CurrentViewportSize()
         }
 
         If ViewportChangedCommand.CanExecute(vp) Then ViewportChangedCommand.Execute(vp)
     End Sub
 
+    Private Function CurrentViewportSize() As Size
+        Return New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height)
+    End Function
+
+    Private Shared Sub ReadModifiers(ByRef ctrl As Boolean, ByRef alt As Boolean, ByRef shift As Boolean)
+        Dim mods = Keyboard.Modifiers
+
+        ctrl = (mods And ModifierKeys.Control) = ModifierKeys.Control
+        alt = (mods And ModifierKeys.Alt) = ModifierKeys.Alt
+        shift = (mods And ModifierKeys.Shift) = ModifierKeys.Shift
+    End Sub
 End Class
 
 Public Class ZoomRequest
@@ -329,11 +315,6 @@ Public Class ZoomRequest
 End Class
 
 Public Class PanRequest
-    Public Property MousePos As Point
-    Public Property ViewPortSize As Size
-End Class
-
-Public Class HoverRequest
     Public Property MousePos As Point
     Public Property ViewPortSize As Size
 End Class
@@ -348,15 +329,7 @@ Public Class MapMouseDownRequest
     Public Property IsLeftButton As Boolean
     Public Property Ctrl As Boolean
     Public Property Alt As Boolean
-
-End Class
-
-Public Class MapMouseMoveRequest
-    Public Property MousePos As Point
-    Public Property ViewPortSize As Size
-    Public Property IsLeftButtonDown As Boolean
-    Public Property Ctrl As Boolean
-    Public Property Alt As Boolean
+    Public Property Shift As Boolean
 
 End Class
 
@@ -365,6 +338,20 @@ Public Class MapMouseUpRequest
     Public Property ViewPortSize As Size
     Public Property Ctrl As Boolean
     Public Property Alt As Boolean
+    Public Property Shift As Boolean
+
+End Class
+
+Public Class MapMouseMoveRequest
+    Public Property MousePos As Point
+    Public Property ViewPortSize As Size
+
+    Public Property IsLeftButtonDown As Boolean
+
+    Public Property Ctrl As Boolean
+    Public Property Alt As Boolean
+
+    Public Property Shift As Boolean
 
 End Class
 

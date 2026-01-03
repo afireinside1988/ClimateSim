@@ -1,13 +1,8 @@
 ﻿Imports System.Collections.ObjectModel
 Imports System.Globalization
 Imports System.IO
-Imports System.Linq.Expressions
-Imports System.Runtime.InteropServices.JavaScript
-Imports System.Security.Cryptography.X509Certificates
 Imports System.Text
 Imports System.Text.Json
-Imports System.Windows.Media.Media3D
-Imports System.Xml
 Imports Microsoft.Win32
 
 Public Class EarthSurfaceViewModel
@@ -158,6 +153,14 @@ Public Class EarthSurfaceViewModel
         End Get
     End Property
 
+    Private Structure CellHit
+        Public LatIdx As Integer
+        Public LonIdx As Integer
+        Public Index As Integer
+        Public Lat As Double
+        Public Lon As Double
+    End Structure
+
 #End Region
 
 #Region "LandMask"
@@ -277,10 +280,6 @@ Public Class EarthSurfaceViewModel
     Private _lastViewportW As Double = 0
     Private _lastViewportH As Double = 0
     Private _pendingFitToViewport As Boolean = False
-
-    Private _strokeActive As Boolean = False
-    Private _strokeTarget As Byte = 0
-    Private _strokeVisited As HashSet(Of Integer) = Nothing
 
     Private _renderCts As Threading.CancellationTokenSource
 
@@ -661,7 +660,6 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
-
     Private _isEditMode As Boolean = False
     Public Property IsEditMode As Boolean
         Get
@@ -985,6 +983,46 @@ Public Class EarthSurfaceViewModel
         End Try
     End Function
 
+    Private _stroke As StrokeState
+    Private NotInheritable Class StrokeState
+
+        Public Property Target As Byte
+        Public ReadOnly Property Visited As HashSet(Of Integer)
+
+        Public Sub New(target As Byte)
+            Me.Target = target
+            Me.Visited = New HashSet(Of Integer)()
+        End Sub
+
+    End Class
+
+    Private Function StrokeIsActive() As Boolean
+        Return _stroke IsNot Nothing
+    End Function
+
+    Private Sub StartStroke(target As Byte)
+        EnsureEditSession()
+        If _editSession Is Nothing Then Return
+
+        _stroke = New StrokeState(target)
+        _editSession.BeginGroup()
+    End Sub
+
+    Private Sub EndStroke()
+        If _stroke Is Nothing Then Return
+        _editSession?.EndGroup()
+        _stroke = Nothing
+    End Sub
+
+    Private Sub ContinueStroke(idx As Integer)
+        If _stroke Is Nothing Then Return
+
+        'HashSet.Add liefert True, wenn es neu war
+        If _stroke.Visited.Add(idx) Then
+            ApplyLandMaskEdit(idx, _stroke.Target)
+        End If
+    End Sub
+
 #End Region
 
 #Region "Legend-PopUp"
@@ -1082,7 +1120,6 @@ Public Class EarthSurfaceViewModel
     Public ReadOnly Property MapMouseLeaveCommand As ICommand
     Public ReadOnly Property MapMouseDownCommand As ICommand
     Public ReadOnly Property MapMouseUpCommand As ICommand
-    Public ReadOnly Property MapMouseDragCommand As ICommand
 
 
     Public ReadOnly Property BeginPanCommand As ICommand
@@ -1107,12 +1144,10 @@ Public Class EarthSurfaceViewModel
         BrowseTidCommand = New RelayCommand(Of Object)(Sub(o) BrowseTid())
         BrowseLandMaskCommand = New RelayCommand(Of Object)(Sub(o) BrowseLandMask())
 
-        MapMouseMoveCommand = New RelayCommand(Of Object)(Sub(p) OnMapMouseMove(p), Function(p) LoadedCache IsNot Nothing)
+        MapMouseMoveCommand = New RelayCommand(Of Object)(Sub(o) OnMapMouseMove(o), Function(o) LoadedCache IsNot Nothing)
         MapMouseLeaveCommand = New RelayCommand(Of Object)(Sub(p) OnMapMouseLeave())
         MapMouseDownCommand = New RelayCommand(Of Object)(Sub(o) OnMapMouseDown(o))
-        MapMouseDragCommand = New RelayCommand(Of Object)(Sub(o) OnMapMouseDrag(o), Function(o) IsEditMode AndAlso LoadedCache IsNot Nothing)
-        MapMouseUpCommand = New RelayCommand(Of Object)(Sub(o) OnMapMouseUp(o))
-
+        MapMouseUpCommand = New RelayCommand(Of Object)(Sub(o) OnMapMouseUp())
 
         BeginPanCommand = New RelayCommand(Of PanRequest)(Sub(p) BeginPan(p))
         PanCommand = New RelayCommand(Of PanRequest)(Sub(p) UpdatePan(p))
@@ -1546,99 +1581,52 @@ Public Class EarthSurfaceViewModel
 
     Private Sub OnMapMouseMove(param As Object)
 
-        If _strokeActive Then
-            ShowHoverOverlay = False
-        End If
-
         If LoadedCache Is Nothing Then
             OnMapMouseLeave()
             Return
         End If
 
-        Dim r As HoverRequest = TryCast(param, HoverRequest)
+        Dim r As MapMouseMoveRequest = TryCast(param, MapMouseMoveRequest)
         If r Is Nothing Then Return
 
         RememberViewportSize(r.ViewPortSize)
 
-        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
-        Dim viewportSize As Size = r.ViewPortSize
-        Dim contentSize As New Size(LoadedCache.Meta.LonCount, LoadedCache.Meta.LatCount)
-
-        Dim geo = ScreenToGeo(r.MousePos, viewportSize, contentSize, Camera, Zoom, PanX, PanY)
-        If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then
+        Dim hit As CellHit
+        If Not TryHitCell(r.MousePos, r.ViewPortSize, hit) Then
             OnMapMouseLeave()
             Return
         End If
 
-        Dim cell As Double = meta.CellSizeDeg
+        'HoverRect + Statusbar immer
+        UpdateHoverCellUi(hit)
+        UpdateStatusUi(hit)
 
-        '--------------------------------
-        'A) Zellindex per Floor bestimmen
-        '--------------------------------
-        Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / cell))
-        latIdx = Clamp(latIdx, 0, meta.LatCount - 1)
+        Dim isEditDrag As Boolean = IsEditMode AndAlso r.IsLeftButtonDown AndAlso (r.Ctrl OrElse r.Alt)
 
-        Dim lonIdx As Integer = CInt(Math.Floor((geo.Lon + 180.0) / cell))
-        lonIdx = Clamp(lonIdx, 0, meta.LonCount - 1)
+        If isEditDrag Then
 
-        Dim idx As Integer = latIdx * meta.LonCount + lonIdx
+            ShowHoverOverlay = False        'TID-Overlay beim Drag nie
 
-        If HoverLatIdx <> latIdx Then HoverLatIdx = latIdx
-        If HoverLonIdx <> lonIdx Then HoverLonIdx = lonIdx
-        If HoverLinearIdx <> idx Then HoverLinearIdx = idx
+            'Wenn ein Modifier wegfällt -> Stroke beenden
+            If StrokeIsActive() AndAlso Not (r.Ctrl OrElse r.Alt) Then
+                EndStroke()
+                Return
+            End If
 
-        '-------------------------
-        'B) Floating-Label für TID
-        '-------------------------
+            'Stroke fortsetzen, wenn aktiv
+            If StrokeIsActive() Then
+                ContinueStroke(hit.Index)
+            End If
 
-        If ShowTidLayer AndAlso LoadedCache?.Tid IsNot Nothing AndAlso HoverLinearIdx >= 0 AndAlso HoverLinearIdx < LoadedCache.Tid.Length Then
+            Return
+        End If
 
-            Dim t As Byte = LoadedCache.Tid(HoverLinearIdx)
-            Dim code As Integer = TidHelpers.TidByteToCode(t)
-
-            HoverOverlayText = TidLegend.TidText(code)
-            HoverOverlayX = r.MousePos.X + 14
-            HoverOverlayY = r.MousePos.Y + 14
-            ShowHoverOverlay = True
+        'Wenn kein Edit-Drag -> normaler Hover
+        If StrokeIsActive() Then
+            ShowHoverOverlay = False    'zur Sicherheit: falls Stroke noch aktiv ist, keinen Overlay anzeigen
         Else
-            ShowHoverOverlay = False
+            UpdateTidHoverOverlay(r.MousePos, hit.Index)
         End If
-
-        '-------------
-        'C) Hover-Rect
-        '-------------
-
-        If ShowLandMaskLayer OrElse IsEditMode Then
-            HoverCellX = lonIdx
-            HoverCellY = latIdx
-            IsHoverCellVisible = True
-        Else
-            IsHoverCellVisible = False
-        End If
-
-        '-----------------------------------------
-        'D) Statusbar-Info aus genau dieser Zelle:
-        '-----------------------------------------
-
-        'Height: wenn möglich aus Cache
-        Dim h As Double = Double.NaN
-        If LoadedCache.HeightM IsNot Nothing AndAlso idx >= 0 AndAlso idx < LoadedCache.HeightM.Length Then
-            h = LoadedCache.HeightM(idx)
-        End If
-
-        'Surface-Info aus dem Cache
-
-        Dim surfaceText As String
-        If HasEditSession AndAlso IsEditMode Then
-            surfaceText = SurfaceTextFromEditor(_editSession, idx)
-        Else
-            surfaceText = SurfaceTextFromCache(LoadedCache, idx)
-        End If
-
-
-        'Status: Cursor-Geo weiter anzeigen (f+r Gefühl), aber Werte aus Zell-Info
-        SetStatusBar(geo.Lat, geo.Lon, h, surfaceText, Zoom)
-
     End Sub
 
     Private Sub OnMapMouseLeave()
@@ -1651,31 +1639,19 @@ Public Class EarthSurfaceViewModel
     Private Sub OnMapMouseDown(param As Object)
 
         Dim r As MapMouseDownRequest = TryCast(param, MapMouseDownRequest)
-        If r Is Nothing Then Return
-        If Not r.IsLeftButton Then Return
+        If r Is Nothing OrElse Not r.IsLeftButton Then Return
 
         'Edit nur wenn EditMode aktiv ist
-        If Not IsEditMode Then
-            Return
-        End If
-
-
-        'Nur Strg+Alt sind Edit-Modifier
-        'LMB ohne Modifier bleibt Panning -> also nichts machen
-        If Not r.Ctrl AndAlso Not r.Alt Then Return
+        If Not IsEditMode Then Return
 
         If SelectedEditChannel <> EditChannel.LandMask Then
             LastReport = "Edit: Dieser Kanal ist noch nicht implementiert."
             Return
         End If
+        'Nur Strg+Alt sind Edit-Modifier
+        If Not r.Ctrl AndAlso Not r.Alt Then Return
 
-        EnsureEditSession()
-
-
-        If _editSession Is Nothing Then Return
-
-        Dim meta = LoadedCache.Meta
-        If LoadedCache.LandMask Is Nothing OrElse LoadedCache.LandMask.Length <> meta.LatCount * meta.LonCount Then
+        If LoadedCache Is Nothing OrElse LoadedCache.LandMask Is Nothing Then
             LastReport = "Edit nicht möglich: Cache hat keine gültige LandMask."
             Return
         End If
@@ -1691,61 +1667,18 @@ Public Class EarthSurfaceViewModel
             Return
         End If
 
-        _strokeActive = True
-        _strokeTarget = target
-        _strokeVisited = New HashSet(Of Integer)()
-        _editSession.BeginGroup()
-
         'Zelle bestimmen: gleiche Screen-Geo-Logik wie im Hover
-        Dim contentSize As New Size(meta.LonCount, meta.LatCount)
+        Dim hit As CellHit
+        If Not TryHitCell(r.MousePos, r.ViewPortSize, hit) Then Return
 
-        Dim geo = ScreenToGeo(r.MousePos, r.ViewPortSize, contentSize, Camera, Zoom, PanX, PanY)
-        If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then Return
-
-        Dim idx As Integer
-        If Not TryGetCellIndex(r.MousePos, r.ViewPortSize, idx) Then Return
-
-        _strokeVisited.Add(idx)
-        ApplyLandMaskEdit(idx, _strokeTarget)
+        StartStroke(target)
+        ContinueStroke(hit.Index)
 
     End Sub
 
-    Private Sub OnMapMouseDrag(param As Object)
+    Private Sub OnMapMouseUp()
 
-        If Not IsEditMode OrElse Not HasEditSession Then Return
-        If Not _strokeActive Then Return
-
-        Dim r As MapMouseMoveRequest = TryCast(param, MapMouseMoveRequest)
-        If r Is Nothing OrElse Not r.IsLeftButtonDown Then Return
-
-        'Sicherheit: wenn Modifiert losgelassen wurde -> Stroke beenden
-        If Not r.Ctrl AndAlso Not r.Alt Then
-            _editSession?.EndGroup()
-            _strokeActive = False
-            _strokeVisited = Nothing
-            Return
-        End If
-
-        Dim idx As Integer
-        If Not TryGetCellIndex(r.MousePos, r.ViewPortSize, idx) Then Return
-
-        'Nur wenn Zelle neu ist
-        If _strokeVisited IsNot Nothing AndAlso _strokeVisited.Contains(idx) Then Return
-        If _strokeVisited IsNot Nothing Then _strokeVisited.Add(idx)
-
-        ApplyLandMaskEdit(idx, _strokeTarget)
-    End Sub
-
-    Private Sub OnMapMouseUp(param As Object)
-
-        If _strokeActive Then
-            _editSession?.EndGroup()
-        Else
-            Return
-        End If
-
-        _strokeActive = False
-        _strokeVisited = Nothing
+        If StrokeIsActive() Then EndStroke()
 
     End Sub
 
@@ -2242,29 +2175,6 @@ Public Class EarthSurfaceViewModel
 
     End Function
 
-    Private Function TryGetCellIndex(mousePos As Point, viewport As Size, ByRef idx As Integer) As Boolean
-        idx = -1
-
-        If LoadedCache Is Nothing Then Return False
-
-        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
-        Dim contentSize As New Size(meta.LonCount, meta.LatCount)
-
-        Dim geo = ScreenToGeo(mousePos, viewport, contentSize, Camera, Zoom, PanX, PanY)
-        If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then Return False
-
-        Dim cell As Double = meta.CellSizeDeg
-
-        Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / cell))
-        latIdx = Clamp(latIdx, 0, meta.LatCount - 1)
-
-        Dim lonIdx As Integer = CInt(Math.Floor((geo.Lon + 180.0) / cell))
-        lonIdx = Clamp(lonIdx, 0, meta.LonCount - 1)
-
-        idx = latIdx * meta.LonCount + lonIdx
-        Return True
-    End Function
-
     Private Sub ApplyLandMaskEdit(idx As Integer, target As Byte)
 
         If _editSession Is Nothing Then Return
@@ -2281,6 +2191,89 @@ Public Class EarthSurfaceViewModel
             SyncEditorStateFromSession()
             UpdateEditOverlayIndex(idx)
         End If
+    End Sub
+
+    Private Function TryHitCell(mousePos As Point, viewport As Size, ByRef hit As CellHit) As Boolean
+
+        hit = Nothing
+
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return False
+
+        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
+        Dim contentSize As New Size(meta.LonCount, meta.LatCount)
+
+        Dim geo = ScreenToGeo(mousePos, viewport, contentSize, Camera, Zoom, PanX, PanY)
+        If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then Return False
+
+        Dim cell As Double = meta.CellSizeDeg
+
+        Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / cell))
+        latIdx = Clamp(latIdx, 0, meta.LatCount - 1)
+
+        Dim lonIdx As Integer = CInt(Math.Floor((geo.Lon + 180.0) / cell))
+        lonIdx = Clamp(lonIdx, 0, meta.LonCount - 1)
+
+        Dim idx As Integer = latIdx * meta.LonCount + lonIdx
+
+        hit = New CellHit With {
+            .LatIdx = latIdx,
+            .LonIdx = lonIdx,
+            .Index = idx,
+            .Lat = geo.Lat,
+            .Lon = geo.Lon
+        }
+
+        Return True
+    End Function
+
+    Private Sub UpdateHoverCellUi(hit As CellHit)
+
+        If HoverLatIdx <> hit.LatIdx Then HoverLatIdx = hit.LatIdx
+        If HoverLonIdx <> hit.LonIdx Then HoverLonIdx = hit.LonIdx
+        If HoverLinearIdx <> hit.Index Then HoverLinearIdx = hit.Index
+
+        If ShowLandMaskLayer OrElse IsEditMode Then
+            HoverCellX = hit.LonIdx
+            HoverCellY = hit.LatIdx
+            IsHoverCellVisible = True
+        Else
+            IsHoverCellVisible = False
+        End If
+    End Sub
+
+    Private Sub UpdateStatusUi(hit As CellHit)
+
+        Dim idx As Integer = hit.Index
+
+        Dim h As Double = Double.NaN
+        If LoadedCache?.HeightM IsNot Nothing AndAlso idx >= 0 AndAlso idx < LoadedCache.HeightM.Length Then
+            h = LoadedCache.HeightM(idx)
+        End If
+
+        Dim surfaceText As String
+        If HasEditSession AndAlso IsEditMode Then
+            surfaceText = SurfaceTextFromEditor(_editSession, idx)
+        Else
+            surfaceText = SurfaceTextFromCache(LoadedCache, idx)
+        End If
+
+        SetStatusBar(hit.Lat, hit.Lon, h, surfaceText, Zoom)
+    End Sub
+
+    Private Sub UpdateTidHoverOverlay(mousePos As Point, idx As Integer)
+
+        If ShowTidLayer AndAlso LoadedCache?.Tid IsNot Nothing AndAlso idx >= 0 AndAlso idx < LoadedCache.Tid.Length Then
+            Dim t As Byte = LoadedCache.Tid(idx)
+            Dim code As Integer = TidHelpers.TidByteToCode(t)
+
+            HoverOverlayText = TidLegend.TidText(code)
+            HoverOverlayX = mousePos.X + 14
+            HoverOverlayY = mousePos.Y + 14
+            ShowHoverOverlay = True
+        Else
+            ShowHoverOverlay = False
+        End If
+
     End Sub
 
 #End Region

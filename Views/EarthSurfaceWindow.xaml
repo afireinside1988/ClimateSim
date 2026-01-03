@@ -198,11 +198,10 @@
                                     PanCommand="{Binding PanCommand}"
                                     EndPanCommand="{Binding EndPanCommand}"
                                     ZoomCommand="{Binding ZoomCommand}"
-                                    HoverCommand="{Binding MapMouseMoveCommand}"
                                     ViewportChangedCommand="{Binding ViewportChangedCommand}" 
                                     MouseDownCommand="{Binding MapMouseDownCommand}" 
-                                    MouseMoveCommand="{Binding MapMouseDragCommand}"
-                                    MouseUpCommand="{Binding MapMouseUpCommand}" />
+                                    MouseUpCommand="{Binding MapMouseUpCommand}"
+                                    MouseMoveCommand="{Binding MapMouseMoveCommand}" />
                             </i:Interaction.Behaviors>
 
 
