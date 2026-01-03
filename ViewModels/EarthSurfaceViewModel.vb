@@ -1,11 +1,13 @@
 ﻿Imports System.Collections.ObjectModel
 Imports System.Globalization
 Imports System.IO
+Imports System.Linq.Expressions
 Imports System.Runtime.InteropServices.JavaScript
 Imports System.Security.Cryptography.X509Certificates
 Imports System.Text
 Imports System.Text.Json
 Imports System.Windows.Media.Media3D
+Imports System.Xml
 Imports Microsoft.Win32
 
 Public Class EarthSurfaceViewModel
@@ -275,6 +277,10 @@ Public Class EarthSurfaceViewModel
     Private _lastViewportW As Double = 0
     Private _lastViewportH As Double = 0
     Private _pendingFitToViewport As Boolean = False
+
+    Private _strokeActive As Boolean = False
+    Private _strokeTarget As Byte = 0
+    Private _strokeVisited As HashSet(Of Integer) = Nothing
 
     Private _renderCts As Threading.CancellationTokenSource
 
@@ -1076,6 +1082,8 @@ Public Class EarthSurfaceViewModel
     Public ReadOnly Property MapMouseLeaveCommand As ICommand
     Public ReadOnly Property MapMouseDownCommand As ICommand
     Public ReadOnly Property MapMouseUpCommand As ICommand
+    Public ReadOnly Property MapMouseDragCommand As ICommand
+
 
     Public ReadOnly Property BeginPanCommand As ICommand
     Public ReadOnly Property PanCommand As ICommand
@@ -1101,6 +1109,10 @@ Public Class EarthSurfaceViewModel
 
         MapMouseMoveCommand = New RelayCommand(Of Object)(Sub(p) OnMapMouseMove(p), Function(p) LoadedCache IsNot Nothing)
         MapMouseLeaveCommand = New RelayCommand(Of Object)(Sub(p) OnMapMouseLeave())
+        MapMouseDownCommand = New RelayCommand(Of Object)(Sub(o) OnMapMouseDown(o))
+        MapMouseDragCommand = New RelayCommand(Of Object)(Sub(o) OnMapMouseDrag(o), Function(o) IsEditMode AndAlso LoadedCache IsNot Nothing)
+        MapMouseUpCommand = New RelayCommand(Of Object)(Sub(o) OnMapMouseUp(o))
+
 
         BeginPanCommand = New RelayCommand(Of PanRequest)(Sub(p) BeginPan(p))
         PanCommand = New RelayCommand(Of PanRequest)(Sub(p) UpdatePan(p))
@@ -1146,11 +1158,6 @@ Public Class EarthSurfaceViewModel
                                                                  IsTidLegendOpen = Not IsTidLegendOpen
                                                              End Sub)
 
-        MapMouseDownCommand = New RelayCommand(Of Object)(Sub(o) OnMapMouseDown(o))
-
-        MapMouseUpCommand = New RelayCommand(Of Object)(Sub(o)
-                                                            LastReport = "Edit: ...(noch nicht implementiert)"
-                                                        End Sub)
 
         SaveEditsCommand = New RelayCommand(Of Object)(Async Sub(o)
                                                            Await SaveEditsInternalAsync(saveAs:=False)
@@ -1539,6 +1546,10 @@ Public Class EarthSurfaceViewModel
 
     Private Sub OnMapMouseMove(param As Object)
 
+        If _strokeActive Then
+            ShowHoverOverlay = False
+        End If
+
         If LoadedCache Is Nothing Then
             OnMapMouseLeave()
             Return
@@ -1680,35 +1691,61 @@ Public Class EarthSurfaceViewModel
             Return
         End If
 
-        'Zelle bestimmen: gleiche Screen-Geo-Logik wie im Hover
+        _strokeActive = True
+        _strokeTarget = target
+        _strokeVisited = New HashSet(Of Integer)()
+        _editSession.BeginGroup()
 
+        'Zelle bestimmen: gleiche Screen-Geo-Logik wie im Hover
         Dim contentSize As New Size(meta.LonCount, meta.LatCount)
 
         Dim geo = ScreenToGeo(r.MousePos, r.ViewPortSize, contentSize, Camera, Zoom, PanX, PanY)
         If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then Return
 
-        Dim cell As Double = meta.CellSizeDeg
+        Dim idx As Integer
+        If Not TryGetCellIndex(r.MousePos, r.ViewPortSize, idx) Then Return
 
-        Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / cell))
-        latIdx = Clamp(latIdx, 0, meta.LatCount - 1)
+        _strokeVisited.Add(idx)
+        ApplyLandMaskEdit(idx, _strokeTarget)
 
-        Dim lonIdx As Integer = CInt(Math.Floor((geo.Lon + 180.0) / cell))
-        lonIdx = Clamp(lonIdx, 0, meta.LonCount - 1)
+    End Sub
 
-        Dim idx As Integer = latIdx * meta.LonCount + lonIdx
+    Private Sub OnMapMouseDrag(param As Object)
 
-        'Wenn Base schon den Zielwert hat UND es noch keinen Override gibt -> nichts tun
-        Dim baseVal As Byte = LoadedCache.LandMask(idx)
-        Dim effectiveBefore As Byte = _editSession.GetEffectiveLandMask(idx)
-        If effectiveBefore = target Then Return
+        If Not IsEditMode OrElse Not HasEditSession Then Return
+        If Not _strokeActive Then Return
 
-        'Command anwenden
-        Dim cmd As New SetLandMaskCommand(idx, target)
-        If _editSession.ApplyCommand(cmd) Then
-            SyncEditorStateFromSession()
-            UpdateEditOverlayIndex(idx)
-            LastReport = $"Edit: LandMask lat={geo.Lat} lon={geo.Lon}, idx={idx} => {target}"
+        Dim r As MapMouseMoveRequest = TryCast(param, MapMouseMoveRequest)
+        If r Is Nothing OrElse Not r.IsLeftButtonDown Then Return
+
+        'Sicherheit: wenn Modifiert losgelassen wurde -> Stroke beenden
+        If Not r.Ctrl AndAlso Not r.Alt Then
+            _editSession?.EndGroup()
+            _strokeActive = False
+            _strokeVisited = Nothing
+            Return
         End If
+
+        Dim idx As Integer
+        If Not TryGetCellIndex(r.MousePos, r.ViewPortSize, idx) Then Return
+
+        'Nur wenn Zelle neu ist
+        If _strokeVisited IsNot Nothing AndAlso _strokeVisited.Contains(idx) Then Return
+        If _strokeVisited IsNot Nothing Then _strokeVisited.Add(idx)
+
+        ApplyLandMaskEdit(idx, _strokeTarget)
+    End Sub
+
+    Private Sub OnMapMouseUp(param As Object)
+
+        If _strokeActive Then
+            _editSession?.EndGroup()
+        Else
+            Return
+        End If
+
+        _strokeActive = False
+        _strokeVisited = Nothing
 
     End Sub
 
@@ -1789,7 +1826,7 @@ Public Class EarthSurfaceViewModel
         PanX = z.MousePos.X - cx * newZoom
         PanY = z.MousePos.Y - cy * newZoom
 
-        ClampPan(z.ViewportSize.Width, z.ViewportSize.Height)
+        ClampPan(z.ViewPortSize.Width, z.ViewPortSize.Height)
 
         'Anzeige: wenn Zoom=1.0 -> 100%
         StatusZoomText = $"Zoom: {Zoom * 100:0.##}%"
@@ -2204,6 +2241,48 @@ Public Class EarthSurfaceViewModel
         Return New EarthSurfaceCache(m, h, t, lm)
 
     End Function
+
+    Private Function TryGetCellIndex(mousePos As Point, viewport As Size, ByRef idx As Integer) As Boolean
+        idx = -1
+
+        If LoadedCache Is Nothing Then Return False
+
+        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
+        Dim contentSize As New Size(meta.LonCount, meta.LatCount)
+
+        Dim geo = ScreenToGeo(mousePos, viewport, contentSize, Camera, Zoom, PanX, PanY)
+        If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then Return False
+
+        Dim cell As Double = meta.CellSizeDeg
+
+        Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / cell))
+        latIdx = Clamp(latIdx, 0, meta.LatCount - 1)
+
+        Dim lonIdx As Integer = CInt(Math.Floor((geo.Lon + 180.0) / cell))
+        lonIdx = Clamp(lonIdx, 0, meta.LonCount - 1)
+
+        idx = latIdx * meta.LonCount + lonIdx
+        Return True
+    End Function
+
+    Private Sub ApplyLandMaskEdit(idx As Integer, target As Byte)
+
+        If _editSession Is Nothing Then Return
+        If LoadedCache Is Nothing Then Return
+
+        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
+        If idx < 0 OrElse idx >= meta.LatCount * meta.LonCount Then Return
+
+        Dim effectiveBefore As Byte = _editSession.GetEffectiveLandMask(idx)
+        If effectiveBefore = target Then Return
+
+        Dim cmd As New SetLandMaskCommand(idx, target)
+        If _editSession.ApplyCommand(cmd) Then
+            SyncEditorStateFromSession()
+            UpdateEditOverlayIndex(idx)
+        End If
+    End Sub
+
 #End Region
 
 End Class

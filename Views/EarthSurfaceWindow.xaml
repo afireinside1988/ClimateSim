@@ -187,10 +187,6 @@
                             </Grid.ColumnDefinitions>
 
                             <i:Interaction.Triggers>
-                                <!--
-                                <i:EventTrigger EventName="MouseMove">
-                                    <i:InvokeCommandAction Command="{Binding MapMouseMoveCommand}" PassEventArgsToCommand="True"/>
-                                </i:EventTrigger> -->
                                 <i:EventTrigger EventName="MouseLeave">
                                     <i:InvokeCommandAction Command="{Binding MapMouseLeaveCommand}" PassEventArgsToCommand="True"/>
                                 </i:EventTrigger>
@@ -204,7 +200,9 @@
                                     ZoomCommand="{Binding ZoomCommand}"
                                     HoverCommand="{Binding MapMouseMoveCommand}"
                                     ViewportChangedCommand="{Binding ViewportChangedCommand}" 
-                                    MouseDownCommand="{Binding MapMouseDownCommand}" />
+                                    MouseDownCommand="{Binding MapMouseDownCommand}" 
+                                    MouseMoveCommand="{Binding MapMouseDragCommand}"
+                                    MouseUpCommand="{Binding MapMouseUpCommand}" />
                             </i:Interaction.Behaviors>
 
 

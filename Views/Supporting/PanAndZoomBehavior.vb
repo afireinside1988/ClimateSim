@@ -83,6 +83,27 @@ Public Class PanAndZoomBehavior
     Public Shared ReadOnly MouseDownCommandProperty As DependencyProperty =
         DependencyProperty.Register(NameOf(MouseDownCommand), GetType(ICommand), GetType(PanAndZoomBehavior))
 
+    Public Property MouseMoveCommand As ICommand
+        Get
+            Return CType(GetValue(MouseMoveCommandProperty), ICommand)
+        End Get
+        Set(value As ICommand)
+            SetValue(MouseMoveCommandProperty, value)
+        End Set
+    End Property
+    Public Shared ReadOnly MouseMoveCommandProperty As DependencyProperty =
+        DependencyProperty.Register(NameOf(MouseMoveCommand), GetType(ICommand), GetType(PanAndZoomBehavior))
+
+    Public Property MouseUpCommand As ICommand
+        Get
+            Return CType(GetValue(MouseUpCommandProperty), ICommand)
+        End Get
+        Set(value As ICommand)
+            SetValue(MouseUpCommandProperty, value)
+        End Set
+    End Property
+    Public Shared ReadOnly MouseUpCommandProperty As DependencyProperty =
+        DependencyProperty.Register(NameOf(MouseUpCommand), GetType(ICommand), GetType(PanAndZoomBehavior))
 
     Protected Overrides Sub OnAttached()
         MyBase.OnAttached()
@@ -170,7 +191,27 @@ Public Class PanAndZoomBehavior
 
     Private Sub OnMouseMove(sender As Object, e As MouseEventArgs)
 
+        '1) Edit-Drag (Ctrl/Alt + LMB Down) -> VM informieren, KEIN Panning
+        Dim mods As ModifierKeys = Keyboard.Modifiers
+        Dim ctrl As Boolean = (mods And ModifierKeys.Control) = ModifierKeys.Control
+        Dim alt As Boolean = (mods And ModifierKeys.Alt) = ModifierKeys.Alt
 
+        If (ctrl OrElse alt) AndAlso e.LeftButton = MouseButtonState.Pressed Then
+
+            Dim req As New MapMouseMoveRequest With {
+                .MousePos = e.GetPosition(AssociatedObject),
+                .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height),
+                .IsLeftButtonDown = True,
+                .Ctrl = ctrl,
+                .Alt = alt
+            }
+
+            If MouseMoveCommand IsNot Nothing AndAlso MouseMoveCommand.CanExecute(req) Then
+                MouseMoveCommand.Execute(req)
+                e.Handled = True
+            End If
+
+        End If
 
 
         'Hover immer melden (Position relativ zu MapHost!)
@@ -202,6 +243,25 @@ Public Class PanAndZoomBehavior
 
     Private Sub OnMouseUp(sender As Object, e As MouseButtonEventArgs)
 
+        Dim mods As ModifierKeys = Keyboard.Modifiers
+        Dim ctrl As Boolean = (mods And ModifierKeys.Control) = ModifierKeys.Control
+        Dim alt As Boolean = (mods And ModifierKeys.Alt) = ModifierKeys.Alt
+
+        'Edit-Ende melden (auch wenn nicht gepannt wurde)
+        If ctrl OrElse alt Then
+            Dim req As New MapMouseUpRequest With {
+                .MousePos = e.GetPosition(AssociatedObject),
+               .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height),
+               .Ctrl = ctrl,
+               .Alt = alt
+            }
+
+            If MouseUpCommand IsNot Nothing AndAlso MouseUpCommand.CanExecute(req) Then
+                MouseUpCommand.Execute(req)
+                e.Handled = True
+            End If
+        End If
+
         If Not _isPanning Then Return
 
         _isPanning = False
@@ -224,7 +284,7 @@ Public Class PanAndZoomBehavior
         Dim payload As New ZoomRequest With {
             .MousePos = p,
             .Delta = e.Delta,
-            .ViewportSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height)
+            .ViewPortSize = New Size(AssociatedObject.RenderSize.Width, AssociatedObject.RenderSize.Height)
         }
 
         If ZoomCommand IsNot Nothing AndAlso ZoomCommand.CanExecute(payload) Then
@@ -265,7 +325,7 @@ End Class
 Public Class ZoomRequest
     Public Property MousePos As Point
     Public Property Delta As Integer
-    Public Property ViewportSize As Size
+    Public Property ViewPortSize As Size
 End Class
 
 Public Class PanRequest
@@ -286,6 +346,23 @@ Public Class MapMouseDownRequest
     Public Property MousePos As Point
     Public Property ViewPortSize As Size
     Public Property IsLeftButton As Boolean
+    Public Property Ctrl As Boolean
+    Public Property Alt As Boolean
+
+End Class
+
+Public Class MapMouseMoveRequest
+    Public Property MousePos As Point
+    Public Property ViewPortSize As Size
+    Public Property IsLeftButtonDown As Boolean
+    Public Property Ctrl As Boolean
+    Public Property Alt As Boolean
+
+End Class
+
+Public Class MapMouseUpRequest
+    Public Property MousePos As Point
+    Public Property ViewPortSize As Size
     Public Property Ctrl As Boolean
     Public Property Alt As Boolean
 

@@ -10,6 +10,10 @@ Public NotInheritable Class EarthSurfaceEditSession
     Private ReadOnly _undo As New Stack(Of IEditCommand)()
     Private ReadOnly _redo As New Stack(Of IEditCommand)()
 
+    Private _activeGroup As CompositeEditCommand = Nothing
+    Private _isGrouping As Boolean = False
+    Private _redoClearedForGroup As Boolean = False
+
     Private Const TidManual As Byte = 254
 
     Public ReadOnly Property HasUnsavedChanges As Boolean
@@ -59,25 +63,26 @@ Public NotInheritable Class EarthSurfaceEditSession
     Public Function ApplyCommand(cmd As IEditCommand) As Boolean
         If cmd Is Nothing Then Return False
 
-        'Neue Aktion löscht Redo
+        If _isGrouping AndAlso _activeGroup IsNot Nothing Then
+
+            If Not _redoClearedForGroup Then
+                _redo.Clear()
+                _redoClearedForGroup = True
+            End If
+
+            cmd.Apply(Me)
+            _activeGroup.Add(cmd)
+            Return True
+        End If
+
         _redo.Clear()
 
         cmd.Apply(Me)
         _undo.Push(cmd)
 
-        'Cap 200: wenn über Limit: unten rauswerfen
-        While _undo.Count > _maxUndo
-            'Stack kann nicht direkt unten poppen -> minimal: in Liste umpacken
-            Dim tmp = _undo.ToArray()   'top->bottom
-            Array.Reverse(tmp)          'bottom->top
-            Dim list = tmp.Skip(1).ToList()
-            _undo.Clear()
-            For i As Integer = list.Count - 1 To 0 Step -1
-                _undo.Push(list(i))
-            Next
-        End While
-
+        CapUndo()
         Return True
+
     End Function
 
     Public Function CanUndo() As Boolean
@@ -107,6 +112,56 @@ Public NotInheritable Class EarthSurfaceEditSession
         _undo.Push(cmd)
         Return True
     End Function
+
+    Public Sub BeginGroup()
+
+        If _isGrouping Then Return
+        _isGrouping = True
+        _redoClearedForGroup = False
+        _activeGroup = New CompositeEditCommand()
+
+    End Sub
+
+    Public Function EndGroup() As Boolean
+        If Not _isGrouping Then Return False
+
+        Dim g = _activeGroup
+        _activeGroup = Nothing
+        _isGrouping = False
+        _redoClearedForGroup = False
+
+        If g Is Nothing OrElse g.Count = 0 Then
+            Return False
+        End If
+
+        _undo.Push(g)
+        CapUndo()
+        Return True
+    End Function
+
+    Public Sub CancelGroup()
+        If Not _isGrouping Then Return
+
+        Dim g = _activeGroup
+        _activeGroup = Nothing
+        _isGrouping = False
+        _redoClearedForGroup = False
+
+        If g Is Nothing OrElse g.Count = 0 Then Return
+        g.Revert(Me)
+    End Sub
+
+    Private Sub CapUndo()
+        While _undo.Count > _maxUndo
+            Dim tmp = _undo.ToArray()
+            Array.Reverse(tmp)
+            Dim list = tmp.Skip(1).ToList()
+            _undo.Clear()
+            For i As Integer = list.Count - 1 To 0 Step -1
+                _undo.Push(list(i))
+            Next
+        End While
+    End Sub
 
     Public Sub Reset()
         Delta.Clear()
