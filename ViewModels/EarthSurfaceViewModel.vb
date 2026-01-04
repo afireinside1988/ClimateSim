@@ -3,6 +3,7 @@ Imports System.Globalization
 Imports System.IO
 Imports System.Text
 Imports System.Text.Json
+Imports System.Windows.Automation.Peers
 Imports Microsoft.Win32
 
 Public Class EarthSurfaceViewModel
@@ -939,8 +940,11 @@ Public Class EarthSurfaceViewModel
                         Dim tmpSession As New EarthSurfaceEditSession(clone)
 
                         'Deltas rüberkopieren (nur die Overrides reichen)
-                        For Each kvp In _editSession.Delta.LandMaskOverrides
+                        For Each kvp As KeyValuePair(Of Integer, Byte) In _editSession.Delta.LandMaskOverrides
                             tmpSession.Delta.SetLandMask(kvp.Key, kvp.Value)
+                        Next
+                        For Each kvp As KeyValuePair(Of Integer, Single) In _editSession.Delta.HeightOverrides
+                            tmpSession.Delta.SetHeight(kvp.Key, kvp.Value)
                         Next
 
                         editedCount = tmpSession.CommitToBase(markTidManual:=True)
@@ -1212,11 +1216,16 @@ Public Class EarthSurfaceViewModel
                                                                SyncEditorStateFromSession()
 
                                                                'Index rausziehen
-                                                               Dim lmCommand = TryCast(cmd, SetLandMaskCommand)
+                                                               Dim lmCommand As SetLandMaskCommand = TryCast(cmd, SetLandMaskCommand)
                                                                If lmCommand IsNot Nothing Then
                                                                    UpdateEditOverlayIndex(lmCommand.Index)
                                                                Else
-                                                                   RebuildEditOverlay()
+                                                                   Dim hCommand As SetHeightCommand = TryCast(cmd, SetHeightCommand)
+                                                                   If hCommand IsNot Nothing Then
+                                                                       UpdateEditOverlayIndex(hCommand.Index)
+                                                                   Else
+                                                                       RebuildEditOverlay()
+                                                                   End If
                                                                End If
 
                                                                LastReport = "Editor: Rückgängig."
@@ -1233,11 +1242,16 @@ Public Class EarthSurfaceViewModel
                                                                SyncEditorStateFromSession()
 
                                                                'Index rausziehen
-                                                               Dim lmCommand = TryCast(cmd, SetLandMaskCommand)
+                                                               Dim lmCommand As SetLandMaskCommand = TryCast(cmd, SetLandMaskCommand)
                                                                If lmCommand IsNot Nothing Then
                                                                    UpdateEditOverlayIndex(lmCommand.Index)
                                                                Else
-                                                                   RebuildEditOverlay()
+                                                                   Dim hCommand As SetHeightCommand = TryCast(cmd, SetHeightCommand)
+                                                                   If hCommand IsNot Nothing Then
+                                                                       UpdateEditOverlayIndex(hCommand.Index)
+                                                                   Else
+                                                                       RebuildEditOverlay()
+                                                                   End If
                                                                End If
 
                                                                LastReport = "Editor: Wiederholen."
@@ -1607,15 +1621,19 @@ Public Class EarthSurfaceViewModel
 
             ShowHoverOverlay = False        'TID-Overlay beim Drag nie
 
-            'Wenn ein Modifier wegfällt -> Stroke beenden
-            If StrokeIsActive() AndAlso Not (r.Ctrl OrElse r.Alt) Then
-                EndStroke()
-                Return
-            End If
+            If SelectedEditChannel = EditChannel.LandMask Then
+                'Wenn ein Modifier wegfällt -> Stroke beenden
+                If StrokeIsActive() AndAlso Not (r.Ctrl OrElse r.Alt) Then
+                    EndStroke()
+                    Return
+                End If
 
-            'Stroke fortsetzen, wenn aktiv
-            If StrokeIsActive() Then
-                ContinueStroke(hit.Index)
+                'Stroke fortsetzen, wenn aktiv
+                If StrokeIsActive() Then
+                    ContinueStroke(hit.Index)
+                End If
+            Else
+                'Height: Kein Drag/Stroke-Edit. Wir lassen HoverRect/Status weiterlaufen, aber editieren nichts
             End If
 
             Return
@@ -1644,10 +1662,6 @@ Public Class EarthSurfaceViewModel
         'Edit nur wenn EditMode aktiv ist
         If Not IsEditMode Then Return
 
-        If SelectedEditChannel <> EditChannel.LandMask Then
-            LastReport = "Edit: Dieser Kanal ist noch nicht implementiert."
-            Return
-        End If
         'Nur Strg+Alt sind Edit-Modifier
         If Not r.Ctrl AndAlso Not r.Alt Then Return
 
@@ -1656,23 +1670,20 @@ Public Class EarthSurfaceViewModel
             Return
         End If
 
-
-        'Zielwert bestimmen
-        Dim target As Byte
-        If r.Ctrl Then
-            target = 1  'Land
-        ElseIf r.Alt Then
-            target = 0  'Wasser
-        Else
-            Return
-        End If
-
         'Zelle bestimmen: gleiche Screen-Geo-Logik wie im Hover
         Dim hit As CellHit
         If Not TryHitCell(r.MousePos, r.ViewPortSize, hit) Then Return
 
-        StartStroke(target)
-        ContinueStroke(hit.Index)
+        Select Case SelectedEditChannel
+            Case EditChannel.LandMask
+                HandleLandMaskMouseDown(r, hit.Index)
+
+            Case EditChannel.Height
+                HandleHeightMouseDown(r, hit.Index)
+            Case Else
+                LastReport = "Edit: Dieser Kanal ist noch nicht implementiert."
+                Return
+        End Select
 
     End Sub
 
@@ -2193,6 +2204,167 @@ Public Class EarthSurfaceViewModel
         End If
     End Sub
 
+    Private Sub HandleLandMaskMouseDown(r As MapMouseDownRequest, idx As Integer)
+
+        If LoadedCache Is Nothing OrElse LoadedCache.LandMask Is Nothing Then
+            LastReport = "Edit nicht möglich: Cache hat keine gültige LandMask."
+            Return
+        End If
+
+        'Zielwert bestimmen
+        Dim target As Byte
+        If r.Ctrl Then
+            target = 1  'Land
+        ElseIf r.Alt Then
+            target = 0  'Wasser
+        Else
+            Return
+        End If
+
+        StartStroke(target)
+        ContinueStroke(idx)
+
+    End Sub
+
+    Private Sub HandleHeightMouseDown(r As MapMouseDownRequest, idx As Integer)
+
+        If LoadedCache Is Nothing OrElse LoadedCache.HeightM Is Nothing Then
+            LastReport = "Edit nicht möglich: Cache hat keinen gültigen HeightM-Kanal."
+            Return
+        End If
+
+        EnsureEditSession()
+        If _editSession Is Nothing Then Return
+
+        If r.Alt Then
+            ResetHeightEdit(idx)
+            Return
+        End If
+
+        If r.Ctrl Then
+            SmoothHeightEdit(idx)
+            Return
+        End If
+
+    End Sub
+
+    Private Sub ResetHeightEdit(idx As Integer)
+
+        If _editSession Is Nothing Then Return
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return
+
+        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
+        Dim n As Integer = meta.LatCount * meta.LonCount
+        If idx < 0 OrElse idx >= n Then Return
+
+        Dim baseV As Single = _editSession.GetBaseHeight(idx)
+        If Single.IsNaN(baseV) OrElse Single.IsInfinity(baseV) Then
+            LastReport = "Edit: Height-Reset nicht möglich: BaseHeight ungültig."
+            Return
+        End If
+
+        Dim effectiveBefore As Single = _editSession.GetEffectiveHeight(idx)
+        If Not Single.IsNaN(effectiveBefore) AndAlso Not Single.IsInfinity(effectiveBefore) Then
+            If Math.Abs(CDbl(effectiveBefore) - CDbl(baseV)) < 0.0000001 Then
+                Return
+            End If
+        End If
+
+        Dim cmd As New SetHeightCommand(idx, baseV)
+        If _editSession.ApplyCommand(cmd) Then
+            SyncEditorStateFromSession()
+            UpdateEditOverlayIndex(idx)
+            LastReport = $"Edit: Height({idx}): Reset"
+        End If
+    End Sub
+
+    Private Sub SmoothHeightEdit(idx As Integer)
+
+        If _editSession Is Nothing Then Return
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return
+
+        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
+        Dim n As Integer = meta.LatCount * meta.LonCount
+        If idx < 0 OrElse idx >= n Then Return
+
+        Dim median As Double
+        If Not TryComputeNeighborMedianBase(idx, median) Then
+            LastReport = "Edit: Height: Glätten nicht möglich (zu wenige gültige Nachbarn)."
+            Return
+        End If
+
+        Dim newV As Single = CSng(median)
+
+        Dim effectiveBefore As Single = _editSession.GetEffectiveHeight(idx)
+        If Not Single.IsNaN(effectiveBefore) AndAlso Not Single.IsInfinity(effectiveBefore) Then
+            If Math.Abs(CDbl(effectiveBefore) - CDbl(newV)) < 0.0000001 Then
+                Return
+            End If
+        End If
+
+        Dim cmd As New SetHeightCommand(idx, newV)
+        If _editSession.ApplyCommand(cmd) Then
+            SyncEditorStateFromSession()
+            UpdateEditOverlayIndex(idx)
+            LastReport = $"Edit: Height({idx}: geglättet -> {newV:0.##}m"
+        End If
+    End Sub
+
+    Private Function TryComputeNeighborMedianBase(centerIdx As Integer, ByRef median As Double) As Boolean
+
+        median = 0.0
+
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return False
+        If _editSession Is Nothing Then Return False
+
+        Dim w As Integer = LoadedCache.Meta.LonCount
+        Dim h As Integer = LoadedCache.Meta.LatCount
+        If w <= 0 OrElse h <= 0 Then Return False
+
+        Dim x As Integer = centerIdx Mod w
+        Dim y As Integer = centerIdx \ w
+        If x < 0 OrElse x >= w OrElse y < 0 OrElse y >= h Then Return False
+
+        Dim values As New List(Of Double)(8)
+
+        For dy As Integer = -1 To 1
+
+            For dx As Integer = -1 To 1
+
+                If dx = 0 AndAlso dy = 0 Then Continue For
+
+                Dim xx As Integer = x + dx
+                Dim yy As Integer = y + dy
+
+                If xx < 0 Then xx = 0
+                If xx >= w Then xx = w - 1
+                If yy < 0 Then yy = 0
+                If yy >= h Then yy = h - 1
+
+                Dim nIdx As Integer = yy * w + xx
+
+                Dim v As Single = _editSession.GetBaseHeight(nIdx)
+                If Single.IsNaN(v) OrElse Single.IsInfinity(v) Then Continue For
+
+                values.Add(CDbl(v))
+            Next
+        Next
+
+        If values.Count < 3 Then Return False
+
+        values.Sort()
+
+        Dim mid As Integer = values.Count \ 2
+        If (values.Count Mod 2) = 1 Then
+            median = values(mid)
+        Else
+            median = 0.5 * (values(mid - 1) + values(mid))
+        End If
+
+        Return True
+
+    End Function
+
     Private Function TryHitCell(mousePos As Point, viewport As Size, ByRef hit As CellHit) As Boolean
 
         hit = Nothing
@@ -2246,8 +2418,17 @@ Public Class EarthSurfaceViewModel
         Dim idx As Integer = hit.Index
 
         Dim h As Double = Double.NaN
-        If LoadedCache?.HeightM IsNot Nothing AndAlso idx >= 0 AndAlso idx < LoadedCache.HeightM.Length Then
-            h = LoadedCache.HeightM(idx)
+
+        If HasEditSession AndAlso IsEditMode AndAlso _editSession IsNot Nothing Then
+            Dim hV As Single = _editSession.GetEffectiveHeight(idx)
+            If Not Single.IsNaN(hV) OrElse Not Single.IsInfinity(hV) Then
+                h = CDbl(hV)
+            End If
+        ElseIf LoadedCache?.HeightM IsNot Nothing AndAlso idx >= 0 AndAlso idx < LoadedCache.HeightM.Length Then
+            Dim hV As Single = LoadedCache.HeightM(idx)
+            If Not Single.IsNaN(hV) OrElse Not Single.IsInfinity(hV) Then
+                h = CDbl(hV)
+            End If
         End If
 
         Dim surfaceText As String

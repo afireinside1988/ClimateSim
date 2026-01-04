@@ -18,7 +18,7 @@ Public NotInheritable Class EarthSurfaceEditSession
 
     Public ReadOnly Property HasUnsavedChanges As Boolean
         Get
-            Return Delta.LandMaskOverrides.Count > 0 OrElse _undo.Count > 0
+            Return Delta.LandMaskOverrides.Count > 0 OrElse Delta.HeightOverrides.Count > 0 OrElse _undo.Count > 0
         End Get
     End Property
 
@@ -58,6 +58,19 @@ Public NotInheritable Class EarthSurfaceEditSession
         Dim v As Byte
         If Delta.TryGetLandMask(idx, v) Then Return v
         Return GetBaseLandMask(idx)
+    End Function
+
+    Public Function GetBaseHeight(idx As Integer) As Single
+        If BaseCache.HeightM Is Nothing OrElse idx < 0 OrElse idx >= BaseCache.HeightM.Length Then
+            Return Single.NaN       'Fallback: Void wenn keine Height gefunden wurde
+        End If
+        Return BaseCache.HeightM(idx)
+    End Function
+
+    Public Function GetEffectiveHeight(idx As Integer) As Single
+        Dim v As Single
+        If Delta.TryGetHeight(idx, v) Then Return v
+        Return GetBaseHeight(idx)
     End Function
 
     Public Function ApplyCommand(cmd As IEditCommand) As Boolean
@@ -185,25 +198,44 @@ Public NotInheritable Class EarthSurfaceEditSession
             Throw New InvalidOperationException("Commit nicht möglich: BaseCache hat keine gültige LandMask.")
         End If
 
+        If BaseCache.HeightM Is Nothing OrElse BaseCache.HeightM.Length <> n Then
+            Throw New InvalidOperationException("Commit nicht möglich: BaseCache hat kein gültiges Height-Array")
+        End If
+
         Dim hasTid As Boolean = (meta.HasTid AndAlso BaseCache.Tid IsNot Nothing AndAlso BaseCache.Tid.Length = n)
+        Dim touched As New HashSet(Of Integer)()
         Dim editedCount As Integer = 0
 
-        For Each kvp In Delta.LandMaskOverrides
+        '--- LandMask ---
+        For Each kvp As KeyValuePair(Of Integer, Byte) In Delta.LandMaskOverrides
             Dim idx As Integer = kvp.Key
             If idx < 0 OrElse idx >= n Then Continue For
 
             BaseCache.LandMask(idx) = kvp.Value
+            If touched.Add(idx) Then editedCount += 1
 
             If markTidManual AndAlso hasTid Then
                 BaseCache.Tid(idx) = TidManual
             End If
+        Next
 
-            editedCount += 1
+        '--- Height ---
+        For Each kvp As KeyValuePair(Of Integer, Single) In Delta.HeightOverrides
+            Dim idx As Integer = kvp.Key
+            If idx < 0 OrElse idx >= n Then Continue For
+
+            BaseCache.HeightM(idx) = kvp.Value
+            If touched.Add(idx) Then editedCount += 1
+
+            If markTidManual AndAlso hasTid Then
+                BaseCache.Tid(idx) = TidManual
+            End If
         Next
 
         'Meta anpassen (Optional, aber sinnvoll, damit man später sieht "war manuell")
         'Wir nutzen LandMaskNotes als Marker:
-        BaseCache.Meta.LandMaskNotes = $"manuel edits commmited; tid={If(markTidManual AndAlso hasTid, TidManual.ToString(), "(unchanged)")}; utc={DateTime.UtcNow:O}"
+        Dim tidStr As String = If(markTidManual AndAlso hasTid, TidManual.ToString(), "(unchanged)")
+        BaseCache.Meta.LandMaskNotes = $"manuel edits commmited; tid={tidStr}; utc={DateTime.UtcNow:O}"
 
         'Session cleanen
         Reset()

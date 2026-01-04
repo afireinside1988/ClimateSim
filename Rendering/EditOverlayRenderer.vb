@@ -8,8 +8,9 @@ Public NotInheritable Class EditOverlayRenderer
 
     'Alpha und Farben der EditOverlay-Pixel
     Private Const A As Byte = 120
-    Private Shared ReadOnly ColorLand As Color = Color.FromArgb(A, 0, 255, 8)
-    Private Shared ReadOnly ColorWater As Color = Color.FromArgb(A, 0, 140, 255)
+    Private Shared ReadOnly ColorLand As Color = Color.FromArgb(A, 0, 255, 8)       'grün
+    Private Shared ReadOnly ColorWater As Color = Color.FromArgb(A, 0, 140, 255)    'blau
+    Private Shared ReadOnly ColorHeight As Color = Color.FromArgb(A, 255, 200, 0)      'orange
 
     ''' <summary>
     ''' Erzeug ein leeres Overlay-Bitmap
@@ -32,7 +33,7 @@ Public NotInheritable Class EditOverlayRenderer
         Dim w As Integer = wb.PixelWidth
         Dim h As Integer = wb.PixelHeight
         Dim stride = w * 4
-        Dim bytes(stride - h - 1) As Byte
+        Dim bytes(stride * h - 1) As Byte
 
         wb.Lock()
         Try
@@ -62,7 +63,7 @@ Public NotInheritable Class EditOverlayRenderer
         Dim bytes(stride * h - 1) As Byte      'transparent vorinitialisiert
 
         'LandMask-Overrides malen
-        For Each kvp In session.Delta.LandMaskOverrides
+        For Each kvp As KeyValuePair(Of Integer, Byte) In session.Delta.LandMaskOverrides
             Dim idx As Integer = kvp.Key
             Dim v As Byte = kvp.Value
 
@@ -71,6 +72,16 @@ Public NotInheritable Class EditOverlayRenderer
             Dim y As Integer = idx \ w
 
             WritePixelToArray(bytes, stride, x, y, If(v = 1, ColorLand, ColorWater))
+        Next
+
+        'Height-Overrides malen | Da es nach LandMask kommt, gewinnt Height, falls zwei Edits auf einer Zelle stattfinden
+        For Each kvp As KeyValuePair(Of Integer, Single) In session.Delta.HeightOverrides
+            Dim idx As Integer = kvp.Key
+
+            If idx < 0 OrElse idx >= w * h Then Continue For
+            Dim x As Integer = idx Mod w
+            Dim y As Integer = idx \ w
+            WritePixelToArray(bytes, stride, x, y, ColorHeight)
         Next
 
         wb.Lock()
@@ -97,19 +108,28 @@ Public NotInheritable Class EditOverlayRenderer
 
         Dim buf(3) As Byte  'BGRA
 
-        Dim v As Byte
-        If session.Delta.TryGetLandMask(idx, v) Then
-            Dim c As Color = If(v = 1, ColorLand, ColorWater)
-            buf(0) = c.B
-            buf(1) = c.G
-            buf(2) = c.R
-            buf(3) = c.A
+        Dim hV As Single
+        If session.Delta.TryGetHeight(idx, hV) Then
+            Dim cH As Color = ColorHeight
+            buf(0) = cH.B
+            buf(1) = cH.G
+            buf(2) = cH.R
+            buf(3) = cH.A
         Else
-            'transparent
-            buf(0) = 0
-            buf(1) = 0
-            buf(2) = 0
-            buf(3) = 0
+            Dim v As Byte
+            If session.Delta.TryGetLandMask(idx, v) Then
+                Dim c As Color = If(v = 1, ColorLand, ColorWater)
+                buf(0) = c.B
+                buf(1) = c.G
+                buf(2) = c.R
+                buf(3) = c.A
+            Else
+                'transparent
+                buf(0) = 0
+                buf(1) = 0
+                buf(2) = 0
+                buf(3) = 0
+            End If
         End If
 
         wb.WritePixels(New Int32Rect(x, y, 1, 1), buf, 4, 0)

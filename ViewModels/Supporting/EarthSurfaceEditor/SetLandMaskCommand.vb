@@ -2,7 +2,18 @@
     Implements IEditCommand
 
     Private ReadOnly _idx As Integer
+    Public ReadOnly Property Index As Integer
+        Get
+            Return _idx
+        End Get
+    End Property
+
     Private ReadOnly _newValue As Byte
+    Public ReadOnly Property NewValue As Byte
+        Get
+            Return _newValue
+        End Get
+    End Property
 
     Private _hadOldOverride As Boolean
     Private _oldOverrideValue As Byte
@@ -16,18 +27,6 @@
     Public ReadOnly Property Description As String Implements IEditCommand.Description
         Get
             Return $"Set LandMask[{_idx}] = {_newValue}"
-        End Get
-    End Property
-
-    Public ReadOnly Property Index As Integer
-        Get
-            Return _idx
-        End Get
-    End Property
-
-    Public ReadOnly Property NewValue As Byte
-        Get
-            Return _newValue
         End Get
     End Property
 

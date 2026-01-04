@@ -8,11 +8,12 @@
     End Sub
 
     Public Sub Add(idx As Integer, ev As EditEvent)
-        If Not _map.TryGetValue(idx, Nothing) Then
-            _map(idx) = New LinkedList(Of EditEvent)()
+        Dim list As LinkedList(Of EditEvent) = Nothing
+        If Not _map.TryGetValue(idx, list) OrElse list Is Nothing Then
+            list = New LinkedList(Of EditEvent)()
+            _map(idx) = list
         End If
 
-        Dim list = _map(idx)
         list.AddFirst(ev)
 
         While list.Count > _capPerCell
