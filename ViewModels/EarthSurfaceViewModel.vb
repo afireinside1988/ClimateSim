@@ -86,13 +86,8 @@ Public Class EarthSurfaceViewModel
             If SetProperty(_loadedCache, value) Then
                 OnPropertyChanged(NameOf(CacheMeta))
 
-                ResetEditState()
-                EnsureEditSession()
-
+                ResetPerCacheUiState()
                 RefreshEditCommandState()
-
-                _editOverlayWb = Nothing
-                EditOverlayLayer = Nothing
             End If
         End Set
     End Property
@@ -670,7 +665,7 @@ Public Class EarthSurfaceViewModel
             If value = _isEditMode Then Return
 
             'Nur beim Ausschalten fragen
-            If _isEditMode AndAlso Not value AndAlso EditDirty Then
+            If Not _suppressEditExitPrompt AndAlso _isEditMode AndAlso Not value AndAlso EditDirty Then
 
                 Dim res = MessageBox.Show(
                 $"Der Editor hat noch nicht gespeicherte Änderungen.{vbCrLf}{vbCrLf}Sollen die Änderungen gespeichert werden?",
@@ -716,13 +711,54 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
+    Private _showHeightSpikeLayer As Boolean
+    Public Property ShowHeightSpikeLayer As Boolean
+        Get
+            Return _showHeightSpikeLayer
+        End Get
+        Set(value As Boolean)
+            SetProperty(_showHeightSpikeLayer, value)
+        End Set
+    End Property
+
+    Private _heightSpikeLayer As ImageSource
+    Public Property HeightSpikeLayer As ImageSource
+        Get
+            Return _heightSpikeLayer
+        End Get
+        Set(value As ImageSource)
+            SetProperty(_heightSpikeLayer, value)
+        End Set
+    End Property
+
+    Private _heightSpikeCount As Integer
+    Public Property HeightSpikeCount As Integer
+        Get
+            Return _heightSpikeCount
+        End Get
+        Set(value As Integer)
+            SetProperty(_heightSpikeCount, Math.Max(0, value))
+        End Set
+    End Property
+
+    Private _heightSpikeMask As Boolean()
+
     Private _selectedEditChannel As EditChannel = EditChannel.LandMask
     Public Property SelectedEditChannel As EditChannel
         Get
             Return _selectedEditChannel
         End Get
         Set(value As EditChannel)
-            SetProperty(_selectedEditChannel, value)
+            If SetProperty(_selectedEditChannel, value) Then
+                If IsEditMode AndAlso value = EditChannel.Height Then
+                    'Lazy-init der Spikes + Layer einblenden
+                    ShowHeightSpikeLayer = True
+                    Dim ignore = EnsureHeightSpikeAsync()
+                Else
+                    ShowHeightSpikeLayer = False
+
+                End If
+            End If
         End Set
     End Property
     Public Shared ReadOnly Property EditChannels As IEnumerable(Of EditChannel)
@@ -762,6 +798,7 @@ Public Class EarthSurfaceViewModel
     End Property
 
     Private _editSession As EarthSurfaceEditSession
+    Private _suppressEditExitPrompt As Boolean = False
 
     Public ReadOnly Property HasEditSession As Boolean
         Get
@@ -883,7 +920,7 @@ Public Class EarthSurfaceViewModel
         EditOverlayRenderer.UpdateOne(_editOverlayWb, _editSession, idx, w, h)
     End Sub
 
-    Private Async Function SaveEditsInternalAsync(saveAs As Boolean) As Task(Of Boolean)
+    Private Async Function SaveEditsInternalAsync(saveAs As Boolean, Optional confirm As Boolean = True) As Task(Of Boolean)
 
         If Not IsEditMode Then Return False
         EnsureEditSession()
@@ -916,12 +953,11 @@ Public Class EarthSurfaceViewModel
 
             targetMetaPath = dlg.FileName
             targetBinPath = Path.ChangeExtension(Path.ChangeExtension(targetMetaPath, Nothing), "bin")
-        Else
+        End If
+
+        If Not saveAs AndAlso confirm Then
             Dim msgResult As MessageBoxResult = MessageBox.Show("Sollen die Änderungen wirklich gespeichert werden?", "Speichern", MessageBoxButton.YesNo, MessageBoxImage.Asterisk)
-            Select Case msgResult
-                Case MessageBoxResult.No : Return False
-                Case MessageBoxResult.Yes : Exit Select
-            End Select
+            If msgResult = MessageBoxResult.No Then Return False
         End If
 
         Try
@@ -985,6 +1021,106 @@ Public Class EarthSurfaceViewModel
             LastReport = $"Fehler beim Speichern: " & ex.Message & " | Source: " & ex.Source
             Return False
         End Try
+    End Function
+
+    Private Async Function EnsureHeightSpikeAsync() As Task(Of Boolean)
+
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return False
+        If LoadedCache.HeightM Is Nothing Then Return False
+
+        Dim w As Integer = LoadedCache.Meta.LonCount
+        Dim h As Integer = LoadedCache.Meta.LatCount
+        If w <= 0 OrElse h <= 0 Then Return False
+
+        'Layer schon berechnet?
+        If _heightSpikeMask IsNot Nothing AndAlso _heightSpikeMask.Length = w * h Then
+            If HeightSpikeLayer Is Nothing Then
+                HeightSpikeLayer = HeightSpikeOverlayRenderer.RenderSpikeMask(_heightSpikeMask, w, h)
+            End If
+            Return True
+        End If
+
+        Dim opts As New HeightSpikeOptions With {
+            .MinAbsDeviationM = 2000.0,
+            .MinNeighborDiffM = 1800.0,
+            .RobustFactor = 2.0,
+            .UseOceanLandSeperate = False
+        }
+
+        Dim mask As Boolean() = Nothing
+        Dim cnt As Integer = 0
+
+        Try
+            Await BusyRunner.RunAsync(Of Object)(
+                Me,
+                "EarthSurface: Height-Spikes analysieren",
+                Function(progress, ct)
+
+                    ct.ThrowIfCancellationRequested()
+
+                    mask = HeightSpikeAnalyzer.BuildSpikeMask(LoadedCache.HeightM, w, h, opts, cnt)
+
+                    ct.ThrowIfCancellationRequested()
+
+                    Return True
+
+                End Function,
+                canCancel:=True,
+                showOverlay:=True)
+
+            _heightSpikeMask = mask
+            HeightSpikeCount = cnt
+            HeightSpikeLayer = HeightSpikeOverlayRenderer.RenderSpikeMask(mask, w, h)
+
+            LastReport = $"Height-Spikes gefunden: {cnt:N0}"
+        Catch ex As OperationCanceledException
+            LastReport = "Height-Spike-Analyse abgebrochen."
+        Catch ex As Exception
+            LastReport = "Fehler bei der Spike-Analyse: " & ex.Message
+        End Try
+
+        Return True
+    End Function
+
+    Private Async Function ConfirmLeaveEditorAsync(reason As String) As Task(Of Boolean)
+
+        If Not IsEditMode Then Return True
+        If Not EditDirty Then
+            _suppressEditExitPrompt = True
+            Try
+                IsEditMode = False
+
+            Finally
+                _suppressEditExitPrompt = False
+            End Try
+            Return True
+        End If
+
+        Dim res As MessageBoxResult = MessageBox.Show(
+            $"Der Editor hat noch nicht gespeicherte Änderungen.{vbCrLf}{vbCrLf}" &
+            $"Sollen die Änderungen gespeichert werden, bevor {reason}?",
+            "Änderungen speichern?",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Warning)
+
+        Select Case res
+            Case MessageBoxResult.Cancel
+                Return False
+            Case MessageBoxResult.Yes
+                Dim ok As Boolean = Await SaveEditsInternalAsync(saveAs:=False, confirm:=False)
+                If Not ok Then Return False
+            Case MessageBoxResult.No
+                'verwerfen
+        End Select
+
+        _suppressEditExitPrompt = True
+        Try
+            IsEditMode = False
+        Finally
+            _suppressEditExitPrompt = False
+        End Try
+
+        Return True
     End Function
 
     Private _stroke As StrokeState
@@ -1323,7 +1459,10 @@ Public Class EarthSurfaceViewModel
 
         Dim metaPath As String = dlg.FileName
 
-
+        If Not Await ConfirmLeaveEditorAsync("ein anderer Cache geladen wird") Then
+            LastReport = "Laden abgebrochen."
+            Return "Abgebrochen"
+        End If
 
         Try
 
@@ -1863,6 +2002,10 @@ Public Class EarthSurfaceViewModel
             Dim report As String = resultTuple.Item2
 
             If cache IsNot Nothing Then
+                If Not Await ConfirmLeaveEditorAsync("ein neuer Cache übernommen wird") Then
+                    Return Nothing
+                End If
+
                 Dim paths = EarthSurfaceCacheStore.GetCachePaths(SourceName, CellSizeDeg, ResamplingKey, LandMaskVariantTag)
                 SetLoadedCachePathsFromMetaPath(paths.metaPath)
 
@@ -2455,6 +2598,28 @@ Public Class EarthSurfaceViewModel
             ShowHoverOverlay = False
         End If
 
+    End Sub
+
+    Private Sub ResetPerCacheUiState()
+        'Editor
+        _stroke = Nothing
+        ResetEditState()
+        _editOverlayWb = Nothing
+        EditOverlayLayer = Nothing
+
+        'Spike-Analyse
+        _heightSpikeMask = Nothing
+        HeightSpikeLayer = Nothing
+        HeightSpikeCount = 0
+        ShowHeightSpikeLayer = False
+
+        'Hover/TID Tooltip
+        ShowHoverOverlay = False
+        IsHoverCellVisible = False
+
+        'Edit-Channel zurück auf Landmask
+        _selectedEditChannel = EditChannel.LandMask
+        OnPropertyChanged(NameOf(SelectedEditChannel))
     End Sub
 
 #End Region

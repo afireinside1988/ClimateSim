@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Remove="Assets\Icons\NextSpike.png" />
     <None Remove="Assets\Icons\Redo.png" />
     <None Remove="Assets\Icons\Save.png" />
     <None Remove="Assets\Icons\SaveAs.png" />
@@ -22,6 +23,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\Icons\NextSpike.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
     <Resource Include="Assets\Icons\SaveAs.png">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Resource>

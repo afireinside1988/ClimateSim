@@ -32,7 +32,7 @@
 
     Public Sub Apply(session As EarthSurfaceEditSession) Implements IEditCommand.Apply
 
-        If session Is Nothing Then Throw New ArgumentNullException(NameOf(session))
+        ArgumentNullException.ThrowIfNull(session)
 
         _baseValue = session.GetBaseHeight(_idx)
 
@@ -58,7 +58,7 @@
 
     Public Sub Revert(session As EarthSurfaceEditSession) Implements IEditCommand.Revert
 
-        If session Is Nothing Then Throw New ArgumentNullException(NameOf(session))
+        ArgumentNullException.ThrowIfNull(session)
 
         If _hadOldOverride Then
             session.Delta.SetHeight(_idx, _oldOverrideValue)

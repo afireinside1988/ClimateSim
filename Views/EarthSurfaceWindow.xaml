@@ -162,6 +162,39 @@
                                           SelectedItem="{Binding SelectedEditChannel, Mode=TwoWay}"
                                           IsEnabled="True">
                                 </ComboBox>
+
+                                <Separator Margin="4,0,4,0"/>
+                                
+                                <!-- Height-Kanal-Tools -->
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedEditChannel}" Value="{x:Static local:EditChannel.Height}">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+
+                                    <CheckBox Content="Spikes anzeigen"
+                                              Margin="0,0,10,0"
+                                              VerticalAlignment="Center"
+                                              IsChecked="{Binding ShowHeightSpikeLayer}"/>
+
+                                    <Button Style="{StaticResource IconButtonStyle}"
+                                            Command="{Binding JumpNextSpikeCommand}"
+                                            IsEnabled="{Binding CanJumpNextSpike}"
+                                            ToolTip="Zum nächsten Spike springem">
+                                        <Image Style="{StaticResource IconImageStyle}"
+                                               Source="pack://application:,,,/Assets/Icons/NextSpike.png"/>
+                                    </Button>
+
+                                    <TextBlock Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Text="{Binding HeightSpikeCount, StringFormat=Spikes: {0:N0}}"/>
+                                </StackPanel>
                             </WrapPanel>
                             
                         </Grid>
@@ -257,7 +290,11 @@
                                 <Image Source="{Binding TidLayer}"
                                        Visibility="{Binding ShowTidLayer, Converter={StaticResource BoolToVis}}"/>
                                 
-                                <!-- Layer 7: EditOverlay -->
+                                <!-- Layer 7: Height-Spike-Overlay -->
+                                <Image Source="{Binding HeightSpikeLayer}"
+                                       Visibility="{Binding ShowHeightSpikeLayer, Converter={StaticResource BoolToVis}}"/>
+
+                                <!-- Layer 8: EditOverlay -->
                                 <Image Source="{Binding EditOverlayLayer}"
                                        Visibility="{Binding IsEditMode, Converter={StaticResource BoolToVis}}"
                                        IsHitTestVisible="False"/>
