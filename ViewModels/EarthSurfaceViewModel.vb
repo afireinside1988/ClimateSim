@@ -3,6 +3,7 @@ Imports System.Globalization
 Imports System.IO
 Imports System.Text
 Imports System.Text.Json
+Imports System.Threading
 Imports System.Windows.Automation.Peers
 Imports Microsoft.Win32
 
@@ -717,7 +718,18 @@ Public Class EarthSurfaceViewModel
             Return _showHeightSpikeLayer
         End Get
         Set(value As Boolean)
-            SetProperty(_showHeightSpikeLayer, value)
+            If SetProperty(_showHeightSpikeLayer, value) Then
+                If value Then
+                    'Layer bei Bedarf rendern
+                    If _heightSpikeMask IsNot Nothing AndAlso LoadedCache?.Meta IsNot Nothing Then
+                        HeightSpikeLayer = HeightSpikeOverlayRenderer.RenderSpikeMask(_heightSpikeMask, LoadedCache.Meta.LonCount, LoadedCache.Meta.LatCount)
+                    Else
+                        Dim ignore = EnsureHeightSpikeAsync()
+                    End If
+                Else
+                    HeightSpikeLayer = Nothing
+                End If
+            End If
         End Set
     End Property
 
@@ -742,6 +754,21 @@ Public Class EarthSurfaceViewModel
     End Property
 
     Private _heightSpikeMask As Boolean()
+    Private _heightSpikeIndices As Integer() = Array.Empty(Of Integer)()
+    Private _heightSpikeCursor As Integer = -1
+    Private _spikeRecalcCts As CancellationTokenSource
+
+    Private _canJumpNextSpike As Boolean
+    Public Property CanJumpNextSpike As Boolean
+        Get
+            Return _canJumpNextSpike
+        End Get
+        Set(value As Boolean)
+            If SetProperty(_canJumpNextSpike, value) Then
+                TryCast(JumpNextSpikeCommand, RelayCommand(Of Object))?.RaiseCanExecuteChanged()
+            End If
+        End Set
+    End Property
 
     Private _selectedEditChannel As EditChannel = EditChannel.LandMask
     Public Property SelectedEditChannel As EditChannel
@@ -818,6 +845,7 @@ Public Class EarthSurfaceViewModel
         TryCast(SaveEditsAsCommand, RelayCommand(Of Object))?.RaiseCanExecuteChanged()
         TryCast(UndoEditsCommand, RelayCommand(Of Object))?.RaiseCanExecuteChanged()
         TryCast(RedoEditsCommand, RelayCommand(Of Object))?.RaiseCanExecuteChanged()
+        TryCast(JumpNextSpikeCommand, RelayCommand(Of Object))?.RaiseCanExecuteChanged()
     End Sub
 
     Private Sub SetUndoRedoCounts(undoCount As Integer, redoCount As Integer)
@@ -1023,7 +1051,14 @@ Public Class EarthSurfaceViewModel
         End Try
     End Function
 
-    Private Async Function EnsureHeightSpikeAsync() As Task(Of Boolean)
+    Private NotInheritable Class HeightSpikeResult
+        Public Property Mask As Boolean()
+        Public Property Indices As Integer()
+        Public Property Count As Integer
+        Public Property Layer As ImageSource
+    End Class
+
+    Private Async Function EnsureHeightSpikeAsync(Optional forceRebuild As Boolean = False) As Task(Of Boolean)
 
         If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return False
         If LoadedCache.HeightM Is Nothing Then Return False
@@ -1033,10 +1068,13 @@ Public Class EarthSurfaceViewModel
         If w <= 0 OrElse h <= 0 Then Return False
 
         'Layer schon berechnet?
-        If _heightSpikeMask IsNot Nothing AndAlso _heightSpikeMask.Length = w * h Then
+        If Not forceRebuild AndAlso _heightSpikeMask IsNot Nothing AndAlso _heightSpikeMask.Length = w * h Then
             If HeightSpikeLayer Is Nothing Then
                 HeightSpikeLayer = HeightSpikeOverlayRenderer.RenderSpikeMask(_heightSpikeMask, w, h)
             End If
+
+            HeightSpikeCount = _heightSpikeIndices.Length
+            CanJumpNextSpike = (IsEditMode AndAlso SelectedEditChannel = EditChannel.Height AndAlso _heightSpikeIndices.Length > 0 AndAlso Not IsBusy)
             Return True
         End If
 
@@ -1047,39 +1085,85 @@ Public Class EarthSurfaceViewModel
             .UseOceanLandSeperate = False
         }
 
-        Dim mask As Boolean() = Nothing
-        Dim cnt As Integer = 0
+        Dim n As Integer = w * h
+        Dim baseHeights As Single() = LoadedCache.HeightM
+        Dim overridesSnapshot As KeyValuePair(Of Integer, Single)() = Array.Empty(Of KeyValuePair(Of Integer, Single))()
+
+        If IsEditMode AndAlso _editSession IsNot Nothing AndAlso _editSession.Delta IsNot Nothing Then
+            overridesSnapshot = _editSession.Delta.HeightOverrides.ToArray()
+        End If
 
         Try
-            Await BusyRunner.RunAsync(Of Object)(
+            Dim result As HeightSpikeResult = Await BusyRunner.RunAsync(Of HeightSpikeResult)(
                 Me,
                 "EarthSurface: Height-Spikes analysieren",
                 Function(progress, ct)
 
                     ct.ThrowIfCancellationRequested()
 
-                    mask = HeightSpikeAnalyzer.BuildSpikeMask(LoadedCache.HeightM, w, h, opts, cnt)
-
+                    Dim heightsToAnalyze As Single() = BuildHeightsForSpikeAnalysis(baseHeights, n, overridesSnapshot)
                     ct.ThrowIfCancellationRequested()
 
-                    Return True
+                    Dim mask As Boolean() = Nothing
+                    Dim cnt As Integer = 0
+
+                    mask = HeightSpikeAnalyzer.BuildSpikeMask(heightsToAnalyze, w, h, opts, cnt)
+                    ct.ThrowIfCancellationRequested()
+
+                    'Indices-Liste bauen
+                    Dim list As New List(Of Integer)(cnt)
+                    If mask IsNot Nothing Then
+                        For i As Integer = 0 To mask.Length - 1
+                            If mask(i) Then list.Add(i)
+                        Next
+                    End If
+
+                    Dim layer As ImageSource = HeightSpikeOverlayRenderer.RenderSpikeMask(mask, w, h)
+
+                    'WICHTIG: wenn es ein Freezable (BitmapSource) ist -> Freeze im Worker
+                    Dim bmp = TryCast(layer, BitmapSource)
+                    If bmp IsNot Nothing AndAlso bmp.CanFreeze Then bmp.Freeze()
+
+                    Return New HeightSpikeResult With {
+                        .Mask = mask,
+                        .Indices = list.ToArray(),
+                        .Count = list.Count,
+                        .Layer = layer
+                    }
 
                 End Function,
                 canCancel:=True,
                 showOverlay:=True)
 
-            _heightSpikeMask = mask
-            HeightSpikeCount = cnt
-            HeightSpikeLayer = HeightSpikeOverlayRenderer.RenderSpikeMask(mask, w, h)
+            'Schutz vor Cache-Wechsel während der Background-Work
+            If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return False
+            If w <> LoadedCache.Meta.LonCount OrElse h <> LoadedCache.Meta.LatCount Then Return False
 
-            LastReport = $"Height-Spikes gefunden: {cnt:N0}"
+            _heightSpikeMask = result.Mask
+            _heightSpikeIndices = result.Indices
+            HeightSpikeCount = result.Count
+            HeightSpikeLayer = result.Layer
+
+            'Cursor-Reset wenn Liste neu ist
+            If _heightSpikeIndices.Length = 0 Then
+                _heightSpikeCursor = -1
+            ElseIf _heightSpikeCursor >= _heightSpikeIndices.Length Then
+                _heightSpikeCursor = -1
+            End If
+
+            CanJumpNextSpike = (IsEditMode AndAlso SelectedEditChannel = EditChannel.Height AndAlso _heightSpikeIndices.Length > 0 AndAlso Not IsBusy)
+
+            LastReport = $"Height-Spikes gefunden: {result.Count:N0}"
+
+            Return True
         Catch ex As OperationCanceledException
             LastReport = "Height-Spike-Analyse abgebrochen."
+            Return False
         Catch ex As Exception
             LastReport = "Fehler bei der Spike-Analyse: " & ex.Message
+            Return False
         End Try
 
-        Return True
     End Function
 
     Private Async Function ConfirmLeaveEditorAsync(reason As String) As Task(Of Boolean)
@@ -1121,6 +1205,101 @@ Public Class EarthSurfaceViewModel
         End Try
 
         Return True
+    End Function
+
+    Private Sub InvalidateHeightSpikes()
+
+        'nur wenn Height-Channel aktiv ist
+        If Not IsEditMode OrElse SelectedEditChannel <> EditChannel.Height Then Return
+
+        HeightSpikeLayer = Nothing
+        _heightSpikeMask = Nothing
+        _heightSpikeIndices = Array.Empty(Of Integer)()
+        'HeightSpikeCount = 0
+        CanJumpNextSpike = False
+
+        'debound
+        Try
+            _spikeRecalcCts?.Cancel()
+        Catch
+        End Try
+
+        _spikeRecalcCts = New CancellationTokenSource()
+        Dim token = _spikeRecalcCts.Token
+
+        Dim ignored As Task = Task.Run(
+        Async Function()
+            Try
+                Await Task.Delay(200, token)
+                token.ThrowIfCancellationRequested()
+
+                'Recals leise (ohne Overlay)
+                Await RecomputeHeightSpikesSilentAsync(token)
+            Catch ex As Exception
+            End Try
+        End Function)
+    End Sub
+
+    Private Async Function RecomputeHeightSpikesSilentAsync(ct As CancellationToken) As Task
+
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return
+        Dim w As Integer = LoadedCache.Meta.LonCount
+        Dim h As Integer = LoadedCache.Meta.LatCount
+        If w <= 0 OrElse h <= 0 Then Return
+
+        Dim opts As New HeightSpikeOptions With {
+            .MinAbsDeviationM = 2000.0,
+            .MinNeighborDiffM = 1800.0,
+            .RobustFactor = 2.0,
+            .UseOceanLandSeperate = False
+        }
+
+        Dim n As Integer = w * h
+        Dim baseHeights As Single() = LoadedCache.HeightM
+
+        Dim overrideSnapshot As KeyValuePair(Of Integer, Single)() = Array.Empty(Of KeyValuePair(Of Integer, Single))()
+
+        If IsEditMode AndAlso _editSession IsNot Nothing AndAlso _editSession.Delta IsNot Nothing Then
+            overrideSnapshot = _editSession.Delta.HeightOverrides.ToArray()
+        End If
+
+        Dim heightsToAnalyze As Single() = BuildHeightsForSpikeAnalysis(baseHeights, n, overrideSnapshot)
+        If heightsToAnalyze Is Nothing Then Return
+
+        Dim mask As Boolean() = Nothing
+        Dim cnt As Integer = 0
+
+        'CPU-Work außerhalb der UI
+        mask = HeightSpikeAnalyzer.BuildSpikeMask(heightsToAnalyze, w, h, opts, cnt)
+
+        ct.ThrowIfCancellationRequested()
+
+        Dim list As New List(Of Integer)(cnt)
+        If mask IsNot Nothing Then
+            For i As Integer = 0 To mask.Length - 1
+                If mask(i) Then list.Add(i)
+            Next
+        End If
+        Dim indices As Integer() = list.ToArray()
+
+        'UI-Thread update
+        Await Application.Current.Dispatcher.InvokeAsync(
+            Sub()
+                _heightSpikeMask = mask
+                _heightSpikeIndices = indices
+                HeightSpikeCount = indices.Length
+                CanJumpNextSpike = (IsEditMode AndAlso SelectedEditChannel = EditChannel.Height AndAlso indices.Length > 0 AndAlso Not IsBusy)
+
+                If ShowHeightSpikeLayer AndAlso mask IsNot Nothing Then
+                    HeightSpikeLayer = HeightSpikeOverlayRenderer.RenderSpikeMask(mask, w, h)
+                End If
+
+                If indices.Length = 0 Then
+                    _heightSpikeCursor = -1
+                ElseIf _heightSpikeCursor >= indices.Length Then
+                    _heightSpikeCursor = -1
+                End If
+            End Sub)
     End Function
 
     Private _stroke As StrokeState
@@ -1271,6 +1450,8 @@ Public Class EarthSurfaceViewModel
     Public ReadOnly Property CloseTidLegendCommand As ICommand
     Public ReadOnly Property ToggleTidLegendCommand As ICommand
 
+    Public ReadOnly Property JumpNextSpikeCommand As ICommand
+
     Public ReadOnly Property SaveEditsCommand As ICommand
     Public ReadOnly Property SaveEditsAsCommand As ICommand
     Public ReadOnly Property UndoEditsCommand As ICommand
@@ -1359,6 +1540,7 @@ Public Class EarthSurfaceViewModel
                                                                    Dim hCommand As SetHeightCommand = TryCast(cmd, SetHeightCommand)
                                                                    If hCommand IsNot Nothing Then
                                                                        UpdateEditOverlayIndex(hCommand.Index)
+                                                                       InvalidateHeightSpikes()
                                                                    Else
                                                                        RebuildEditOverlay()
                                                                    End If
@@ -1385,6 +1567,7 @@ Public Class EarthSurfaceViewModel
                                                                    Dim hCommand As SetHeightCommand = TryCast(cmd, SetHeightCommand)
                                                                    If hCommand IsNot Nothing Then
                                                                        UpdateEditOverlayIndex(hCommand.Index)
+                                                                       InvalidateHeightSpikes()
                                                                    Else
                                                                        RebuildEditOverlay()
                                                                    End If
@@ -1395,6 +1578,8 @@ Public Class EarthSurfaceViewModel
                                                        End Sub, Function(o) CanRedoEdits)
 
         TidLegendItems = New ObservableCollection(Of TidLegendItemViewModel)(TidLegend.BuildDefaultItems())
+
+        JumpNextSpikeCommand = New RelayCommand(Of Object)(Async Sub(o) Await JumpNextSpikeAsync(), Function(o) CanJumpNextSpike AndAlso Not IsBusy)
 
     End Sub
 
@@ -2418,6 +2603,8 @@ Public Class EarthSurfaceViewModel
             SyncEditorStateFromSession()
             UpdateEditOverlayIndex(idx)
             LastReport = $"Edit: Height({idx}): Reset"
+
+            InvalidateHeightSpikes()
         End If
     End Sub
 
@@ -2450,6 +2637,8 @@ Public Class EarthSurfaceViewModel
             SyncEditorStateFromSession()
             UpdateEditOverlayIndex(idx)
             LastReport = $"Edit: Height({idx}: geglättet -> {newV:0.##}m"
+
+            InvalidateHeightSpikes()
         End If
     End Sub
 
@@ -2622,6 +2811,73 @@ Public Class EarthSurfaceViewModel
         OnPropertyChanged(NameOf(SelectedEditChannel))
     End Sub
 
+    Private Shared Function BuildHeightsForSpikeAnalysis(baseHeights As Single(), n As Integer, overridesSnapshot As KeyValuePair(Of Integer, Single)()) As Single()
+
+        If baseHeights Is Nothing OrElse baseHeights.Length < n Then Return Nothing
+
+        If overridesSnapshot Is Nothing OrElse overridesSnapshot.Length = 0 Then
+            'Wenn es keine Overrides gibt, einfach BaseHeights zurückgeben
+            Return baseHeights
+        End If
+
+        'Zuerst die BaseHeights in das neue Array clonen
+        Dim arr As Single() = CType(baseHeights.Clone(), Single())
+
+        'Dann NUR die Overrides überschreiben
+        For Each kvp In overridesSnapshot
+            Dim idx As Integer = kvp.Key
+            If idx >= 0 AndAlso idx < n Then
+                arr(idx) = kvp.Value
+            End If
+        Next
+
+        Return arr
+    End Function
+
+    Private Async Function JumpNextSpikeAsync() As Task
+
+        If Not IsEditMode OrElse SelectedEditChannel <> EditChannel.Height Then Return
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return
+
+        'Spikes sicherstellen
+        If _heightSpikeIndices Is Nothing OrElse _heightSpikeIndices.Length = 0 Then
+            Dim ok As Boolean = Await EnsureHeightSpikeAsync(forceRebuild:=True)
+            If Not ok Then Return
+        End If
+        If _heightSpikeIndices.Length = 0 Then Return
+
+        'Nächster
+        _heightSpikeCursor += 1
+        If _heightSpikeCursor >= _heightSpikeIndices.Length Then _heightSpikeCursor = 0
+
+        Dim idx As Integer = _heightSpikeIndices(_heightSpikeCursor)
+
+        Dim w As Integer = LoadedCache.Meta.LonCount
+        Dim h As Integer = LoadedCache.Meta.LatCount
+
+        Dim x As Integer = idx Mod w
+        Dim y As Integer = idx \ w
+
+        'Max-Zoom: 2000% = 20.0
+        Zoom = 20.0
+        StatusZoomText = $"Zoom: {Zoom * 100:0}%"
+
+        'Viewport muss bekannt sein
+        If _lastViewportW <= 0 OrElse _lastViewportH <= 0 Then
+            'Fallback: ohne echte Viewport-Daten nur grob zentrieren
+            PanX = -((x + 0.5) * Zoom)
+            PanY = -((y + 0.5) * Zoom)
+            Return
+        End If
+
+        'Zentrieren auf Zellmitte
+        PanX = (_lastViewportW / 2.0) - ((x + 0.5) * Zoom)
+        PanY = (_lastViewportH / 2.0) - ((y + 0.5) * Zoom)
+
+        ClampPan(_lastViewportW, _lastViewportH)
+
+        LastReport = $"Spike {_heightSpikeCursor + 1:N0}/{_heightSpikeIndices.Length:N0} @ idx={idx} (x={x}, y={y})"
+    End Function
 #End Region
 
 End Class

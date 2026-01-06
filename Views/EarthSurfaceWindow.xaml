@@ -186,7 +186,7 @@
                                     <Button Style="{StaticResource IconButtonStyle}"
                                             Command="{Binding JumpNextSpikeCommand}"
                                             IsEnabled="{Binding CanJumpNextSpike}"
-                                            ToolTip="Zum nächsten Spike springem">
+                                            ToolTip="Ansicht auf den nächsten Spike zentrieren">
                                         <Image Style="{StaticResource IconImageStyle}"
                                                Source="pack://application:,,,/Assets/Icons/NextSpike.png"/>
                                     </Button>

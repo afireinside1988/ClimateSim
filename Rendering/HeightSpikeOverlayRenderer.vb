@@ -14,7 +14,8 @@ Public Class HeightSpikeOverlayRenderer
     Public Shared Function RenderSpikeMask(mask As Boolean(), width As Integer, height As Integer) As WriteableBitmap
 
         ArgumentNullException.ThrowIfNull(mask)
-        If width <= 0 OrElse height <= 0 Then Throw New ArgumentOutOfRangeException("Ungültige Rastergröße.")
+        If width <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(width), "Rasterbreite muss > 0 sein.")
+        If height <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(height), "Rasterhöhe muss > 0 sein.")
         If mask.Length <> width * height Then Throw New InvalidOperationException("Größe der Spike-Mask ist ungültig.")
 
         Dim wb As New WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, Nothing)
