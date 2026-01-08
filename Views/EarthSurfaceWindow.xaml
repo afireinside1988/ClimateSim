@@ -97,13 +97,25 @@
                             </Grid.RowDefinitions>
                             
                             <!-- Layer-Auswhal -->
-                            <WrapPanel Grid.Column="0" Grid.Row="0" VerticalAlignment="Bottom">
+                            <WrapPanel Grid.Column="0" Grid.Row="0" VerticalAlignment="Center">
                                 <RadioButton x:Name="RadioTopo" Content="Topografie" IsChecked="{Binding ShowTopoLayer}" Margin="0,0,12,0" />
                                 <RadioButton Content="Land-Maske" IsChecked="{Binding ShowLandMaskLayer}" Margin="0,0,12,0"/>
                                 <RadioButton Content="TID (Quell-Info)" IsChecked="{Binding ShowTidLayer}" Margin="0,0,12,0"/>
                             </WrapPanel>
-                            <CheckBox Content="Editor-Modus" Grid.Column="1" Grid.Row="0" IsChecked="{Binding IsEditMode}"/>
-
+                            <StackPanel Orientation="Horizontal" Grid.Column="1" Grid.Row="0">
+                                <CheckBox Content="Editor-Modus" IsChecked="{Binding IsEditMode}" VerticalAlignment="Center"/>
+                                <Button Margin="10,0,0,0"
+                                        Style="{StaticResource IconButtonStyle}"
+                                        Command="{Binding OpenGlobePreviewCommand}"
+                                        IsEnabled="{Binding CanOpenGlobePreview}"
+                                        ToolTip="3D-Globus-Vorschau">
+                                    <Image Style="{StaticResource IconImageStyle}"
+                                               Source="pack://application:,,,/Assets/Icons/Globe.png"/>
+                                </Button>
+                            </StackPanel>
+                            
+                            
+                            
                             <!-- Layer-Optionen -->
                             <WrapPanel Grid.Column="0" Grid.Row="1" VerticalAlignment="Bottom" Margin="0,5,0,0">
                                 <CheckBox Content="Gitternetz" IsChecked="{Binding ShowGridLayer}" Margin="0,0,12,0"

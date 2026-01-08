@@ -14,6 +14,7 @@ Public Class EarthSurfaceViewModel
         MyBase.OnIsBusyChanged()
         RefreshEditCommandState()
         RaiseEditCommandCanExecuteChanged()
+        OnPropertyChanged(NameOf(CanOpenGlobePreview))
     End Sub
 
 #Region "Input"
@@ -86,6 +87,7 @@ Public Class EarthSurfaceViewModel
         Set(value As EarthSurfaceCache)
             If SetProperty(_loadedCache, value) Then
                 OnPropertyChanged(NameOf(CacheMeta))
+                OnPropertyChanged(NameOf(CanOpenGlobePreview))
 
                 ResetPerCacheUiState()
                 RefreshEditCommandState()
@@ -618,6 +620,35 @@ Public Class EarthSurfaceViewModel
         Public Property Tid As ImageSource
 
     End Class
+
+#End Region
+
+#Region "GlobePreview"
+
+    Public ReadOnly Property CanOpenGlobePreview As Boolean
+        Get
+            Return (LoadedCache IsNot Nothing AndAlso LoadedCache.Meta IsNot Nothing AndAlso TopoLayer IsNot Nothing)
+        End Get
+    End Property
+
+    Private Sub OpenGlobePreview()
+
+        If Not CanOpenGlobePreview Then Return
+
+        Dim payload As New GlobePreviewPayload With {
+            .CacheMeta = Me.CacheMeta,
+            .Topo = Me.TopoLayer,
+            .Relief = Me.ReliefLayer,
+            .LandMask = Me.LandMaskLayer,
+            .ShoreLines = Me.ShoreLineLayer,
+            .Tid = Me.TidLayer
+        }
+
+        Dim wnd As New GlobePreviewWindow(payload)
+        wnd.Owner = Application.Current?.Windows.OfType(Of Window)().FirstOrDefault(Function(w) TypeOf w Is EarthSurfaceWindow)
+        wnd.WindowStartupLocation = WindowStartupLocation.CenterOwner
+        wnd.Show()
+    End Sub
 
 #End Region
 
@@ -1457,6 +1488,8 @@ Public Class EarthSurfaceViewModel
     Public ReadOnly Property UndoEditsCommand As ICommand
     Public ReadOnly Property RedoEditsCommand As ICommand
 
+    Public ReadOnly Property OpenGlobePreviewCommand As ICommand
+
 #End Region
 
     Public Sub New()
@@ -1479,7 +1512,6 @@ Public Class EarthSurfaceViewModel
         GenerateCacheCommand = New RelayCommand(Of Object)(Async Sub(o)
                                                                Await GenerateCacheAsync()
                                                            End Sub, Function(o) CanGenerateCache AndAlso Not IsBusy)
-
         OpenCacheFolderCommand = New RelayCommand(Of Object)(Sub(o)
                                                                  Try
                                                                      Dim dir As String = EarthSurfaceCacheStore.CacheDir
@@ -1489,16 +1521,15 @@ Public Class EarthSurfaceViewModel
                                                                      MessageBox.Show(ex.Message, "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
                                                                  End Try
                                                              End Sub)
-
         ClearHeightFileCommand = New RelayCommand(Of Object)(Sub(o)
                                                                  If String.IsNullOrWhiteSpace(RawHeightFile) Then Return
                                                                  RawHeightFile = Nothing
                                                                  LastReport = "GEBCO-Height-Datei entfernt."
                                                              End Sub, Function(o) Not String.IsNullOrWhiteSpace(RawHeightFile))
-
         ClearTidFileCommand = New RelayCommand(Of Object)(Sub(o)
                                                               If String.IsNullOrWhiteSpace(RawTidFile) Then Return
                                                               RawTidFile = Nothing
+                                                              SelectedLandMaskMode = LandMaskMode.FromHeight
                                                               LastReport = "GEBCO-TID-Datei entfernt."
                                                           End Sub, Function(o) Not String.IsNullOrWhiteSpace(RawTidFile))
 
@@ -1509,20 +1540,17 @@ Public Class EarthSurfaceViewModel
         CloseTidLegendCommand = New RelayCommand(Of Object)(Sub(o)
                                                                 IsTidLegendOpen = False
                                                             End Sub)
-
         ToggleTidLegendCommand = New RelayCommand(Of Object)(Sub(o)
                                                                  IsTidLegendOpen = Not IsTidLegendOpen
                                                              End Sub)
-
+        TidLegendItems = New ObservableCollection(Of TidLegendItemViewModel)(TidLegend.BuildDefaultItems())
 
         SaveEditsCommand = New RelayCommand(Of Object)(Async Sub(o)
                                                            Await SaveEditsInternalAsync(saveAs:=False)
                                                        End Sub, Function(o) CanSaveEdits)
-
         SaveEditsAsCommand = New RelayCommand(Of Object)(Async Sub(o)
                                                              Await SaveEditsInternalAsync(saveAs:=True)
                                                          End Sub, Function(o) CanSaveEdits)
-
         UndoEditsCommand = New RelayCommand(Of Object)(Sub(o)
                                                            If Not IsEditMode Then Return
                                                            EnsureEditSession()
@@ -1549,7 +1577,6 @@ Public Class EarthSurfaceViewModel
                                                                LastReport = "Editor: Rückgängig."
                                                            End If
                                                        End Sub, Function(o) CanUndoEdits)
-
         RedoEditsCommand = New RelayCommand(Of Object)(Sub(o)
                                                            If Not IsEditMode Then Return
                                                            EnsureEditSession()
@@ -1577,9 +1604,9 @@ Public Class EarthSurfaceViewModel
                                                            End If
                                                        End Sub, Function(o) CanRedoEdits)
 
-        TidLegendItems = New ObservableCollection(Of TidLegendItemViewModel)(TidLegend.BuildDefaultItems())
-
         JumpNextSpikeCommand = New RelayCommand(Of Object)(Async Sub(o) Await JumpNextSpikeAsync(), Function(o) CanJumpNextSpike AndAlso Not IsBusy)
+
+        OpenGlobePreviewCommand = New RelayCommand(Of Object)(Sub(o) OpenGlobePreview(), Function(o) CanOpenGlobePreview AndAlso Not IsBusy)
 
     End Sub
 
@@ -1909,6 +1936,10 @@ Public Class EarthSurfaceViewModel
                 PanX = 0
                 PanY = 0
             End If
+
+            'GlobePreview-Button aktivieren
+            OnPropertyChanged(NameOf(CanOpenGlobePreview))
+
         Catch ex As OperationCanceledException
             'Abbruch
         Catch ex As Exception
