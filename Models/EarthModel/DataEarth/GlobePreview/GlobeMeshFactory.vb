@@ -1,4 +1,5 @@
-﻿Imports System.Transactions
+﻿Imports System.ComponentModel
+Imports System.Transactions
 Imports System.Windows.Media.Media3D
 
 Public NotInheritable Class GlobeMeshFactory
@@ -7,6 +8,8 @@ Public NotInheritable Class GlobeMeshFactory
 
     Private Sub New()
     End Sub
+
+#Region "Mesh-Renderer"
 
     Public Shared Function CreateSphereMesh(radius As Double, lonSegments As Integer, latSegments As Integer) As MeshGeometry3D
 
@@ -55,12 +58,12 @@ Public NotInheritable Class GlobeMeshFactory
 
                 'Zwei Dreiecke pro Quadrat
                 mesh.TriangleIndices.Add(i0)
-                mesh.TriangleIndices.Add(i2)
                 mesh.TriangleIndices.Add(i1)
+                mesh.TriangleIndices.Add(i2)
 
                 mesh.TriangleIndices.Add(i1)
-                mesh.TriangleIndices.Add(i2)
                 mesh.TriangleIndices.Add(i3)
+                mesh.TriangleIndices.Add(i2)
             Next
         Next
 
@@ -152,6 +155,106 @@ Public NotInheritable Class GlobeMeshFactory
         Return dst
 
     End Function
+
+    Public Shared Function CreateCylinderMeshY(radius As Double, height As Double, segments As Integer, Optional cap As Boolean = True) As MeshGeometry3D
+
+        segments = Math.Max(6, segments)
+
+        Dim mesh As New MeshGeometry3D()
+
+        Dim halfH As Double = height * 0.5
+        Dim stride As Integer = segments + 1
+
+        'Mantel
+        For i As Integer = 0 To segments
+            Dim u As Double = i / CDbl(segments)
+            Dim theta As Double = 2.0 * Math.PI * u
+
+            Dim x As Double = Math.Cos(theta)
+            Dim z As Double = Math.Sin(theta)
+
+            'unten
+            mesh.Positions.Add(New Point3D(radius * x, -halfH, radius * z))
+            mesh.Normals.Add(New Vector3D(x, 0, z))
+            mesh.TextureCoordinates.Add(New Point(u, 1))
+
+            'oben
+            mesh.Positions.Add(New Point3D(radius * x, halfH, radius * z))
+            mesh.Normals.Add(New Vector3D(x, 0, z))
+            mesh.TextureCoordinates.Add(New Point(u, 0))
+        Next
+
+        'Indizes Mantel
+        For i As Integer = 0 To segments - 1
+            Dim i0 As Integer = i * 2
+            Dim i1 As Integer = i0 + 1
+            Dim i2 As Integer = i0 + 2
+            Dim i3 As Integer = i0 + 3
+
+            'Winding so, dass Normalen nach außen zeigen
+            mesh.TriangleIndices.Add(i0) : mesh.TriangleIndices.Add(i1) : mesh.TriangleIndices.Add(i2)
+            mesh.TriangleIndices.Add(i2) : mesh.TriangleIndices.Add(i1) : mesh.TriangleIndices.Add(i3)
+        Next
+
+        If cap Then
+            'Top cap
+            Dim topCenterIndex As Integer = mesh.Positions.Count
+            mesh.Positions.Add(New Point3D(0, halfH, 0))
+            mesh.Normals.Add(New Vector3D(0, 1, 0))
+            mesh.TextureCoordinates.Add(New Point(0.5, 0.5))
+
+            Dim topRingStart As Integer = mesh.Positions.Count
+            For i As Integer = 0 To segments
+                Dim u As Double = i / CDbl(segments)
+                Dim theta As Double = 2.0 * Math.PI * u
+
+                Dim x As Double = Math.Cos(theta)
+                Dim z As Double = Math.Sin(theta)
+
+                mesh.Positions.Add(New Point3D(radius * x, halfH, radius * z))
+                mesh.Normals.Add(New Vector3D(0, 1, 0))
+                mesh.TextureCoordinates.Add(New Point(0.5 + 0.5 * x, 0.5 + 0.5 * z))
+            Next
+
+            For i As Integer = 0 To segments - 1
+                Dim a As Integer = topRingStart + i
+                Dim b As Integer = topRingStart + i + 1
+                mesh.TriangleIndices.Add(topCenterIndex) : mesh.TriangleIndices.Add(a) : mesh.TriangleIndices.Add(b)
+            Next
+
+            'Bottom Cap
+            Dim bottomCenterIndex As Integer = mesh.Positions.Count
+            mesh.Positions.Add(New Point3D(0, -halfH, 0))
+            mesh.Normals.Add(New Vector3D(0, -1, 0))
+            mesh.TextureCoordinates.Add(New Point(0.5, 0.5))
+
+            Dim bottomRingStart As Integer = mesh.Positions.Count
+            For i As Integer = 0 To segments
+                Dim u As Double = i / CDbl(segments)
+                Dim theta As Double = 2.0 * Math.PI * u
+
+                Dim x As Double = Math.Cos(theta)
+                Dim z As Double = Math.Sin(theta)
+
+                mesh.Positions.Add(New Point3D(radius * x, -halfH, radius * z))
+                mesh.Normals.Add(New Vector3D(0, -1, 0))
+                mesh.TextureCoordinates.Add(New Point(0.5 + 0.5 * x, 0.5 + 0.5 * z))
+            Next
+
+            For i As Integer = 0 To segments - 1
+                Dim a As Integer = bottomRingStart + i
+                Dim b As Integer = bottomRingStart + i + 1
+
+                'Winding umdrehen, weil Normale nach -Y
+                mesh.TriangleIndices.Add(bottomCenterIndex) : mesh.TriangleIndices.Add(b) : mesh.TriangleIndices.Add(a)
+            Next
+        End If
+
+        If mesh.CanFreeze Then mesh.Freeze()
+        Return mesh
+
+    End Function
+#End Region
 
 #Region "Resampling"
 

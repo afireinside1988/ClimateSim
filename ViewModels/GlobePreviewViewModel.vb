@@ -1,4 +1,5 @@
 ﻿Imports System.Threading
+Imports System.Transactions
 Imports System.Windows.Media.Media3D
 
 Public Class GlobePreviewViewModel
@@ -123,6 +124,13 @@ Public Class GlobePreviewViewModel
 
     End Sub
 
+    Private Sub ResetCamera()
+        _yawDeg = -90.0
+        _pitchDeg = 0.0
+        _distance = 3.0
+        UpdateCamera()
+    End Sub
+
 #End Region
 
 #Region "Caching"
@@ -194,6 +202,76 @@ Public Class GlobePreviewViewModel
         Return m
     End Function
 
+    Private _cacheSize As String = "0 MB"
+    Public Property CacheSize As String
+        Get
+            Return _cacheSize
+        End Get
+        Set(value As String)
+            SetProperty(_cacheSize, value)
+        End Set
+    End Property
+
+    Private Sub ClearCache()
+        SyncLock _cacheGate
+            _sphereCache.Clear()
+            _displacedCache.Clear()
+            _materialCacheHQ.Clear()
+            _materialCacheLQ.Clear()
+        End SyncLock
+
+        UpdateCacheSize()
+
+        'Nach Cache-Leerung neu rendern, damit kein leeres Ergebnis entsteht
+        QueueRender("Cache geleert")
+    End Sub
+
+    Private Sub UpdateCacheSize()
+        Dim bytes As Long = 0
+
+        SyncLock _cacheGate
+
+            For Each m As MeshGeometry3D In _sphereCache.Values
+                bytes += EstimateMeshBytes(m)
+            Next
+            For Each m As MeshGeometry3D In _displacedCache.Values
+                bytes += EstimateMeshBytes(m)
+            Next
+
+            'Materials nur grob weil vernachlässigbar
+            bytes += (_materialCacheHQ.Count + _materialCacheLQ.Count) * 4096L
+        End SyncLock
+
+        CacheSize = FormatBytes(bytes)
+    End Sub
+
+    Private Shared Function EstimateMeshBytes(mesh As MeshGeometry3D) As Long
+
+        If mesh Is Nothing Then Return 0
+
+        Dim bytes As Long = 0
+
+        'Point3D = 3 * Double (24 bytes)
+        If mesh.Positions IsNot Nothing Then bytes += CLng(mesh.Positions.Count) * 24L
+
+        'Vector3D = 3 * Double (24 bytes)
+        If mesh.Normals IsNot Nothing Then bytes += CLng(mesh.Normals.Count) * 24L
+
+        'Point = 2 * Double (16 bytes)
+        If mesh.TextureCoordinates IsNot Nothing Then bytes += CLng(mesh.TextureCoordinates.Count) * 16L
+
+        'Int32 (4 bytes)
+        If mesh.TriangleIndices IsNot Nothing Then bytes += CLng(mesh.TriangleIndices.Count) * 4L
+
+        Return bytes
+
+    End Function
+
+    Private Shared Function FormatBytes(bytes As Long) As String
+        Dim mb As Double = bytes / (1024 * 1024)
+        If mb < 0.95 Then Return $"{mb:0.0} MB"
+        Return $"{mb:0.0} MB"
+    End Function
 #End Region
 
 #Region "Globus-Modell"
@@ -208,7 +286,34 @@ Public Class GlobePreviewViewModel
         End Set
     End Property
 
-    Private _lonSegments As Integer = 2048
+    Private Structure MeshRes
+        Public Lon As Integer
+        Public Lat As Integer
+    End Structure
+
+    Private _meshResolution As Integer = 2
+    Public Property MeshResolution As Integer
+        Get
+            Return _meshResolution
+        End Get
+        Set(value As Integer)
+            value = Clamp(value, 0, 4)
+
+            If Not SetProperty(_meshResolution, value) Then Return
+
+            'Ziel-Auflösung aus Tick ableiten
+            Dim res As MeshRes = MapResolution(value)
+
+            'Nur setzen, wenn wirklich anders um unnötige Renders zu vermeiden
+            If _lonSegments <> res.Lon OrElse _latSegments <> res.Lat Then
+                LonSegments = res.Lon
+                LatSegments = res.Lat
+            End If
+
+        End Set
+    End Property
+
+    Private _lonSegments As Integer = 512
     Public Property LonSegments As Integer
         Get
             Return _lonSegments
@@ -221,7 +326,7 @@ Public Class GlobePreviewViewModel
         End Set
     End Property
 
-    Private _latSegments As Integer = 1024
+    Private _latSegments As Integer = 256
     Public Property LatSegments As Integer
         Get
             Return _latSegments
@@ -233,6 +338,48 @@ Public Class GlobePreviewViewModel
             End If
         End Set
     End Property
+
+    Private Shared Function MapResolution(tick As Integer) As MeshRes
+        Dim lon As Integer = CInt(128 * (2 ^ tick))
+        Dim lat As Integer = CInt(64 * (2 ^ tick))
+        Return New MeshRes With {.Lon = lon, .Lat = lat}
+    End Function
+
+#End Region
+
+#Region "Pol-Achs-Modell"
+
+    Private _axisGeo As GeometryModel3D
+    Private _axisVisible As Boolean
+
+    Private _showAxis As Boolean
+    Public Property ShowAxis As Boolean
+        Get
+            Return _showAxis
+        End Get
+        Set(value As Boolean)
+            If SetProperty(_showAxis, value) Then
+                UpdateAxisModel()
+            End If
+        End Set
+    End Property
+
+    Private Sub UpdateAxisModel()
+
+        If _group Is Nothing OrElse _axisGeo Is Nothing Then Return
+
+        If ShowAxis Then
+            If Not _axisVisible Then
+                _group.Children.Add(_axisGeo)
+                _axisVisible = True
+            End If
+        Else
+            If _axisVisible Then
+                _group.Children.Remove(_axisGeo)
+                _axisVisible = False
+            End If
+        End If
+    End Sub
 
 #End Region
 
@@ -295,16 +442,6 @@ Public Class GlobePreviewViewModel
                 RefreshOverlayAvailability()
                 ApplyInteractionMaterialState(force:=True)
             End If
-        End Set
-    End Property
-
-    Private _baseLayerImage As ImageSource
-    Public Property BaseLayerImage As ImageSource
-        Get
-            Return _baseLayerImage
-        End Get
-        Set(value As ImageSource)
-            SetProperty(_baseLayerImage, value)
         End Set
     End Property
 
@@ -458,6 +595,9 @@ Public Class GlobePreviewViewModel
     Public ReadOnly Property MouseDownCommand As ICommand
     Public ReadOnly Property MouseUpCommand As ICommand
 
+    Public ReadOnly Property ResetCameraCommand As ICommand
+    Public ReadOnly Property ClearCacheCommand As ICommand
+
     Private Sub BeginRotate(r As PanRequest)
 
         _isDragging = True
@@ -555,10 +695,16 @@ Public Class GlobePreviewViewModel
         MouseDownCommand = New RelayCommand(Of MapMouseDownRequest)(Sub(r) OnMouseDown(r))
         MouseUpCommand = New RelayCommand(Of MapMouseUpRequest)(Sub(r) OnMouseUp(r))
 
+        ResetCameraCommand = New RelayCommand(Of Object)(Sub(o) ResetCamera())
+        ClearCacheCommand = New RelayCommand(Of Object)(Sub(o) ClearCache())
+
         'Defaults setzen:
         _selectedBaseLayer = If(_p?.Topo IsNot Nothing, GlobeBaseLayer.Topo,
-                       If(_p?.LandMask IsNot Nothing, GlobeBaseLayer.LandMask,
-                       GlobeBaseLayer.Tid))
+                             If(_p?.LandMask IsNot Nothing, GlobeBaseLayer.LandMask,
+                             GlobeBaseLayer.Tid))
+        MeshResolution = 2
+        OnPropertyChanged(NameOf(MeshResolution))
+        _showAxis = False
 
         ' Default Overlay: an, wenn für den Start-Layer ein Overlay existiert
         _showOverlay =
@@ -569,9 +715,11 @@ Public Class GlobePreviewViewModel
 
         'Intiales Setup
         EnsureModelCreated()
+        UpdateAxisModel()
         RefreshOverlayAvailability()
         UpdateCamera()
         StartInitialRender()
+        UpdateCacheSize()
     End Sub
 
     Public Async Sub StartInitialRender()
@@ -716,10 +864,38 @@ Public Class GlobePreviewViewModel
 
                                                              _baseGeo.Geometry = mesh
                                                              ApplyInteractionMaterialState(force:=True)
+                                                             UpdateCacheSize()
 
                                                              IsRendering = False
                                                              RenderingMessage = ""
                                                          End Sub)
+
+    End Function
+
+    Private Function CreateAxisModel() As GeometryModel3D
+
+        'Globus-Radius = 1.0 -> Achse soll etwas überstehen
+        Dim protrude As Double = 0.2
+        Dim height As Double = 2.0 * (1.0 + protrude)
+        Dim radius As Double = 0.001
+
+        Dim mesh As MeshGeometry3D = GlobeMeshFactory.CreateCylinderMeshY(radius, height, segments:=8, cap:=True)
+
+        Dim brush As New SolidColorBrush(Color.FromRgb(255, 255, 255))
+        If brush.CanFreeze Then brush.Freeze()
+
+        Dim mat As New DiffuseMaterial(brush)
+        If mat.CanFreeze Then mat.Freeze()
+
+        Dim gm As New GeometryModel3D With {
+            .Geometry = mesh,
+            .Material = mat,
+            .BackMaterial = mat
+        }
+
+        If gm.CanFreeze Then gm.Freeze()
+
+        Return gm
 
     End Function
 
@@ -793,6 +969,9 @@ Public Class GlobePreviewViewModel
 
         _group.Children.Add(_baseGeo)
 
+        'Achse vorbereiten, aber noch nicht hinzufügen
+        _axisGeo = CreateAxisModel()
+
         GlobeModel = _group
     End Sub
 
@@ -849,6 +1028,8 @@ Public Class GlobePreviewViewModel
 
         _materialCacheHQ.Clear()
         _materialCacheLQ.Clear()
+
+        UpdateCacheSize()
 
         RenderingTitle = "Globus wird gerendert..."
         RenderingMessage = "Erzeuge Mesh..."

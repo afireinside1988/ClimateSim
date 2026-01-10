@@ -11,6 +11,7 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <local:EnumToBooleanConverter x:Key="EnumToBool"/>
+        <local:GlobeMeshResolutionTickToStringConverter x:Key="MeshTickToString"/>
     </Window.Resources>
 
     <Grid Margin="12">
@@ -131,9 +132,15 @@
                                   IsEnabled="{Binding IsShoreLinesOptionAvailable}"
                                   IsChecked="{Binding ShowOverlay, Mode=TwoWay}"/>
 
-                        <CheckBox Grid.Row="3" Grid.ColumnSpan="2" Content="Gitternetz" 
-                                  Margin="0,8,0,0"
+                        <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Margin="0,8,0,0">
+                            <CheckBox Content="Gitternetz"
+                                      Margin="0,0,0,3"
                                   IsChecked="{Binding ShowGrid, Mode=TwoWay}"/>
+
+                        <CheckBox Content="Pol-Achse"
+                                  IsChecked="{Binding ShowAxis, Mode=TwoWay}"/>
+                        </StackPanel>
+                        
                     </Grid>
 
                 </GroupBox>
@@ -144,9 +151,11 @@
                     <Grid Margin="8">
                         <Grid.RowDefinitions>
                             <RowDefinition/>
+                            <RowDefinition Height="8"/>
                             <RowDefinition/>
                             <RowDefinition/>
                             <RowDefinition/>
+                            <RowDefinition Height="8"/>
                             <RowDefinition/>
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
@@ -158,54 +167,63 @@
 
                         <!-- Auflösung -->
                         <TextBlock Grid.Row="0" Grid.Column="0"
-                                   Margin="0,0,8,8"
+                                   Margin="0,0,8,0"
                                    Text="Auflösung:"/>
                         <TextBlock Grid.Row="0" Grid.Column="1"
-                                   Text="{Binding MeshResolutionText}"
-                                   TextAlignment="Left" FontFamily="Consolas"/>
+                                   Text="{Binding ElementName=SldMeshRes, Path=Value, Converter={StaticResource MeshTickToString}}"
+                                   TextAlignment="Left" FontFamily="Consolas" VerticalAlignment="Bottom"/>
 
-                        <TextBlock Grid.Row="1" Grid.Column="0"
+                        <TextBlock Grid.Row="2" Grid.Column="0"
                                    Margin="0,0,8,0"
                                    Text="128x64"
                                    TextAlignment="Right" FontFamily="Consolas"
                                    VerticalAlignment="Center"/>
-                        
-                        <Slider Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+
+                        <Slider x:Name="SldMeshRes"
+                            Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
                                  Minimum="0" Maximum="4"
                                  TickFrequency="1"
                                  IsSnapToTickEnabled="True"
-                                 Value="{Binding MeshResolution, Mode=TwoWay}"/>
-                        <TextBlock Grid.Row="1" Grid.Column="3"
+                                 Value="{Binding MeshResolution, Mode=TwoWay, UpdateSourceTrigger=Explicit}">
+                            <i:Interaction.Behaviors>
+                                <local:CommitSliderValueBehavior/>
+                            </i:Interaction.Behaviors>
+                        </Slider>
+                        <TextBlock Grid.Row="2" Grid.Column="3"
                                    Margin="8,0,0,0"
                                    Text="2048x1024" 
                                    TextAlignment="Left" FontFamily="Consolas" 
                                    VerticalAlignment="Center"/>
                         
                         <!-- Displacement-Optionen -->
-                        <CheckBox Grid.Row="2" Grid.ColumnSpan="4"
+                        <CheckBox Grid.Row="3" Grid.ColumnSpan="4"
                                   Margin="0,12,0,8"
                                   Content="Displacement-Mapping"
                                   IsChecked="{Binding ShowDisplacement}"/>
 
-                        <TextBlock Grid.Row="3" Grid.Column="0"
-                                   Margin="0,0,8,8"
-                                   Text="Überhöhung:"/>
-                        <TextBlock Grid.Row="3" Grid.Column="1"
-                                   Text="{Binding ElementName=SldExaggeration, Path=Value}"
-                                   TextAlignment="Left" FontFamily="Consolas"/>
-                        
                         <TextBlock Grid.Row="4" Grid.Column="0"
+                                   Margin="0,0,8,0"
+                                   Text="Überhöhung:"/>
+                        <TextBlock Grid.Row="4" Grid.Column="1"
+                                   Text="{Binding ElementName=SldExaggeration, Path=Value}"
+                                   TextAlignment="Left" FontFamily="Consolas" VerticalAlignment="Bottom"/>
+                        
+                        <TextBlock Grid.Row="6" Grid.Column="0"
                                    Margin="0,0,8,0"
                                    Text="0x"
                                    TextAlignment="Right" FontFamily="Consolas"
                                    VerticalAlignment="Center"/>
-                        <Slider x:Name="SldExaggeration" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2"
+                        <Slider x:Name="SldExaggeration" Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2"
                                 Minimum="0" Maximum="100"
                                 TickFrequency="10"
                                 IsSnapToTickEnabled="True"
                                 IsEnabled="{Binding ShowDisplacement}"
-                                Value="{Binding DisplacementExaggeration, Mode=TwoWay}"/>
-                        <TextBlock Grid.Row="4" Grid.Column="3"
+                                Value="{Binding DisplacementExaggeration, Mode=TwoWay, UpdateSourceTrigger=Explicit}">
+                            <i:Interaction.Behaviors>
+                                <local:CommitSliderValueBehavior/>
+                            </i:Interaction.Behaviors>
+                        </Slider>
+                        <TextBlock Grid.Row="6" Grid.Column="3"
                                    Margin="8,0,0,0"
                                    Text="100x"
                                    TextAlignment="Left" FontFamily="Consolas"
@@ -214,6 +232,16 @@
 
                 </GroupBox>
 
+                <!-- Animation -->
+                <GroupBox Header="Animation" Margin="8">
+                    <Grid Margin="8">
+                        <Button Content="Kamera zurücksetzen"
+                                HorizontalAlignment="Left"
+                                Width="120" Height="25"
+                                Command="{Binding ResetCameraCommand}"/>
+                    </Grid>
+                </GroupBox>
+                
                 <!-- Cache -->
                 <GroupBox Header="Cache" Margin="8">
                     <Grid Margin="8">
@@ -225,7 +253,7 @@
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                             <TextBlock Text="Cache-Größe:" Margin="0,0,8,0"/>
                             <TextBlock Text="{Binding CacheSize}"
-                                       TextAlignment="Left" VerticalAlignment="Center"
+                                       TextAlignment="Left" VerticalAlignment="Bottom"
                                        FontFamily="Consolas"/>
 
                         </StackPanel>
