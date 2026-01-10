@@ -14,77 +14,232 @@
     </Window.Resources>
 
     <Grid Margin="12">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="380"/>
+        </Grid.ColumnDefinitions>
 
-        <Grid Grid.Row="0" Margin="8">
+        <!-- Links: Viewport -->
+        <Grid Grid.Column="0">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5">
-                <RadioButton x:Name="RadTopo" Content="Topografie" Margin="0,0,12,0"
-                             IsChecked="{Binding SelectedBaseLayer, Converter={StaticResource EnumToBool}, ConverterParameter=Topo}"/>
-                <RadioButton Content="LandMask" Margin="0,0,12,0"
-                             IsChecked="{Binding SelectedBaseLayer, Converter={StaticResource EnumToBool}, ConverterParameter=LandMask}"/>
-                <RadioButton Content="TID"
-                             IsChecked="{Binding SelectedBaseLayer, Converter={StaticResource EnumToBool}, ConverterParameter=Tid}"/>
-            </StackPanel>
-            <StackPanel Grid.Row="1" Orientation="Horizontal">
-                <CheckBox Content="Gitternetz" Margin="0,0,12,0" Width="{Binding ElementName=RadTopo, Path=ActualWidth}"
-                          IsChecked="{Binding ShowGrid, Mode=TwoWay}"/>
-                <CheckBox Content="Relief" Visibility="{Binding IsReliefOptionVisible, Converter={StaticResource BoolToVis}}"
-                          IsChecked="{Binding ShowOverlay, Mode=TwoWay}"/>
-                <CheckBox Content="Küstenlinien" Visibility="{Binding IsShoreLinesOptionVisible, Converter={StaticResource BoolToVis}}"
-                          IsChecked="{Binding ShowOverlay, Mode=TwoWay}"/>
-            </StackPanel>
-        </Grid>
-        <Border Grid.Row="1" Background="#FF000000" CornerRadius="8" Padding="8">
-            <Grid ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True">
+            <!-- Viewport -->
+            <Border Grid.Row="0" Background="#FF000000" CornerRadius="8" Padding="8">
+                    <Grid ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True">
 
-                <Viewport3D ClipToBounds="True">
-                    <i:Interaction.Behaviors>
-                        <local:PanAndZoomBehavior
-                            BeginPanCommand="{Binding BeginRotateCommand}"
-                            PanCommand="{Binding RotateCommand}"
-                            EndPanCommand="{Binding EndRotateCommand}"
-                            ZoomCommand="{Binding ZoomCommand}"
-                            ViewportChangedCommand="{Binding ViewportChangedCommand}"
-                            MouseMoveCommand="{Binding MouseMoveCommand}"
-                            MouseDownCommand="{Binding MouseDownCommand}"
-                            MouseUpCommand="{Binding MouseUpCommand}"/>
-                    </i:Interaction.Behaviors>
+                        <Viewport3D x:Name="Vp" ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True">
+                            <i:Interaction.Behaviors>
+                                <local:PanAndZoomBehavior
+                                    BeginPanCommand="{Binding BeginRotateCommand}"
+                                    PanCommand="{Binding RotateCommand}"
+                                    EndPanCommand="{Binding EndRotateCommand}"
+                                    ZoomCommand="{Binding ZoomCommand}"
+                                    ViewportChangedCommand="{Binding ViewportChangedCommand}"
+                                    MouseMoveCommand="{Binding MouseMoveCommand}"
+                                    MouseDownCommand="{Binding MouseDownCommand}"
+                                    MouseUpCommand="{Binding MouseUpCommand}"/>
+                                </i:Interaction.Behaviors>
 
-                    <Viewport3D.Camera>
-                        <PerspectiveCamera
-                            Position="{Binding CameraPosition}"
-                            LookDirection="{Binding CameraLookDirection}"
-                            UpDirection="{Binding CameraUpDirection}"
-                            FieldOfView="{Binding CameraFov}"/>
-                    </Viewport3D.Camera>
+                            <Viewport3D.Camera>
+                                <PerspectiveCamera
+                                    Position="{Binding CameraPosition}"
+                                    LookDirection="{Binding CameraLookDirection}"
+                                    UpDirection="{Binding CameraUpDirection}"
+                                    FieldOfView="{Binding CameraFov}"/>
+                                </Viewport3D.Camera>
                     
-                    <!-- Licht -->
-                    <ModelVisual3D>
-                        <ModelVisual3D.Content>
-                            <Model3DGroup>
-                                <AmbientLight Color="#66666666"/>
-                                <DirectionalLight Color="#FFFFFF" Direction="-0.6,-0.3,-1"/>
-                            </Model3DGroup>
-                        </ModelVisual3D.Content>
-                    </ModelVisual3D>
+                            <!-- Licht -->
+                            <ModelVisual3D>
+                                <ModelVisual3D.Content>
+                                    <Model3DGroup>
+                                        <AmbientLight Color="#66666666"/>
+                                        <DirectionalLight Color="#FFFFFF" Direction="-0.6,-0.3,-1"/>
+                                    </Model3DGroup>
+                                </ModelVisual3D.Content>
+                            </ModelVisual3D>
                     
-                    <!-- Globus-Modelle -->
-                    <ModelVisual3D Content="{Binding GlobeModel}"/>
-                </Viewport3D>
+                            <!-- Globus-Modelle -->
+                            <ModelVisual3D Content="{Binding GlobeModel}"/>
+                        </Viewport3D>
 
+                        <!-- Render-Overlay über dem Viewport -->
+                        <Border Background="#AA000000"
+                                CornerRadius="6"
+                                Visibility="{Binding IsRendering, Converter={StaticResource BoolToVis}}"
+                                IsHitTestVisible="False">
+                            
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding RenderingTitle}"
+                                           Foreground="White"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center"/>
+                                
+                                <TextBlock Text="{Binding RenderingMessage}"
+                                           Foreground="#DDFFFFFF"
+                                           Opacity="0.9"
+                                           Margin="0,6,0,0"
+                                           HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+            </Border>
+            
+            <!-- Status-Bar -->
+            <Grid Grid.Row="1" Margin="8">
+                <TextBlock Text="(Debug) Aktuelle Textur:" Opacity="0.7"/>
             </Grid>
-        </Border>
-        <Grid Grid.Row="2" Margin="8">
-            <TextBlock Text="(Debug) Aktuelle Textur:" Opacity="0.7"/>
+
         </Grid>
+
+        <!-- Rechts: Einstellungen -->
+        <Grid Grid.Column="1" Margin="12">
+
+            <StackPanel>
+                <TextBlock Text="Globus-Einstellungen" FontSize="16" FontWeight="Bold"
+                           Margin="8,0,0,8"/>
+
+                <!-- Layer-Auswahl -->
+                <GroupBox Header="Layer" Margin="8">
+
+                    <Grid Margin="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition/>
+                            <ColumnDefinition/>
+                        </Grid.ColumnDefinitions>
+
+                        <RadioButton Grid.Column="0" Grid.Row="0" Content="Topografie"
+                             IsChecked="{Binding SelectedBaseLayer, Converter={StaticResource EnumToBool}, ConverterParameter=Topo}"/>
+                        <RadioButton Grid.Column="0" Grid.Row="1" Content="LandMask"
+                             IsChecked="{Binding SelectedBaseLayer, Converter={StaticResource EnumToBool}, ConverterParameter=LandMask}"/>
+                        <RadioButton Grid.Column="0" Grid.Row="2" Content="TID"
+                             IsChecked="{Binding SelectedBaseLayer, Converter={StaticResource EnumToBool}, ConverterParameter=Tid}"/>
+
+                        <CheckBox Grid.Column="1" Grid.Row="0" Content="Hill-Shading"
+                                  IsEnabled="{Binding IsReliefOptionAvailable}"
+                                  IsChecked="{Binding ShowOverlay, Mode=TwoWay}"/>
+                        <CheckBox Grid.Column="1" Grid.Row="1" Content="Küstenlinien" 
+                                  IsEnabled="{Binding IsShoreLinesOptionAvailable}"
+                                  IsChecked="{Binding ShowOverlay, Mode=TwoWay}"/>
+
+                        <CheckBox Grid.Row="3" Grid.ColumnSpan="2" Content="Gitternetz" 
+                                  Margin="0,8,0,0"
+                                  IsChecked="{Binding ShowGrid, Mode=TwoWay}"/>
+                    </Grid>
+
+                </GroupBox>
+
+
+                <GroupBox Header="Globus-Darstellung" Margin="8">
+
+                    <Grid Margin="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Auflösung -->
+                        <TextBlock Grid.Row="0" Grid.Column="0"
+                                   Margin="0,0,8,8"
+                                   Text="Auflösung:"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1"
+                                   Text="{Binding MeshResolutionText}"
+                                   TextAlignment="Left" FontFamily="Consolas"/>
+
+                        <TextBlock Grid.Row="1" Grid.Column="0"
+                                   Margin="0,0,8,0"
+                                   Text="128x64"
+                                   TextAlignment="Right" FontFamily="Consolas"
+                                   VerticalAlignment="Center"/>
+                        
+                        <Slider Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                 Minimum="0" Maximum="4"
+                                 TickFrequency="1"
+                                 IsSnapToTickEnabled="True"
+                                 Value="{Binding MeshResolution, Mode=TwoWay}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="3"
+                                   Margin="8,0,0,0"
+                                   Text="2048x1024" 
+                                   TextAlignment="Left" FontFamily="Consolas" 
+                                   VerticalAlignment="Center"/>
+                        
+                        <!-- Displacement-Optionen -->
+                        <CheckBox Grid.Row="2" Grid.ColumnSpan="4"
+                                  Margin="0,12,0,8"
+                                  Content="Displacement-Mapping"
+                                  IsChecked="{Binding ShowDisplacement}"/>
+
+                        <TextBlock Grid.Row="3" Grid.Column="0"
+                                   Margin="0,0,8,8"
+                                   Text="Überhöhung:"/>
+                        <TextBlock Grid.Row="3" Grid.Column="1"
+                                   Text="{Binding ElementName=SldExaggeration, Path=Value}"
+                                   TextAlignment="Left" FontFamily="Consolas"/>
+                        
+                        <TextBlock Grid.Row="4" Grid.Column="0"
+                                   Margin="0,0,8,0"
+                                   Text="0x"
+                                   TextAlignment="Right" FontFamily="Consolas"
+                                   VerticalAlignment="Center"/>
+                        <Slider x:Name="SldExaggeration" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2"
+                                Minimum="0" Maximum="100"
+                                TickFrequency="10"
+                                IsSnapToTickEnabled="True"
+                                IsEnabled="{Binding ShowDisplacement}"
+                                Value="{Binding DisplacementExaggeration, Mode=TwoWay}"/>
+                        <TextBlock Grid.Row="4" Grid.Column="3"
+                                   Margin="8,0,0,0"
+                                   Text="100x"
+                                   TextAlignment="Left" FontFamily="Consolas"
+                                   VerticalAlignment="Center"/>
+                    </Grid>
+
+                </GroupBox>
+
+                <!-- Cache -->
+                <GroupBox Header="Cache" Margin="8">
+                    <Grid Margin="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="Cache-Größe:" Margin="0,0,8,0"/>
+                            <TextBlock Text="{Binding CacheSize}"
+                                       TextAlignment="Left" VerticalAlignment="Center"
+                                       FontFamily="Consolas"/>
+
+                        </StackPanel>
+                        <Button Grid.Row="1"
+                                Width="120" Height="25"
+                                HorizontalAlignment="Left"
+                                Content="Cache leeren"
+                                Command="{Binding ClearCacheCommand}"/>
+                    </Grid>
+                </GroupBox>
+
+            </StackPanel>
+
+        </Grid>
+
     </Grid>
 </Window>

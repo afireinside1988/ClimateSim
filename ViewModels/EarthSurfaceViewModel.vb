@@ -635,12 +635,15 @@ Public Class EarthSurfaceViewModel
 
         If Not CanOpenGlobePreview Then Return
 
+
+
         Dim payload As New GlobePreviewPayload With {
             .CacheMeta = Me.CacheMeta,
+            .HeightMap = Me.LoadedCache.HeightM,
             .Topo = Me.TopoLayer,
-            .Relief = Me.ReliefLayer,
+            .ReliefOverlay = Me.ReliefLayer,
             .LandMask = Me.LandMaskLayer,
-            .ShoreLines = Me.ShoreLineLayer,
+            .ShoreLinesOverlay = Me.ShoreLineLayer,
             .Tid = Me.TidLayer
         }
 

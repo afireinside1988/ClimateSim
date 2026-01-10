@@ -536,7 +536,7 @@
 
                 <StackPanel>
 
-                    <TextBlock Text="Einstellungen"
+                    <TextBlock Text="Cache-Einstellungen"
                            FontSize="16"
                            FontWeight="Bold"
                            Margin="0,0,0,10"/>

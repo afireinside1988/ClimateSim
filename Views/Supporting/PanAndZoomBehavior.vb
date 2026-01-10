@@ -166,7 +166,6 @@ Public Class PanAndZoomBehavior
 
         AssociatedObject.CaptureMouse()
 
-
         Dim payload As New PanRequest With {
             .MousePos = e.GetPosition(AssociatedObject),
             .ViewPortSize = CurrentViewportSize()
@@ -306,6 +305,7 @@ Public Class PanAndZoomBehavior
         alt = (mods And ModifierKeys.Alt) = ModifierKeys.Alt
         shift = (mods And ModifierKeys.Shift) = ModifierKeys.Shift
     End Sub
+
 End Class
 
 Public Class ZoomRequest

@@ -7,7 +7,7 @@ Public NotInheritable Class TidRenderer
     End Sub
 
     Public Shared Function RenderTidLayer(cache As EarthSurfaceCache,
-                                          Optional alpha As Byte = 200,
+                                          Optional alpha As Byte = 255,
                                           Optional dpi As Double = 96.0) As WriteableBitmap
 
         ArgumentNullException.ThrowIfNull(cache)
