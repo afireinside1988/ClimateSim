@@ -151,6 +151,12 @@ Public Class GlobePreviewViewModel
         Public IncludeBathymetry As Boolean
     End Structure
 
+    Private Structure MaterialKey
+        Public Img As ImageSource
+        Public Hq As Boolean
+        Public Grid As Boolean
+    End Structure
+
     Private ReadOnly _cacheGate As New Object()
 
     'Sphere-Cache
@@ -158,8 +164,7 @@ Public Class GlobePreviewViewModel
     Private ReadOnly _displacedCache As New Dictionary(Of DisplacedSphereKey, MeshGeometry3D)
 
     'Material-Cache
-    Private ReadOnly _materialCacheHQ As New Dictionary(Of ImageSource, Material)
-    Private ReadOnly _materialCacheLQ As New Dictionary(Of ImageSource, Material)
+    Private ReadOnly _materialCache As New Dictionary(Of MaterialKey, Material)
 
     Private ReadOnly _fallbackMaterialHQ As Material = CreateFallbackMaterial(hq:=True)
     Private ReadOnly _fallbackMaterialLQ As Material = CreateFallbackMaterial(hq:=False)
@@ -188,19 +193,6 @@ Public Class GlobePreviewViewModel
         Return mg
 
     End Function
-    Private Function GetMaterial(img As ImageSource, hq As Boolean) As Material
-
-        If img Is Nothing Then Return If(hq, _fallbackMaterialHQ, _fallbackMaterialLQ)
-
-        Dim cache = If(hq, _materialCacheHQ, _materialCacheLQ)
-
-        Dim m As Material = Nothing
-        If cache.TryGetValue(img, m) Then Return m
-
-        m = BuildImageMaterial(img, hq)
-        cache(img) = m
-        Return m
-    End Function
 
     Private _cacheSize As String = "0 MB"
     Public Property CacheSize As String
@@ -216,8 +208,7 @@ Public Class GlobePreviewViewModel
         SyncLock _cacheGate
             _sphereCache.Clear()
             _displacedCache.Clear()
-            _materialCacheHQ.Clear()
-            _materialCacheLQ.Clear()
+            _materialCache.Clear()
         End SyncLock
 
         UpdateCacheSize()
@@ -239,7 +230,7 @@ Public Class GlobePreviewViewModel
             Next
 
             'Materials nur grob weil vernachlässigbar
-            bytes += (_materialCacheHQ.Count + _materialCacheLQ.Count) * 4096L
+            bytes += (_materialCache.Count) * 4096L
         End SyncLock
 
         CacheSize = FormatBytes(bytes)
@@ -397,7 +388,7 @@ Public Class GlobePreviewViewModel
         End Set
     End Property
 
-    Private _displacementExaggeration As Double = 40.0
+    Private _displacementExaggeration As Double = 10.0
     Public Property DisplacementExaggeration As Double
         Get
             Return _displacementExaggeration
@@ -507,15 +498,6 @@ Public Class GlobePreviewViewModel
         End Set
     End Property
 
-    Private _showGrid As Boolean
-    Public Property ShowGrid As Boolean
-        Get
-            Return _showGrid
-        End Get
-        Set(value As Boolean)
-            SetProperty(_showGrid, value)
-        End Set
-    End Property
 
     Private _isReliefOptionAvailable As Boolean
     Public Property IsReliefOptionAvailable As Boolean
@@ -581,6 +563,75 @@ Public Class GlobePreviewViewModel
         Return Nothing
     End Function
 
+#End Region
+
+#Region "Gitternetz-Layer"
+
+    Private _gridBuildTask As Task = Nothing
+    Private _gridOverlayImage As ImageSource
+    Private _gridOverlayBrush As Brush
+
+    Private _showGrid As Boolean
+    Public Property ShowGrid As Boolean
+        Get
+            Return _showGrid
+        End Get
+        Set(value As Boolean)
+            If Not SetProperty(_showGrid, value) Then Return
+
+            If _showGrid Then
+                Dim ignore As Task = EnsureGridAsync().ContinueWith(Sub(t)
+                                                                        Application.Current.Dispatcher.Invoke(Sub()
+                                                                                                                  ApplyInteractionMaterialState(force:=True)
+                                                                                                              End Sub)
+                                                                    End Sub)
+            Else
+                ApplyInteractionMaterialState(force:=True)
+            End If
+        End Set
+    End Property
+
+    Private Async Function GenerateGridAsync() As Task
+        IsRendering = True
+        RenderingTitle = "Texturen werden vorbereitet..."
+        RenderingMessage = "Erzeuge Gitternetz..."
+
+        Try
+
+            Await Application.Current.Dispatcher.InvokeAsync(Sub()
+
+                                                                 _gridOverlayImage = GeoGridOverlay3D.BuildGridOverlayImage(4096, 2048)
+
+                                                                 Dim gb As New ImageBrush(_gridOverlayImage) With {
+                                                                        .Stretch = Stretch.Fill,
+                                                                        .AlignmentX = AlignmentX.Center,
+                                                                        .AlignmentY = AlignmentY.Center
+                                                                 }
+
+                                                                 RenderOptions.SetBitmapScalingMode(gb, BitmapScalingMode.NearestNeighbor)
+                                                                 If gb.CanFreeze() Then gb.Freeze()
+                                                                 _gridOverlayBrush = gb
+
+
+                                                             End Sub)
+
+        Finally
+
+            IsRendering = False
+            RenderingMessage = ""
+
+        End Try
+
+    End Function
+
+    Private Function EnsureGridAsync() As Task
+        If _gridOverlayBrush IsNot Nothing Then Return Task.CompletedTask
+
+        If _gridBuildTask IsNot Nothing Then Return _gridBuildTask
+
+        _gridBuildTask = Generategridasync()
+        Return _gridBuildTask
+    End Function
 #End Region
 
 #Region "Commands"
@@ -679,6 +730,7 @@ Public Class GlobePreviewViewModel
 
 #End Region
 
+
     Public Sub New(payload As GlobePreviewPayload)
 
         _p = payload
@@ -762,7 +814,7 @@ Public Class GlobePreviewViewModel
         End SyncLock
 
         'Build außerhalb Lock
-        Dim mesh = GlobeMeshFactory.CreateSphereMesh(radius:=1.0, lonSegments:=lon, latSegments:=lat)
+        Dim mesh = GlobeMeshRenderer.RenderSphereMesh(radius:=1.0, lonSegments:=lon, latSegments:=lat)
         If mesh.CanFreeze Then mesh.Freeze()
 
         'Mesh cachen
@@ -790,7 +842,7 @@ Public Class GlobePreviewViewModel
             If _displacedCache.TryGetValue(key, cached) Then Return cached
         End SyncLock
 
-        Dim mesh = GlobeMeshFactory.CreateDisplacedMesh(
+        Dim mesh = GlobeMeshRenderer.RenderDisplacedMesh(
             source:=baseSphere,
             height:=HeightMap,
             w:=_p.CacheMeta.LonCount,
@@ -872,14 +924,14 @@ Public Class GlobePreviewViewModel
 
     End Function
 
-    Private Function CreateAxisModel() As GeometryModel3D
+    Private Shared Function CreateAxisModel() As GeometryModel3D
 
         'Globus-Radius = 1.0 -> Achse soll etwas überstehen
         Dim protrude As Double = 0.2
         Dim height As Double = 2.0 * (1.0 + protrude)
         Dim radius As Double = 0.001
 
-        Dim mesh As MeshGeometry3D = GlobeMeshFactory.CreateCylinderMeshY(radius, height, segments:=8, cap:=True)
+        Dim mesh As MeshGeometry3D = GlobeMeshRenderer.CreateCylinderMeshY(radius, height, segments:=8, cap:=True)
 
         Dim brush As New SolidColorBrush(Color.FromRgb(255, 255, 255))
         If brush.CanFreeze Then brush.Freeze()
@@ -899,15 +951,9 @@ Public Class GlobePreviewViewModel
 
     End Function
 
-    Private Shared Function BuildImageMaterial(img As ImageSource, hq As Boolean) As Material
+    Private Function BuildImageMaterial(img As ImageSource, hq As Boolean, grid As Boolean) As Material
 
-        Dim brush As Brush
-
-        If img Is Nothing Then
-            brush = New SolidColorBrush(Color.FromRgb(40, 40, 40))
-            If brush.CanFreeze Then brush.Freeze()
-        Else
-            Dim ib As New ImageBrush(img) With {
+        Dim ib As New ImageBrush(img) With {
                 .Stretch = Stretch.Fill,
                 .TileMode = TileMode.Tile,
                 .ViewportUnits = BrushMappingMode.Absolute,
@@ -915,31 +961,43 @@ Public Class GlobePreviewViewModel
                 .AlignmentX = AlignmentX.Center,
                 .AlignmentY = AlignmentY.Center
             }
-
-            'Während Drag später LQ-Material nutzen, aber Brush kann gleich bleiben
-            RenderOptions.SetBitmapScalingMode(ib, BitmapScalingMode.NearestNeighbor)
-
-            If ib.CanFreeze Then ib.Freeze()
-            brush = ib
-        End If
-
-        If Not hq Then
-            Dim m As New DiffuseMaterial(brush)
-            If m.CanFreeze Then m.Freeze()
-            Return m
-        End If
+        RenderOptions.SetBitmapScalingMode(ib, BitmapScalingMode.NearestNeighbor)
+        If ib.CanFreeze() Then ib.Freeze()
 
         Dim mg As New MaterialGroup()
-        mg.Children.Add(New DiffuseMaterial(brush))
+        mg.Children.Add(New DiffuseMaterial(ib))
 
-        'dezentes Highlight (je höher, desto kleiner/knackiger)
-        Dim sb As New SolidColorBrush(Color.FromArgb(10, 255, 255, 255))
-        If sb.CanFreeze Then sb.Freeze()
+        If hq Then
+            Dim sb As New SolidColorBrush(Color.FromArgb(10, 255, 255, 255))
+            If sb.CanFreeze Then sb.Freeze()
+            mg.Children.Add(New SpecularMaterial(sb, 50))
+        End If
 
-        mg.Children.Add(New SpecularMaterial(sb, 50))
+        If grid AndAlso _gridOverlayBrush IsNot Nothing Then
+            'Emissive: unabhängig vom Licht immer gut sichtbar und konstant
+            mg.Children.Add(New EmissiveMaterial(_gridOverlayBrush))
+        End If
 
         If mg.CanFreeze Then mg.Freeze()
         Return mg
+    End Function
+
+    Private Function GetMaterial(img As ImageSource, hq As Boolean, grid As Boolean) As Material
+
+        If img Is Nothing Then Return If(hq, _fallbackMaterialHQ, _fallbackMaterialLQ)
+
+        Dim key As New MaterialKey With {
+            .Img = img,
+            .Hq = hq,
+            .Grid = grid
+        }
+
+        Dim m As Material = Nothing
+        If _materialCache.TryGetValue(key, m) Then Return m
+
+        m = BuildImageMaterial(img, hq, grid)
+        _materialCache(key) = m
+        Return m
     End Function
 
     Private Sub ApplyInteractionMaterialState(Optional force As Boolean = False)
@@ -947,13 +1005,14 @@ Public Class GlobePreviewViewModel
         'Soll LQ gerade aktiv sein?
         Dim wantLowSpec As Boolean = _isDragging
 
-        If Not force AndAlso wantLowSpec = _isLowSpecActive Then Return
+        If Not force AndAlso wantLowSpec = _isLowSpecActive AndAlso Not ShowGrid Then Return
         _isLowSpecActive = wantLowSpec
 
         'Aktuelles Base-Image bestimmen
         Dim baseImg As ImageSource = GetBaseImageForMaterial()
 
-        Dim mat As Material = GetMaterial(baseImg, hq:=Not wantLowSpec)
+        Dim mat As Material = GetMaterial(baseImg, hq:=Not wantLowSpec, grid:=ShowGrid)
+
         _baseGeo.Material = mat
         _baseGeo.BackMaterial = mat
 
@@ -1026,8 +1085,7 @@ Public Class GlobePreviewViewModel
         LandMaskWithShoreLinesLayer = lmResult
         _isCompositingDone = True
 
-        _materialCacheHQ.Clear()
-        _materialCacheLQ.Clear()
+        _materialCache.Clear()
 
         UpdateCacheSize()
 

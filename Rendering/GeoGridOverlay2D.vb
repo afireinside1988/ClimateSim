@@ -2,7 +2,7 @@
 Imports System.Security.Policy
 Imports System.Windows.Ink
 
-Public Class GeoGridOverlay
+Public Class GeoGridOverlay2D
 
     Inherits FrameworkElement
 
@@ -19,7 +19,7 @@ Public Class GeoGridOverlay
         End Set
     End Property
     Public Shared ReadOnly ZoomProperty As DependencyProperty =
-        DependencyProperty.Register(NameOf(Zoom), GetType(Double), GetType(GeoGridOverlay),
+        DependencyProperty.Register(NameOf(Zoom), GetType(Double), GetType(GeoGridOverlay2D),
             New FrameworkPropertyMetadata(1.0, FrameworkPropertyMetadataOptions.AffectsRender))
 
     Public Property PanX As Double
@@ -31,7 +31,7 @@ Public Class GeoGridOverlay
         End Set
     End Property
     Public Shared ReadOnly PanXProperty As DependencyProperty =
-        DependencyProperty.Register(NameOf(PanX), GetType(Double), GetType(GeoGridOverlay),
+        DependencyProperty.Register(NameOf(PanX), GetType(Double), GetType(GeoGridOverlay2D),
             New FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender))
 
     Public Property PanY As Double
@@ -43,7 +43,7 @@ Public Class GeoGridOverlay
         End Set
     End Property
     Public Shared ReadOnly PanYProperty As DependencyProperty =
-        DependencyProperty.Register(NameOf(PanY), GetType(Double), GetType(GeoGridOverlay),
+        DependencyProperty.Register(NameOf(PanY), GetType(Double), GetType(GeoGridOverlay2D),
             New FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender))
 
     Public Property CacheMeta As EarthSurfaceCacheMeta
@@ -55,7 +55,7 @@ Public Class GeoGridOverlay
         End Set
     End Property
     Public Shared ReadOnly CacheMetaProperty As DependencyProperty =
-        DependencyProperty.Register(NameOf(CacheMeta), GetType(EarthSurfaceCacheMeta), GetType(GeoGridOverlay),
+        DependencyProperty.Register(NameOf(CacheMeta), GetType(EarthSurfaceCacheMeta), GetType(GeoGridOverlay2D),
             New FrameworkPropertyMetadata(Nothing, FrameworkPropertyMetadataOptions.AffectsRender))
 
     '---------

@@ -2,7 +2,7 @@
 Imports System.Transactions
 Imports System.Windows.Media.Media3D
 
-Public NotInheritable Class GlobeMeshFactory
+Public NotInheritable Class GlobeMeshRenderer
 
     Private Const EarthRadiusM As Double = 6371000.0
 
@@ -11,7 +11,7 @@ Public NotInheritable Class GlobeMeshFactory
 
 #Region "Mesh-Renderer"
 
-    Public Shared Function CreateSphereMesh(radius As Double, lonSegments As Integer, latSegments As Integer) As MeshGeometry3D
+    Public Shared Function RenderSphereMesh(radius As Double, lonSegments As Integer, latSegments As Integer) As MeshGeometry3D
 
         lonSegments = Math.Max(8, lonSegments)
         latSegments = Math.Max(6, latSegments)
@@ -71,7 +71,7 @@ Public NotInheritable Class GlobeMeshFactory
         Return mesh
     End Function
 
-    Public Shared Function CreateDisplacedMesh(source As MeshGeometry3D, height As Single(), w As Integer, h As Integer, exaggeration As Double, Optional includeBathymetry As Boolean = True, Optional resamplingMode As ResamplingMode = ResamplingMode.Bilinear) As MeshGeometry3D
+    Public Shared Function RenderDisplacedMesh(source As MeshGeometry3D, height As Single(), w As Integer, h As Integer, exaggeration As Double, Optional includeBathymetry As Boolean = True, Optional resamplingMode As ResamplingMode = ResamplingMode.Bilinear) As MeshGeometry3D
 
         Dim dst As New MeshGeometry3D()
 
@@ -261,7 +261,7 @@ Public NotInheritable Class GlobeMeshFactory
     Private Shared Function SampleHeightNearest(height As Single(), w As Integer, h As Integer, u As Double, v As Double) As Double
 
         'Wrap u /Clamp v
-        u = u - Math.Floor(u)
+        u -= Math.Floor(u)
         v = Clamp(v, 0, 1)
 
         Dim x As Integer = CInt(Math.Round(u * (w - 1)))
@@ -271,59 +271,6 @@ Public NotInheritable Class GlobeMeshFactory
         If idx < 0 OrElse idx >= height.Length Then Return 0.0
 
         Return CDbl(height(idx))
-
-    End Function
-
-    Private Shared Function SampleHeightBilinear(height As Single(), w As Integer, h As Integer, u As Double, v As Double) As Double
-
-        'Fast Clamp v
-        If v <= 0.0 Then
-            v = 0.0
-        ElseIf v >= 1.0 Then
-            v = 1.0
-        End If
-
-        'Fast Wrap u: in 99% der Fälle ist u bereits [0..1)
-        'u kann durch nummerische Effekte minimal <0 oder >1 sein
-        If u < 0.0 OrElse u >= 1.0 Then
-            u = u - Math.Floor(u) 'Wrap auf [0..1)
-            'Falls u durch Rounding exakt 1.0 wird:
-            If u >= 1.0 Then u = 0.0
-        End If
-
-        Dim w1 As Integer = w - 1
-        Dim h1 As Integer = h - 1
-
-        'In Pixelspace skalieren
-        Dim fx As Double = u * w1
-        Dim fy As Double = v * h1
-
-        'Floor für positive Werte: CInt(truncate) == Floor
-        Dim x0 As Integer = CInt(fx)
-        Dim y0 As Integer = CInt(fy)
-
-        'Nachbarpixel (X wrap, Y clamp)
-        Dim x1 As Integer = If(x0 = w1, 0, x0 + 1)
-        Dim y1 As Integer = If(y0 = h1, h1, y0 + 1)
-
-        Dim tx As Double = fx - x0
-        Dim ty As Double = fy - y0
-
-        'Indexbasis einmalig berechnen
-        Dim row0 As Integer = y0 * w
-        Dim row1 As Integer = y1 * w
-
-
-        Dim h00 As Double = height(row0 + x0)
-        Dim h10 As Double = height(row0 + x1)
-        Dim h01 As Double = height(row1 + x0)
-        Dim h11 As Double = height(row1 + x1)
-
-        'bilineares Interpolieren (2 lerps)
-        Dim a As Double = h00 + (h10 - h00) * tx
-        Dim b As Double = h01 + (h11 - h01) * tx
-
-        Return a + (b - a) * ty
 
     End Function
 
@@ -339,7 +286,7 @@ Public NotInheritable Class GlobeMeshFactory
         'Fast Wrap u: in 99% der Fälle ist u bereits [0..1)
         'u kann durch nummerische Effekte minimal <0 oder >1 sein
         If u < 0.0 OrElse u >= 1.0 Then
-            u = u - Math.Floor(u) 'Wrap auf [0..1)
+            u -= Math.Floor(u) 'Wrap auf [0..1)
             'Falls u durch Rounding exakt 1.0 wird:
             If u >= 1.0 Then u = 0.0
         End If
@@ -409,7 +356,7 @@ Public NotInheritable Class GlobeMeshFactory
         Dim localsLock As New Object()
 
         Parallel.For(
-            0, triCount,
+            0, tricount,
             Function() New Vector3D(vCount - 1) {},         'localInit: eigener Acc pro Thread
             Function(tri As Integer, state As ParallelLoopState, localAcc As Vector3D()) As Vector3D()
 
