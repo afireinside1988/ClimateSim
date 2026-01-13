@@ -27,9 +27,10 @@ Public Class GeoGridOverlay3D
             End If
 
             '=== Meridiane (nur bis 350, damit sich Ost-West-Naht nicht doppelt) ===
-            For lon As Integer = 0 To 350 Step 10
-                Dim x As Double = (lon / 360.0) * (pxW - 1)
-                dc.DrawLine(pen, New Point(x, 0), New Point(x, pxH - 1))
+            For lon As Integer = -180 To 170 Step 10
+                Dim x As Double = ((lon + 180) / 360.0) * (pxW - 1)
+                Dim usepen As Pen = If(lon = 0, majorPen, pen)
+                dc.DrawLine(usepen, New Point(x, 0), New Point(x, pxH - 1))
             Next
 
             '=== Äquatorialparallelen ===

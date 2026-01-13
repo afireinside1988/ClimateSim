@@ -6,7 +6,7 @@
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         xmlns:local="clr-namespace:ClimateSim"
         mc:Ignorable="d"
-        Title="Globus-Vorschau" Height="700" Width="1000">
+        Title="Globus-Vorschau" Height="880" Width="1200">
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
@@ -32,7 +32,14 @@
                     <Grid ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True">
 
                         <Viewport3D x:Name="Vp" ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True">
-                            <i:Interaction.Behaviors>
+                            
+                        <i:Interaction.Triggers>
+                            <i:EventTrigger EventName="MouseLeave">
+                                <i:InvokeCommandAction Command="{Binding MouseLeaveCommand}" PassEventArgsToCommand="True"/>
+                            </i:EventTrigger>
+                        </i:Interaction.Triggers>
+                            
+                        <i:Interaction.Behaviors>
                                 <local:PanAndZoomBehavior
                                     BeginPanCommand="{Binding BeginRotateCommand}"
                                     PanCommand="{Binding RotateCommand}"
@@ -56,8 +63,8 @@
                             <ModelVisual3D>
                                 <ModelVisual3D.Content>
                                     <Model3DGroup>
-                                        <AmbientLight Color="#66666666"/>
-                                        <DirectionalLight Color="#FFFFFF" Direction="-0.6,-0.3,-1"/>
+                                        <AmbientLight Color="{Binding AmbientLightColor}"/>
+                                        <DirectionalLight Color="#FFFFFF" Direction="{Binding SunDirection}"/>
                                     </Model3DGroup>
                                 </ModelVisual3D.Content>
                             </ModelVisual3D>
@@ -91,13 +98,16 @@
             
             <!-- Status-Bar -->
             <Grid Grid.Row="1" Margin="8">
-                <TextBlock Text="(Debug) Aktuelle Textur:" Opacity="0.7"/>
+                <TextBlock Text="{Binding HoverText}" Opacity="0.7"/>
             </Grid>
 
         </Grid>
 
         <!-- Rechts: Einstellungen -->
-        <Grid Grid.Column="1" Margin="12">
+        <ScrollViewer Grid.Column="1"
+                      Margin="12,0,0,0"
+                      Padding="0,0,5,0"
+                      VerticalScrollBarVisibility="Auto">
 
             <StackPanel>
                 <TextBlock Text="Globus-Einstellungen" FontSize="16" FontWeight="Bold"
@@ -235,8 +245,139 @@
                 <!-- Animation -->
                 <GroupBox Header="Animation" Margin="8">
                     <Grid Margin="8">
-                        <Button Content="Kamera zurücksetzen"
+                        <Grid.RowDefinitions>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                        </Grid.RowDefinitions>
+
+                        <CheckBox Grid.Row="0"
+                                  Content="Erdrotation"
+                                  IsChecked="{Binding IsEarthRotationEnabled, Mode=TwoWay}"/>
+
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Text="Geschwindigkeit:" Margin="0,0,8,0"/>
+                            <TextBlock Text="{Binding AnimationSpeedText}"
+                                       FontFamily="Consolas" VerticalAlignment="Bottom"/>
+                        </StackPanel>
+
+                        <Slider Grid.Row="2" Margin="0,6,0,0"
+                                Minimum="-6" Maximum="6" TickFrequency="1"
+                                IsSnapToTickEnabled="True"
+                                Value="{Binding AnimationSpeedTick, Mode=TwoWay}"
+                                IsEnabled="{Binding IsEarthRotationEnabled}"/>
+
+                        <StackPanel Grid.Row="3" Margin="0,12,0,0">
+                            <CheckBox Content="Zenit-Marker anzeigen" Margin="0,0,0,3"
+                                      IsChecked="{Binding ShowSubsolarMarker}"/>
+                            <CheckBox Content="Tag-Nacht-Grenze anzeigen"
+                                      IsChecked="{Binding ShowDayNightTerminator}"/>
+                        </StackPanel>
+                        
+                        <Grid Grid.Row="4" Margin="0,12,0,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Simulationszeit (UTC): "/>
+                            <TextBlock Grid.Row="0" Grid.Column="1"
+                                Margin="12,0,0,0" VerticalAlignment="Bottom"
+                                       Text="{Binding SimulationUtcText}" FontFamily="Consolas"
+                                       Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Margin="0,8,0,0"
+                                       Text="Solare Deklination:"
+                                       ToolTip="Winkel der Sonne relativ zur Äquatorebene der Erde (in Grad)"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1"
+                                       Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                       Text="{Binding SolarDeclinationText}" FontFamily="Consolas"
+                                       ToolTip="Winkel der Sonne relativ zur Äquatorebene der Erde (in Grad)"
+                                       Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Margin="0,4,0,0"
+                                       Text="Subsolarpunkt (Zenit):"
+                                       ToolTip="Ort, an dem Sonne senkrecht steht"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1"
+                                       Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                       Text="{Binding SubsolarText}" FontFamily="Consolas"
+                                       ToolTip="Ort, an dem Sonne senkrecht steht"
+                                       Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0"
+                                       Margin="0,4,0,0"
+                                       Text="Rektaszension (Sonne):"
+                                       ToolTip="Himmelslängengrad der Sonne im Äquatorsystem"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1"
+                                       Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                       Text="{Binding SunRaText}" FontFamily="Consolas"
+                                       ToolTip="Himmelslängengrad der Sonne im Äquatorsystem"
+                                       Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0"
+                                       Margin="0,4,0,0"
+                                       Text="GMST:"
+                                       ToolTip="Rotationswinkel der Erde relativ zu den Fixsternen (in Relation zu Greenwich)"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1"
+                                       Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                       Text="{Binding GmstText}" FontFamily="Consolas"
+                                       ToolTip="Rotationswinkel der Erde relativ zu den Fixsternen (in Relation zu Greenwich)"
+                                       Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+
+                            <TextBlock Grid.Row="5" Grid.Column="0"
+                                       Margin="0,4,0,0"
+                                       Text="Zeitabweichung:"
+                                       ToolTip="Differenz zwischen Sonnenzeit und mittlerer Uhrzeit (UTC)"/>
+                            <TextBlock Grid.Row="5" Grid.Column="1"
+                                       Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                       Text="{Binding EquationOfTimeText}" FontFamily="Consolas"
+                                       ToolTip="Differenz zwischen Sonnenzeit und mittlerer Uhrzeit (UTC)"
+                                       Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+                        </Grid>
+                        
+                    </Grid>
+                </GroupBox>
+
+                <GroupBox Header="Kamera" Margin="8">
+                    <Grid Margin="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                            <RowDefinition/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition/>
+                            <ColumnDefinition/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Kamera-Modus:" Margin="0,0,0,4"/>
+
+                        <RadioButton Grid.Row="1" Grid.Column="0"
+                                     Content="Raumfest"
+                                     ToolTip="Inertiales Bezugssystem"
+                                     IsChecked="{Binding FrameMode, Converter={StaticResource EnumToBool}, ConverterParameter=RotatingEarth}"/>
+                        <RadioButton Grid.Row="1" Grid.Column="1"
+                                     Content="Erdfest"
+                                     ToolTip="Körperfestes Bezugssystem"
+                                     IsChecked="{Binding FrameMode, Converter={StaticResource EnumToBool}, ConverterParameter=EarthFixed}"/>
+
+                        <Button Grid.Row="2"
+                                Grid.ColumnSpan="2"
+                                Margin="0,8,0,0"
                                 HorizontalAlignment="Left"
+                                Content="Kamera zurücksetzen"
                                 Width="120" Height="25"
                                 Command="{Binding ResetCameraCommand}"/>
                     </Grid>
@@ -267,7 +408,7 @@
 
             </StackPanel>
 
-        </Grid>
+        </ScrollViewer>
 
     </Grid>
 </Window>

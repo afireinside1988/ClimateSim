@@ -1,4 +1,6 @@
-﻿Imports System.Threading
+﻿Imports System.Globalization
+Imports System.Net.Security
+Imports System.Threading
 Imports System.Transactions
 Imports System.Windows.Media.Media3D
 
@@ -6,6 +8,7 @@ Public Class GlobePreviewViewModel
     Inherits ViewModelBase
 
     Private ReadOnly _p As GlobePreviewPayload
+    Private _viewport As Viewport3D
 
 #Region "Busy-Overlay"
 
@@ -125,7 +128,7 @@ Public Class GlobePreviewViewModel
     End Sub
 
     Private Sub ResetCamera()
-        _yawDeg = -90.0
+        _yawDeg = 90.0
         _pitchDeg = 0.0
         _distance = 3.0
         UpdateCamera()
@@ -629,7 +632,7 @@ Public Class GlobePreviewViewModel
 
         If _gridBuildTask IsNot Nothing Then Return _gridBuildTask
 
-        _gridBuildTask = Generategridasync()
+        _gridBuildTask = GenerateGridAsync()
         Return _gridBuildTask
     End Function
 #End Region
@@ -645,6 +648,7 @@ Public Class GlobePreviewViewModel
     Public ReadOnly Property MouseMoveCommand As ICommand
     Public ReadOnly Property MouseDownCommand As ICommand
     Public ReadOnly Property MouseUpCommand As ICommand
+    Public ReadOnly Property MouseLeaveCommand As ICommand
 
     Public ReadOnly Property ResetCameraCommand As ICommand
     Public ReadOnly Property ClearCacheCommand As ICommand
@@ -714,7 +718,16 @@ Public Class GlobePreviewViewModel
 #Disable Warning CA1822
 
     Private Sub OnMouseMove(r As MapMouseMoveRequest)
-        'später Raycast für Hover Lat/lon
+
+        If r Is Nothing Then Return
+
+        Dim nowTicks As Long = Stopwatch.GetTimestamp()
+        If (nowTicks - _lastHoverTicks) >= _hoverTickPerFrame Then
+            _lastMouseInViewport = True
+            _lastMousePos = r.MousePos
+            _lastHoverTicks = nowTicks
+            UpdateHoverFromScreenPoint(_lastMousePos)
+        End If
     End Sub
 
     Private Sub OnMouseDown(r As MapMouseDownRequest)
@@ -723,6 +736,11 @@ Public Class GlobePreviewViewModel
 
     Private Sub OnMouseUp(r As MapMouseUpRequest)
         'später evtl. Ende Pick/Info
+    End Sub
+
+    Private Sub OnMouseLeave()
+        _lastMouseInViewport = False
+        HoverText = ""
     End Sub
 
 #Enable Warning IDE0060
@@ -746,6 +764,7 @@ Public Class GlobePreviewViewModel
         MouseMoveCommand = New RelayCommand(Of MapMouseMoveRequest)(Sub(r) OnMouseMove(r))
         MouseDownCommand = New RelayCommand(Of MapMouseDownRequest)(Sub(r) OnMouseDown(r))
         MouseUpCommand = New RelayCommand(Of MapMouseUpRequest)(Sub(r) OnMouseUp(r))
+        MouseLeaveCommand = New RelayCommand(Of Object)(Sub(r) OnMouseLeave())
 
         ResetCameraCommand = New RelayCommand(Of Object)(Sub(o) ResetCamera())
         ClearCacheCommand = New RelayCommand(Of Object)(Sub(o) ClearCache())
@@ -779,6 +798,9 @@ Public Class GlobePreviewViewModel
         QueueRender("Initial")
     End Sub
 
+    Public Sub AttachViewport(vp As Viewport3D)
+        _viewport = vp
+    End Sub
 
 #Region "Model-Building"
 
@@ -931,12 +953,12 @@ Public Class GlobePreviewViewModel
         Dim height As Double = 2.0 * (1.0 + protrude)
         Dim radius As Double = 0.001
 
-        Dim mesh As MeshGeometry3D = GlobeMeshRenderer.CreateCylinderMeshY(radius, height, segments:=8, cap:=True)
+        Dim mesh As MeshGeometry3D = GlobeMeshRenderer.RenderCylinderMeshY(radius, height, segments:=8, cap:=True)
 
         Dim brush As New SolidColorBrush(Color.FromRgb(255, 255, 255))
         If brush.CanFreeze Then brush.Freeze()
 
-        Dim mat As New DiffuseMaterial(brush)
+        Dim mat As New EmissiveMaterial(brush)
         If mat.CanFreeze Then mat.Freeze()
 
         Dim gm As New GeometryModel3D With {
@@ -956,8 +978,6 @@ Public Class GlobePreviewViewModel
         Dim ib As New ImageBrush(img) With {
                 .Stretch = Stretch.Fill,
                 .TileMode = TileMode.Tile,
-                .ViewportUnits = BrushMappingMode.Absolute,
-                .Viewport = New Rect(0, 0, 1, 1),
                 .AlignmentX = AlignmentX.Center,
                 .AlignmentY = AlignmentY.Center
             }
@@ -1031,6 +1051,34 @@ Public Class GlobePreviewViewModel
         'Achse vorbereiten, aber noch nicht hinzufügen
         _axisGeo = CreateAxisModel()
 
+        'Subsolar-Marker vorbereiten
+        _subsolarGeo = GlobeMeshRenderer.RenderSubsolarMarkerModel()
+        _subsolarTf = New TranslateTransform3D(0, 0, 0)
+        _subsolarGeo.Transform = _subsolarTf
+        _subsolarVisible = False
+
+        'Tag-Nacht-Terminator vorbereiten
+        _dayNightTerminatorGeo = GlobeMeshRenderer.RenderDayNightTerminatorModel()
+        _dayNightTerminatorVisible = False
+
+        'Initial die Marker updaten
+        UpdateSubsolarMarkerVisibility()
+        UpdateDayNightTerminatorVisibility()
+
+        'Transforms: Spin (um Y) + Tilt (um X)
+        _spinRot = New AxisAngleRotation3D(New Vector3D(0, 1, 0), 0.0)
+        _tiltRot = New AxisAngleRotation3D(New Vector3D(1, 0, 0), ClimateConstants.EarthObliquityDeg)  'Erdachsneigung
+
+        Dim spinTf As New RotateTransform3D(_spinRot)
+        Dim tiltTf As New RotateTransform3D(_tiltRot)
+
+        _animTransform = New Transform3DGroup
+        'Wichtig: erst Spin, dann Tilt -> Spin-Achse wird mitgeneigt
+        _animTransform.Children.Add(spinTf)
+        _animTransform.Children.Add(tiltTf)
+
+        _group.Transform = _animTransform
+
         GlobeModel = _group
     End Sub
 
@@ -1102,6 +1150,683 @@ Public Class GlobePreviewViewModel
         Await EnsureCompositedLayerAsync()
         ApplyInteractionMaterialState(force:=True)
     End Sub
+#End Region
+
+#Region "Animation"
+
+    Public Enum GlobeFrameMode
+        EarthFixed          'Erde steht fest
+        RotatingEarth       'Erde rotiert täglich
+    End Enum
+
+    Private _frameMode As GlobeFrameMode = GlobeFrameMode.RotatingEarth
+    Public Property FrameMode As GlobeFrameMode
+        Get
+            Return _frameMode
+        End Get
+        Set(value As GlobeFrameMode)
+            If SetProperty(_frameMode, value) Then
+                If _isAnimating Then
+                    _lastFrameTicks = Stopwatch.GetTimestamp()
+                End If
+            End If
+        End Set
+    End Property
+
+    Private _isAnimating As Boolean
+    Private _lastFrameTicks As Long
+
+    Private _gmst0Deg As Double
+
+    Private _spinRot As AxisAngleRotation3D
+    Private _tiltRot As AxisAngleRotation3D
+    Private _animTransform As Transform3DGroup
+
+    Private _simStartUtc As DateTime
+    Private _simSecondsTotal As Double
+
+    Private _subsolarGeo As GeometryModel3D
+    Private _subsolarTf As TranslateTransform3D
+    Private _dayNightTerminatorGeo As GeometryModel3D
+    Private _subsolarVisible As Boolean
+    Private _dayNightTerminatorVisible As Boolean
+
+    Private _isEarthRotationEnabled As Boolean
+    Public Property IsEarthRotationEnabled As Boolean
+        Get
+            Return _isEarthRotationEnabled
+        End Get
+        Set(value As Boolean)
+            If SetProperty(_isEarthRotationEnabled, value) Then
+                If value Then
+                    StartAnimation()
+                Else
+                    StopAnimation()
+                End If
+            End If
+        End Set
+    End Property
+
+    Private _showSubsolarMarker As Boolean = False
+    Public Property ShowSubsolarMarker As Boolean
+        Get
+            Return _showSubsolarMarker
+        End Get
+        Set(value As Boolean)
+            If SetProperty(_showSubsolarMarker, value) Then
+                UpdateSubsolarMarkerVisibility()
+            End If
+        End Set
+    End Property
+
+    Private _showDayNightTerminator As Boolean = False
+    Public Property ShowDayNightTerminator As Boolean
+        Get
+            Return _showDayNightTerminator
+        End Get
+        Set(value As Boolean)
+            If SetProperty(_showDayNightTerminator, value) Then
+                UpdateDayNightTerminatorVisibility()
+            End If
+        End Set
+    End Property
+
+    Private _animationSpeedTick As Integer = 2
+    Public Property AnimationSpeedTick As Integer
+        Get
+            Return _animationSpeedTick
+        End Get
+        Set(value As Integer)
+            value = Clamp(value, -6, 6)
+            If SetProperty(_animationSpeedTick, value) Then
+                OnPropertyChanged(NameOf(AnimationSpeedText))
+            End If
+        End Set
+    End Property
+
+    Public ReadOnly Property AnimationSpeedText As String
+        Get
+            Dim absTick As Integer = Math.Abs(_animationSpeedTick)
+            Dim f As Double = Math.Pow(10, absTick)          '10er-Potenz als Faktor
+            Dim dir As String = If(_animationSpeedTick < 0, "-", "")
+            Return dir & f.ToString("N0", CultureInfo.CurrentCulture) & " x"
+        End Get
+    End Property
+
+    Private _sunDirection As Vector3D = New Vector3D(-0.6, -0.3, -1)
+    Public Property SunDirection As Vector3D
+        Get
+            Return _sunDirection
+        End Get
+        Set(value As Vector3D)
+            SetProperty(_sunDirection, value)
+        End Set
+    End Property
+
+    Private _solarDeclinationDeg As Double
+    Public Property SolarDeclinationDeg As Double
+        Get
+            Return _solarDeclinationDeg
+        End Get
+        Set(value As Double)
+            If SetProperty(_solarDeclinationDeg, value) Then
+                OnPropertyChanged(NameOf(SolarDeclinationText))
+            End If
+        End Set
+    End Property
+
+    Public ReadOnly Property SolarDeclinationText As String
+        Get
+            If Not _isAnimating Then Return ""
+            Return $"{SolarDeclinationDeg:+0.00;-0.00;0.00}°"
+        End Get
+    End Property
+
+    Private _subsolarLatDeg As Double
+    Public Property SubsolarLatDeg As Double
+        Get
+            Return _subsolarLatDeg
+        End Get
+        Set(value As Double)
+            If SetProperty(_subsolarLatDeg, value) Then
+                OnPropertyChanged(NameOf(SubsolarText))
+            End If
+        End Set
+    End Property
+
+    Private _subsolarLonDeg As Double
+    Public Property SubsolarLonDeg As Double
+        Get
+            Return _subsolarLonDeg
+        End Get
+        Set(value As Double)
+            If SetProperty(_subsolarLonDeg, value) Then
+                OnPropertyChanged(NameOf(SubsolarText))
+            End If
+        End Set
+    End Property
+
+    Public ReadOnly Property SubsolarText As String
+        Get
+            If Not _isAnimating Then Return ""
+            Return $"Lat {SubsolarLatDeg:+0.00;-0.00;0.00}°, Lon {SubsolarLonDeg:+0.00;-0.00;0.00}°"
+        End Get
+    End Property
+
+    Private _simulationUtc As DateTime
+    Public Property SimulationUtc As DateTime
+        Get
+            Return _simulationUtc
+        End Get
+        Set(value As DateTime)
+            SetProperty(_simulationUtc, value)
+            OnPropertyChanged(NameOf(SimulationUtcText))
+        End Set
+    End Property
+
+    Private _ambientLightColor As Color = Color.FromRgb(100, 100, 100)
+    Public Property AmbientLightColor As Color
+        Get
+            Return _ambientLightColor
+        End Get
+        Set(value As Color)
+            SetProperty(_ambientLightColor, value)
+        End Set
+    End Property
+
+    Public ReadOnly Property SimulationUtcText As String
+        Get
+            If SimulationUtc = DateTime.MinValue Then Return ""
+            Return SimulationUtc.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) & " UTC"
+        End Get
+    End Property
+
+    Private _sunRaDeg As Double
+    Public Property SunRaDeg As Double
+        Get
+            Return _sunRaDeg
+        End Get
+        Set(value As Double)
+            If SetProperty(_sunRaDeg, value) Then
+                OnPropertyChanged(NameOf(SunRaText))
+            End If
+        End Set
+    End Property
+    Public ReadOnly Property SunRaText As String
+        Get
+            If Not _isAnimating Then Return ""
+            Return $"{SunRaDeg:0.00}°"
+        End Get
+    End Property
+
+    Private _gmstDeg As Double
+    Public Property GmstDeg As Double
+        Get
+            Return _gmstDeg
+        End Get
+        Set(value As Double)
+            If SetProperty(_gmstDeg, value) Then
+                OnPropertyChanged(NameOf(GmstText))
+            End If
+        End Set
+    End Property
+    Public ReadOnly Property GmstText As String
+        Get
+            If Not _isAnimating Then Return ""
+            Return $"{GmstDeg:0.000}°"
+        End Get
+    End Property
+
+    Private _equationOfTimeMin As Double
+    Public Property EquationOfTime As Double
+        Get
+            Return _equationOfTimeMin
+        End Get
+        Set(value As Double)
+            If SetProperty(_equationOfTimeMin, value) Then
+                OnPropertyChanged(NameOf(EquationOfTimeText))
+            End If
+        End Set
+    End Property
+    Public ReadOnly Property EquationOfTimeText As String
+        Get
+            If Not _isAnimating Then Return ""
+            Return $"{EquationOfTime:+0.00;-0.00;0.00} min"
+        End Get
+    End Property
+
+    Private Function ComputeSolarDeclinationDeg(lightDirSunToEarth As Vector3D) As Double
+
+        'Erde->Sonne
+        Dim sun As New Vector3D(-lightDirSunToEarth.X, -lightDirSunToEarth.Y, -lightDirSunToEarth.Z)
+        If sun.LengthSquared > 0 Then sun.Normalize() Else Return 0.0
+
+        'Erdachse im World-Space (Tilt um X; Achse ist +Y vor Tilt)
+        Dim epsDeg As Double = _tiltRot.Angle
+        Dim epsRad As Double = DegToRad(epsDeg)
+
+        Dim axis As New Vector3D(0.0, Math.Cos(epsRad), Math.Sin(epsRad))
+        If axis.LengthSquared > 0 Then axis.Normalize()
+
+        Dim d As Double = Vector3D.DotProduct(sun, axis)
+        d = Clamp(d, -1.0, 1.0)
+
+        Dim declRad As Double = Math.Asin(d)
+        Return RadToDeg(declRad)
+    End Function
+
+    Private Shared Function BodyVectorFromLatLon(latDeg As Double, lonDeg As Double) As Vector3D
+
+        Dim latRad As Double = DegToRad(latDeg)
+        Dim lonRad As Double = DegToRad(lonDeg)
+
+        Dim clat As Double = Math.Cos(latRad)
+
+        Dim x As Double = clat * Math.Cos(lonRad)
+        Dim y As Double = Math.Sin(latRad)
+        Dim z As Double = -clat * Math.Sin(lonRad)
+
+        Dim v As New Vector3D(x, y, z)
+        v.Normalize()
+        Return v
+    End Function
+
+    Private Sub UpdateSubsolarMarker()
+        If _subsolarTf Is Nothing Then Return
+
+        Dim bodyV As Vector3D = BodyVectorFromLatLon(SubsolarLatDeg, SubsolarLonDeg)
+
+        Dim r As Double = 1.02      'leicht über der Oberfläche anzeigen
+        _subsolarTf.OffsetX = bodyV.X * r
+        _subsolarTf.OffsetY = bodyV.Y * r
+        _subsolarTf.OffsetZ = bodyV.Z * r
+
+    End Sub
+
+    Private Sub UpdateSubsolarMarkerFromSun()
+        If _subsolarTf Is Nothing OrElse _animTransform Is Nothing Then Return
+
+        Dim sunWorld As New Vector3D(-SunDirection.X, -SunDirection.Y, -SunDirection.Z)
+        If sunWorld.LengthSquared > 0 Then sunWorld.Normalize() Else Return
+
+        'World->Body
+        Dim m As Matrix3D = _animTransform.Value
+        If Not m.HasInverse Then Return
+        m.Invert()
+
+        Dim s As Vector3D = m.Transform(sunWorld)
+        If s.LengthSquared > 0 Then s.Normalize() Else Return
+
+        Dim r As Double = 1.02      'leicht über der Oberfläche anzeigen
+        _subsolarTf.OffsetX = s.X * r
+        _subsolarTf.OffsetY = s.Y * r
+        _subsolarTf.OffsetZ = s.Z * r
+    End Sub
+
+    Private Sub UpdateSubsolarMarkerVisibility()
+        If _group Is Nothing OrElse _subsolarGeo Is Nothing Then Return
+
+        If ShowSubsolarMarker Then
+            If Not _subsolarVisible Then
+                _group.Children.Add(_subsolarGeo)
+                _subsolarVisible = True
+            End If
+        Else
+            If _subsolarVisible Then
+                _group.Children.Remove(_subsolarGeo)
+                _subsolarVisible = False
+            End If
+        End If
+    End Sub
+
+    Private Sub UpdateDayNightTerminator()
+        If _dayNightTerminatorGeo Is Nothing Then Return
+
+        'Sonnenrichtung in Body--Space (Erde->Sonne)
+        Dim sun As New Vector3D(-SunDirection.X, -SunDirection.Y, -SunDirection.Z)
+        If sun.LengthSquared > 0 Then sun.Normalize() Else Return
+
+        Dim m As Matrix3D = _animTransform.Value
+        If Not m.HasInverse Then Return
+        m.Invert()
+
+        Dim s As Vector3D = m.Transform(sun)
+        If s.LengthSquared > 0 Then s.Normalize() Else Return
+
+        'Basis u,v in der Ebene senkrecht zu s
+        Dim up As New Vector3D(0, 1, 0)
+        Dim u As Vector3D = Vector3D.CrossProduct(s, up)
+        If u.LengthSquared < 0.00000001 Then
+            u = Vector3D.CrossProduct(s, New Vector3D(1, 0, 0))
+        End If
+        u.Normalize()
+
+        Dim v As Vector3D = Vector3D.CrossProduct(s, u)
+        v.Normalize()
+
+        Const N As Integer = 180
+        Dim r As Double = 1.1
+        Dim halfW As Double = 0.005 'Bandbreite
+
+        Dim pos As New Point3DCollection((N + 1) * 2)
+        Dim idx As New Int32Collection(N * 6)
+
+        For i As Integer = 0 To N
+            Dim t As Double = (i / CDbl(N)) * (2.0 * Math.PI)
+            Dim c As Double = Math.Cos(t)
+            Dim si As Double = Math.Sin(t)
+
+            'Punkt auf Terminator-Großkreis
+            Dim p As New Vector3D(u.X * c + v.X * si,
+                                  u.Y * c + v.Y * si,
+                                  u.Z * c + v.Z * si)
+            p.Normalize()
+
+            'Band-Offset in Tangentialrichtung ~ s (weil s x p = 0 auf Terminator)
+            Dim p1 As Vector3D = New Vector3D(p.X * r + s.X * halfW, p.Y * r + s.Y * halfW, p.Z * r + s.Z * halfW)
+            Dim p2 As Vector3D = New Vector3D(p.X * r - s.X * halfW, p.Y * r + s.Y * halfW, p.Z * r - s.Z * halfW)
+
+            pos.Add(New Point3D(p1.X, p1.Y, p1.Z))
+            pos.Add(New Point3D(p2.X, p2.Y, p2.Z))
+        Next
+
+        'Quads als 2 Dreiecke
+        For i As Integer = 0 To N - 1
+            Dim a0 As Integer = i * 2
+            Dim a1 As Integer = a0 + 1
+            Dim b0 As Integer = a0 + 2
+            Dim b1 As Integer = a0 + 3
+
+            idx.Add(a0) : idx.Add(b0) : idx.Add(a1)
+            idx.Add(a1) : idx.Add(b0) : idx.Add(b1)
+        Next
+
+        Dim mesh As New MeshGeometry3D With {
+            .Positions = pos,
+            .TriangleIndices = idx
+        }
+        If mesh.CanFreeze Then mesh.Freeze()
+
+        _dayNightTerminatorGeo.Geometry = mesh
+    End Sub
+
+    Private Sub UpdateDayNightTerminatorVisibility()
+        If _group Is Nothing OrElse _dayNightTerminatorGeo Is Nothing Then Return
+
+        If ShowDayNightTerminator Then
+            If Not _dayNightTerminatorVisible Then
+                _group.Children.Add(_dayNightTerminatorGeo)
+                _dayNightTerminatorVisible = True
+            End If
+        Else
+            If _dayNightTerminatorVisible Then
+                _group.Children.Remove(_dayNightTerminatorGeo)
+                _dayNightTerminatorVisible = False
+            End If
+        End If
+    End Sub
+
+    Private Sub StartAnimation()
+        If _isAnimating Then Return
+
+        _isAnimating = True
+        _lastFrameTicks = Stopwatch.GetTimestamp()
+
+        _simStartUtc = DateTime.UtcNow
+        _simSecondsTotal = 0
+        SimulationUtc = _simStartUtc
+
+        Dim jd0 As Double = Astronomics.JulianDateUtc(SimulationUtc)
+        _gmst0Deg = Astronomics.GmstDeg(jd0)
+
+        _tiltRot.Angle = ClimateConstants.EarthObliquityDeg
+        AmbientLightColor = Color.FromRgb(20, 20, 20)
+
+        AddHandler CompositionTarget.Rendering, AddressOf OnRenderingFrame
+        ResetCamera()
+    End Sub
+
+    Private Sub StopAnimation()
+        If Not _isAnimating Then Return
+
+        _isAnimating = False
+        RemoveHandler CompositionTarget.Rendering, AddressOf OnRenderingFrame
+
+        _spinRot.Angle = 0.0
+        _tiltRot.Angle = 0.0
+
+        SimulationUtc = DateTime.UtcNow
+
+        'Sonnen-Marker deaktivieren
+        ShowSubsolarMarker = False
+        ShowDayNightTerminator = False
+
+        SunDirection = New Vector3D(-0.6, -0.3, -1)     'Default Sonne wiederherstellen
+        AmbientLightColor = Color.FromRgb(100, 100, 100)
+        SolarDeclinationDeg = 0.0
+        OnPropertyChanged(NameOf(SolarDeclinationText))
+    End Sub
+
+    Private Sub OnRenderingFrame(sender As Object, e As EventArgs)
+
+        If Not _isAnimating Then Return
+
+        Dim nowTicks As Long = Stopwatch.GetTimestamp()
+        Dim dtReal As Double = (nowTicks - _lastFrameTicks) / CDbl(Stopwatch.Frequency)
+        _lastFrameTicks = nowTicks
+
+        'Zeitbasis: 1s real = 1s Simulation * 10^tick
+        Dim speedFactor As Double = Math.Pow(10, Math.Abs(AnimationSpeedTick))
+        Dim dirSign As Double = If(AnimationSpeedTick < 0, -1.0, 1.0)
+        Dim simSeconds As Double = dtReal * speedFactor * dirSign
+
+        'Zeitberechnung
+        _simSecondsTotal += simSeconds
+        SimulationUtc = _simStartUtc.AddSeconds(_simSecondsTotal)
+
+        Dim jd As Double = Astronomics.JulianDateUtc(SimulationUtc)
+
+        Dim ra As Double, dec As Double
+        Astronomics.SunRaDecDeg(jd, ra, dec)
+        Dim gmst As Double = Astronomics.GmstDeg(jd)
+        Dim eot As Double = Astronomics.EquationOfTimeMinutes(jd)
+
+        SunRaDeg = ra
+        GmstDeg = gmst
+        EquationOfTime = eot
+
+        'Subsolar (Earth-fixed) für Anzeige
+        Dim ssLat As Double = dec
+        Dim ssLon As Double = Wrap180(ra - gmst)        'Ost-positiv
+
+        SubsolarLatDeg = ssLat
+        SubsolarLonDeg = ssLon
+
+        '=== Frame-Mode ===
+        Select Case FrameMode
+            Case GlobeFrameMode.EarthFixed          'Erde steht fest, Sonne rotiert um Erde
+                _spinRot.Angle = 0.0
+
+                'Sun in Body aus Subsolar-Lat/Lon
+                Dim sunBody As Vector3D = BodyVectorFromLatLon(ssLat, ssLon)
+
+                'Body->World (Tilt wirkt)
+                Dim sunWorld As Vector3D = _animTransform.Value.Transform(sunBody)
+                sunWorld.Normalize()
+
+                SunDirection = New Vector3D(-sunWorld.X, -sunWorld.Y, -sunWorld.Z)
+
+                'Marker/Terminator aus Subsolar-Lat/Lon ist hier ok
+                SolarDeclinationDeg = ComputeSolarDeclinationDeg(SunDirection)
+                UpdateSubsolarMarker()
+                UpdateDayNightTerminator()
+
+            Case GlobeFrameMode.RotatingEarth       'Erde rotiert: Spin = (GMST - GMST0)
+
+                _spinRot.Angle = Wrap360(gmst - _gmst0Deg)
+
+                'Sonne inertial: keine tägliche Komponente -> verwende (RA - GMST0) als konstante Referenz
+                Dim sunLonInertial As Double = Wrap180(ra - _gmst0Deg)
+                Dim sunBodyNoDaily As Vector3D = BodyVectorFromLatLon(dec, sunLonInertial)
+
+                'WICHTIG: SunDirection im World-Space soll NICHT vom Spin abhängen,
+                'sondern nur vom Tilt + Jahreslauf -> deshalb nur Tilt anwenden
+                Dim tiltOnly As New RotateTransform3D(_tiltRot)
+                Dim sunWorld As Vector3D = tiltOnly.Transform(sunBodyNoDaily)
+                sunWorld.Normalize()
+
+                SunDirection = New Vector3D(-sunWorld.X, -sunWorld.Y, -sunWorld.Z)
+                SolarDeclinationDeg = ComputeSolarDeclinationDeg(SunDirection)
+
+                'In RotatingEarth muss der Marker aus der echten Sonnenrichtung im Body kommen:
+                '-> Body-Sun = inverse(globeTransform) * (Earth->Sun in World)
+                UpdateSubsolarMarkerFromSun()
+                UpdateDayNightTerminator()
+        End Select
+
+        'Hover live aktualisieren
+        If _lastMouseInViewport Then
+            Dim nowTicksNew As Long = Stopwatch.GetTimestamp()
+            If (nowTicksNew - _lastHoverTicks) >= _hoverTickPerFrame Then
+                _lastHoverTicks = nowTicksNew
+                UpdateHoverFromScreenPoint(_lastMousePos)
+            End If
+        End If
+
+    End Sub
+
+    Public Sub DisposeAnimation()
+        StopAnimation()
+    End Sub
+
+#End Region
+
+#Region "RayCast & Hover"
+
+    Private _lastMouseInViewport As Boolean
+    Private _lastMousePos As Point
+
+    Private _lastHoverTicks As Long
+    Private Shared ReadOnly _hoverTickPerFrame As Long = CLng(Stopwatch.Frequency / 30.0)   '30Hz für Hover-Aktualisierung
+
+    Private _hoverText As String
+    Public Property HoverText As String
+        Get
+            Return _hoverText
+        End Get
+        Set(value As String)
+            SetProperty(_hoverText, value)
+        End Set
+    End Property
+
+    Private Function TryGetRayFromScreen(mouseX As Double, mouseY As Double, ByRef rayOrigin As Point3D, ByRef rayDir As Vector3D) As Boolean
+
+        Dim w As Double = Math.Max(1.0, _viewportW)
+        Dim h As Double = Math.Max(1.0, _viewportH)
+        Dim aspect As Double = w / h
+
+        'Normalisierte Koordinaten [-1..+1], y nach oben
+        Dim nx As Double = (2.0 * (mouseX / w) - 1.0)
+        Dim ny As Double = (1.0 - 2.0 * (mouseY / h))
+
+        'Kamera-Basisvektoren
+        Dim forward As Vector3D = CameraLookDirection
+        If forward.LengthSquared > 0 Then forward.Normalize() Else Return False
+
+        Dim up As Vector3D = CameraUpDirection
+        If up.LengthSquared > 0 Then up.Normalize() Else up = New Vector3D(0, 1, 0)
+
+        Dim right As Vector3D = Vector3D.CrossProduct(forward, up)
+        If right.LengthSquared > 0 Then right.Normalize() Else Return False
+
+        'Re-orthogonalisieren
+        up = Vector3D.CrossProduct(right, forward)
+        up.Normalize()
+
+        'FOV in rad, Projektions-Skalen
+        Dim fovRad As Double = DegToRad(CameraFov)
+        Dim tanHalf As Double = Math.Tan(fovRad * 0.5)
+
+        'Richtung im Kameraraum
+        Dim dir As Vector3D =
+            forward +
+            right * (nx * tanHalf * aspect) +
+            up * (ny * tanHalf)
+
+        If dir.LengthSquared > 0 Then dir.Normalize() Else Return False
+
+        rayOrigin = CameraPosition
+        rayDir = dir
+
+        Return True
+    End Function
+
+    Private Sub UpdateHoverLatLonFromWorldHit(hitWorld As Point3D)
+
+        If _animTransform Is Nothing Then Return
+
+        Dim m As Matrix3D = _animTransform.Value
+        If Not m.HasInverse Then Return
+        m.Invert()
+
+        Dim pBody As Point3D = m.Transform(hitWorld)
+
+        'Normieren, falls Displacement/Radius minimal anders
+        Dim v As New Vector3D(pBody.X, pBody.Y, pBody.Z)
+        If v.LengthSquared < 0.000000000001 Then
+            HoverText = ""
+            Return
+        End If
+        v.Normalize()
+
+        'Lat/Lon aus Body-Vektor gemäß der Konvention:
+        Dim latRad As Double = Math.Asin(Clamp(v.Y, -1.0, 1.0))
+
+        'Lon: 0° bei +X, +90° bei +Z
+        Dim lonRad As Double = Math.Atan2(-v.Z, v.X)
+
+        Dim latDeg As Double = RadToDeg(latRad)
+        Dim lonDeg As Double = Wrap180(RadToDeg(lonRad))
+
+        HoverText = $"Lat {latDeg:+0.00;-0.00;0.00}°, Lon {lonDeg:+0.00;-0.00;0.00}°"
+    End Sub
+
+    Private Sub UpdateHoverFromScreenPoint(p As Point)
+
+        If _viewport Is Nothing Then
+            HoverText = ""
+            Return
+        End If
+
+        Dim hitPointWorld As Nullable(Of Point3D) = Nothing
+
+        VisualTreeHelper.HitTest(
+            _viewport,
+            Nothing,
+            Function(result As HitTestResult)
+
+                Dim ray = TryCast(result, RayHitTestResult)
+                If ray Is Nothing Then Return HitTestResultBehavior.Continue
+
+                Dim meshHit = TryCast(ray, RayMeshGeometry3DHitTestResult)
+                If meshHit Is Nothing Then Return HitTestResultBehavior.Continue
+
+                hitPointWorld = meshHit.PointHit
+                Return HitTestResultBehavior.Stop
+
+
+            End Function,
+            New PointHitTestParameters(p)
+            )
+
+        If Not hitPointWorld.HasValue Then
+            HoverText = ""
+            Return
+        End If
+
+        UpdateHoverLatLonFromWorldHit(hitPointWorld.Value)
+    End Sub
+
 #End Region
 
 End Class

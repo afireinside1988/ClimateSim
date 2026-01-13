@@ -1,6 +1,4 @@
-﻿Imports System.ComponentModel
-Imports System.Transactions
-Imports System.Windows.Media.Media3D
+﻿Imports System.Windows.Media.Media3D
 
 Public NotInheritable Class GlobeMeshRenderer
 
@@ -28,7 +26,9 @@ Public NotInheritable Class GlobeMeshRenderer
 
             For lon As Integer = 0 To lonSegments
                 Dim u As Double = lon / CDbl(lonSegments)       '0..1
-                Dim theta As Double = 2.0 * Math.PI * u         '0..2pi
+
+                Dim lonDeg As Double = u * 360.0 - 180.0
+                Dim theta As Double = -lonDeg * Math.PI / 180.0         '0..2pi
 
                 'Position (Y ist "oben")
                 Dim x As Double = r * Math.Cos(theta)
@@ -41,7 +41,7 @@ Public NotInheritable Class GlobeMeshRenderer
 
                 'Texturkoordinaten
                 'u: lon 0..1, v: lat 0..1 (oben->unten) passt zu equirectangular
-                mesh.TextureCoordinates.Add(New Point(1.0 - u, v))
+                mesh.TextureCoordinates.Add(New Point(u, v))
             Next
         Next
 
@@ -156,7 +156,7 @@ Public NotInheritable Class GlobeMeshRenderer
 
     End Function
 
-    Public Shared Function CreateCylinderMeshY(radius As Double, height As Double, segments As Integer, Optional cap As Boolean = True) As MeshGeometry3D
+    Public Shared Function RenderCylinderMeshY(radius As Double, height As Double, segments As Integer, Optional cap As Boolean = True) As MeshGeometry3D
 
         segments = Math.Max(6, segments)
 
@@ -254,6 +254,44 @@ Public NotInheritable Class GlobeMeshRenderer
         Return mesh
 
     End Function
+
+    Public Shared Function RenderSubsolarMarkerModel() As GeometryModel3D
+        Dim mesh As MeshGeometry3D = GlobeMeshRenderer.RenderSphereMesh(radius:=0.01, lonSegments:=16, latSegments:=12)
+
+        Dim brush As New SolidColorBrush(Color.FromArgb(220, 255, 220, 80))     'Marker-Farbe
+        If brush.CanFreeze Then brush.Freeze()
+
+        Dim mat As New EmissiveMaterial(brush)
+        If mat.CanFreeze Then mat.Freeze()
+
+        Dim gm As New GeometryModel3D With {
+            .Geometry = mesh,
+            .Material = mat,
+            .BackMaterial = mat
+        }
+
+        Return gm
+
+    End Function
+
+    Public Shared Function RenderDayNightTerminatorModel() As GeometryModel3D
+        Dim mesh As New MeshGeometry3D()
+
+        Dim brush As New SolidColorBrush(Color.FromArgb(200, 180, 220, 255))
+        If brush.CanFreeze Then brush.Freeze()
+
+        Dim mat As New EmissiveMaterial(brush)
+        If mat.CanFreeze Then mat.Freeze()
+
+        Dim gm As New GeometryModel3D With {
+            .Geometry = mesh,
+            .Material = mat,
+            .BackMaterial = mat
+        }
+
+        Return gm
+    End Function
+
 #End Region
 
 #Region "Resampling"
