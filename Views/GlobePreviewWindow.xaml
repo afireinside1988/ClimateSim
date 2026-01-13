@@ -10,6 +10,7 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <local:StringNotEmptyToVisibilityConverter x:Key="StrToVis"/>
         <local:EnumToBooleanConverter x:Key="EnumToBool"/>
         <local:GlobeMeshResolutionTickToStringConverter x:Key="MeshTickToString"/>
     </Window.Resources>
@@ -97,9 +98,90 @@
             </Border>
             
             <!-- Status-Bar -->
-            <Grid Grid.Row="1" Margin="8">
-                <TextBlock Text="{Binding HoverText}" Opacity="0.7"/>
-            </Grid>
+            <Border Grid.Row="1" Margin="0,8,0,0"
+                    Padding="8,6"
+                    CornerRadius="6"
+                    Background="#22000000">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto" MinWidth="120"/>
+                        <ColumnDefinition Width="Auto" MinWidth="120"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- Zeile 1: Koordinaten -->
+                    <TextBlock Grid.Row="0" Grid.Column="0"
+                               Margin="0,0,10,2"
+                               Opacity="0.75"
+                               Text="Koordinaten:"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1"
+                               FontFamily="Consolas" VerticalAlignment="Bottom"
+                               Margin="0,0,5,2"
+                               Text="{Binding HoverLatText}"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2"
+                               FontFamily="Consolas" VerticalAlignment="Bottom"
+                               Margin="0,0,5,2"
+                               Text="{Binding HoverLonText}"/>
+                    
+                    <!-- Zeile 2: Sonnenstand -->
+                    <TextBlock Grid.Row="1" Grid.Column="0"
+                               Margin="0,0,10,2"
+                               Opacity="0.75"
+                               Text="Sonnenstand:"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1"
+                               Margin="0,0,5,2"
+                               FontFamily="Consolas" VerticalAlignment="Bottom"
+                               Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"
+                               Text="{Binding HoverSunHeightText}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2"
+                               Margin="0,0,5,2"
+                               FontFamily="Consolas" VerticalAlignment="Bottom"
+                               Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"
+                               Text="{Binding HoverSunAzimuthText}"/>
+                    
+                    <!-- Mini-Azimut-Pfeil -->
+                    <Viewbox Grid.Row="1" Grid.Column="2"
+                             Margin="6,0,0,2"
+                             Width="10" Height="10"
+                             HorizontalAlignment="Right"
+                             Stretch="Fill"
+                             Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}">
+                    <Grid Width="10" Height="10">
+                            <Path Fill="#DD000000"
+                                  Data="M5,0 L10,10 L5,7 L0,10 Z"
+                                  RenderTransformOrigin="0.5,0.5"
+                                  Visibility="{Binding HoverSunAzimuthText, Converter={StaticResource StrToVis}}">
+                                <Path.RenderTransform>
+                                    <RotateTransform Angle="{Binding HoverSunAzimuthDeg}"/>
+                                </Path.RenderTransform>
+                            </Path>
+                        </Grid>
+                    </Viewbox>
+                    
+                    
+                    <!-- Zeile 3: Tageslänge -->
+                    <TextBlock Grid.Row="2" Grid.Column="0"
+                               Margin="0,0,10,0"
+                               Opacity="0.75"
+                               Text="Tageslänge:"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1"
+                               Margin="0,0,5,0"
+                               FontFamily="Consolas" VerticalAlignment="Bottom"
+                               Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"
+                               Text="{Binding HoverDayLengthText}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="2"
+                               Margin="0,0,5,0"
+                               FontFamily="Consolas" VerticalAlignment="Bottom"
+                               Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"
+                               Text="{Binding HoverNightLengthText}"/>
+                </Grid>
+            </Border>
 
         </Grid>
 
@@ -270,9 +352,9 @@
                                 IsEnabled="{Binding IsEarthRotationEnabled}"/>
 
                         <StackPanel Grid.Row="3" Margin="0,12,0,0">
-                            <CheckBox Content="Zenit-Marker anzeigen" Margin="0,0,0,3"
+                            <CheckBox Content="Zenit-Marker" Margin="0,0,0,3"
                                       IsChecked="{Binding ShowSubsolarMarker}"/>
-                            <CheckBox Content="Tag-Nacht-Grenze anzeigen"
+                            <CheckBox Content="Tag-Nacht-Grenze"
                                       IsChecked="{Binding ShowDayNightTerminator}"/>
                         </StackPanel>
                         

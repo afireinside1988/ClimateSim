@@ -1,5 +1,6 @@
 ﻿Imports System.Globalization
 Imports System.Net.Security
+Imports System.Reflection.Metadata
 Imports System.Threading
 Imports System.Transactions
 Imports System.Windows.Media.Media3D
@@ -740,7 +741,7 @@ Public Class GlobePreviewViewModel
 
     Private Sub OnMouseLeave()
         _lastMouseInViewport = False
-        HoverText = ""
+        ClearHoverText()
     End Sub
 
 #Enable Warning IDE0060
@@ -1395,46 +1396,10 @@ Public Class GlobePreviewViewModel
         End Get
     End Property
 
-    Private Function ComputeSolarDeclinationDeg(lightDirSunToEarth As Vector3D) As Double
-
-        'Erde->Sonne
-        Dim sun As New Vector3D(-lightDirSunToEarth.X, -lightDirSunToEarth.Y, -lightDirSunToEarth.Z)
-        If sun.LengthSquared > 0 Then sun.Normalize() Else Return 0.0
-
-        'Erdachse im World-Space (Tilt um X; Achse ist +Y vor Tilt)
-        Dim epsDeg As Double = _tiltRot.Angle
-        Dim epsRad As Double = DegToRad(epsDeg)
-
-        Dim axis As New Vector3D(0.0, Math.Cos(epsRad), Math.Sin(epsRad))
-        If axis.LengthSquared > 0 Then axis.Normalize()
-
-        Dim d As Double = Vector3D.DotProduct(sun, axis)
-        d = Clamp(d, -1.0, 1.0)
-
-        Dim declRad As Double = Math.Asin(d)
-        Return RadToDeg(declRad)
-    End Function
-
-    Private Shared Function BodyVectorFromLatLon(latDeg As Double, lonDeg As Double) As Vector3D
-
-        Dim latRad As Double = DegToRad(latDeg)
-        Dim lonRad As Double = DegToRad(lonDeg)
-
-        Dim clat As Double = Math.Cos(latRad)
-
-        Dim x As Double = clat * Math.Cos(lonRad)
-        Dim y As Double = Math.Sin(latRad)
-        Dim z As Double = -clat * Math.Sin(lonRad)
-
-        Dim v As New Vector3D(x, y, z)
-        v.Normalize()
-        Return v
-    End Function
-
     Private Sub UpdateSubsolarMarker()
         If _subsolarTf Is Nothing Then Return
 
-        Dim bodyV As Vector3D = BodyVectorFromLatLon(SubsolarLatDeg, SubsolarLonDeg)
+        Dim bodyV As Vector3D = Astronomics.BodyVectorFromLatLon(SubsolarLatDeg, SubsolarLonDeg)
 
         Dim r As Double = 1.02      'leicht über der Oberfläche anzeigen
         _subsolarTf.OffsetX = bodyV.X * r
@@ -1648,7 +1613,7 @@ Public Class GlobePreviewViewModel
                 _spinRot.Angle = 0.0
 
                 'Sun in Body aus Subsolar-Lat/Lon
-                Dim sunBody As Vector3D = BodyVectorFromLatLon(ssLat, ssLon)
+                Dim sunBody As Vector3D = Astronomics.BodyVectorFromLatLon(ssLat, ssLon)
 
                 'Body->World (Tilt wirkt)
                 Dim sunWorld As Vector3D = _animTransform.Value.Transform(sunBody)
@@ -1657,7 +1622,7 @@ Public Class GlobePreviewViewModel
                 SunDirection = New Vector3D(-sunWorld.X, -sunWorld.Y, -sunWorld.Z)
 
                 'Marker/Terminator aus Subsolar-Lat/Lon ist hier ok
-                SolarDeclinationDeg = ComputeSolarDeclinationDeg(SunDirection)
+                SolarDeclinationDeg = dec
                 UpdateSubsolarMarker()
                 UpdateDayNightTerminator()
 
@@ -1667,7 +1632,7 @@ Public Class GlobePreviewViewModel
 
                 'Sonne inertial: keine tägliche Komponente -> verwende (RA - GMST0) als konstante Referenz
                 Dim sunLonInertial As Double = Wrap180(ra - _gmst0Deg)
-                Dim sunBodyNoDaily As Vector3D = BodyVectorFromLatLon(dec, sunLonInertial)
+                Dim sunBodyNoDaily As Vector3D = Astronomics.BodyVectorFromLatLon(dec, sunLonInertial)
 
                 'WICHTIG: SunDirection im World-Space soll NICHT vom Spin abhängen,
                 'sondern nur vom Tilt + Jahreslauf -> deshalb nur Tilt anwenden
@@ -1676,7 +1641,7 @@ Public Class GlobePreviewViewModel
                 sunWorld.Normalize()
 
                 SunDirection = New Vector3D(-sunWorld.X, -sunWorld.Y, -sunWorld.Z)
-                SolarDeclinationDeg = ComputeSolarDeclinationDeg(SunDirection)
+                SolarDeclinationDeg = dec
 
                 'In RotatingEarth muss der Marker aus der echten Sonnenrichtung im Body kommen:
                 '-> Body-Sun = inverse(globeTransform) * (Earth->Sun in World)
@@ -1709,59 +1674,79 @@ Public Class GlobePreviewViewModel
     Private _lastHoverTicks As Long
     Private Shared ReadOnly _hoverTickPerFrame As Long = CLng(Stopwatch.Frequency / 30.0)   '30Hz für Hover-Aktualisierung
 
-    Private _hoverText As String
-    Public Property HoverText As String
+    Private _hoverLatText As String
+    Public Property HoverLatText As String
         Get
-            Return _hoverText
+            Return _hoverLatText
         End Get
         Set(value As String)
-            SetProperty(_hoverText, value)
+            SetProperty(_hoverLatText, value)
         End Set
     End Property
 
-    Private Function TryGetRayFromScreen(mouseX As Double, mouseY As Double, ByRef rayOrigin As Point3D, ByRef rayDir As Vector3D) As Boolean
+    Private _hoverLonText As String
+    Public Property HoverLonText As String
+        Get
+            Return _hoverLonText
+        End Get
+        Set(value As String)
+            SetProperty(_hoverLonText, value)
+        End Set
+    End Property
 
-        Dim w As Double = Math.Max(1.0, _viewportW)
-        Dim h As Double = Math.Max(1.0, _viewportH)
-        Dim aspect As Double = w / h
+    Private _hoverSunHeightText As String
+    Public Property HoverSunHeightText As String
+        Get
+            Return _hoverSunHeightText
+        End Get
+        Set(value As String)
+            SetProperty(_hoverSunHeightText, value)
+        End Set
+    End Property
 
-        'Normalisierte Koordinaten [-1..+1], y nach oben
-        Dim nx As Double = (2.0 * (mouseX / w) - 1.0)
-        Dim ny As Double = (1.0 - 2.0 * (mouseY / h))
+    Private _hoverSunAzimuthDeg As Double
+    Public Property HoverSunAzimuthDeg As Double
+        Get
+            Return _hoverSunAzimuthDeg
+        End Get
+        Set(value As Double)
+            If SetProperty(_hoverSunAzimuthDeg, value) Then
+                OnPropertyChanged(NameOf(HoverSunAzimuthText))
+            End If
+        End Set
+    End Property
 
-        'Kamera-Basisvektoren
-        Dim forward As Vector3D = CameraLookDirection
-        If forward.LengthSquared > 0 Then forward.Normalize() Else Return False
+    Private _hoverSunAzimuthText As String
+    Public Property HoverSunAzimuthText As String
+        Get
+            Return _hoverSunAzimuthText
+        End Get
+        Set(value As String)
+            SetProperty(_hoverSunAzimuthText, value)
+        End Set
+    End Property
 
-        Dim up As Vector3D = CameraUpDirection
-        If up.LengthSquared > 0 Then up.Normalize() Else up = New Vector3D(0, 1, 0)
+    Private _hoverDayLengthText As String
+    Public Property HoverDayLengthText As String
+        Get
+            Return _hoverDayLengthText
+        End Get
+        Set(value As String)
+            SetProperty(_hoverDayLengthText, value)
+        End Set
+    End Property
 
-        Dim right As Vector3D = Vector3D.CrossProduct(forward, up)
-        If right.LengthSquared > 0 Then right.Normalize() Else Return False
+    Private _hoverNightLengthText As String
+    Public Property HoverNightLengthText As String
+        Get
+            Return _hoverNightLengthText
+        End Get
+        Set(value As String)
+            SetProperty(_hoverNightLengthText, value)
+        End Set
+    End Property
 
-        'Re-orthogonalisieren
-        up = Vector3D.CrossProduct(right, forward)
-        up.Normalize()
-
-        'FOV in rad, Projektions-Skalen
-        Dim fovRad As Double = DegToRad(CameraFov)
-        Dim tanHalf As Double = Math.Tan(fovRad * 0.5)
-
-        'Richtung im Kameraraum
-        Dim dir As Vector3D =
-            forward +
-            right * (nx * tanHalf * aspect) +
-            up * (ny * tanHalf)
-
-        If dir.LengthSquared > 0 Then dir.Normalize() Else Return False
-
-        rayOrigin = CameraPosition
-        rayDir = dir
-
-        Return True
-    End Function
-
-    Private Sub UpdateHoverLatLonFromWorldHit(hitWorld As Point3D)
+    Private Sub UpdateHoverFromWorldHit(hitWorld As Point3D)
 
         If _animTransform Is Nothing Then Return
 
@@ -1774,7 +1759,6 @@ Public Class GlobePreviewViewModel
         'Normieren, falls Displacement/Radius minimal anders
         Dim v As New Vector3D(pBody.X, pBody.Y, pBody.Z)
         If v.LengthSquared < 0.000000000001 Then
-            HoverText = ""
             Return
         End If
         v.Normalize()
@@ -1788,13 +1772,37 @@ Public Class GlobePreviewViewModel
         Dim latDeg As Double = RadToDeg(latRad)
         Dim lonDeg As Double = Wrap180(RadToDeg(lonRad))
 
-        HoverText = $"Lat {latDeg:+0.00;-0.00;0.00}°, Lon {lonDeg:+0.00;-0.00;0.00}°"
+        '=== Hover-Texte ===
+        '1) Koordinaten
+        HoverLatText = $"Lat: {latDeg:+00.00;-00.00;00.00}°"
+        HoverLonText = $"Lon: {lonDeg:+000.00;-000.00;000.00}°"
+
+        '2) Tages/Nacht-Länge
+        Dim dayLength As Integer, nightLength As Integer
+        ComputeDayNightLength(latDeg, SolarDeclinationDeg, dayLength, nightLength)
+
+        Dim dayHours As Integer, dayMinutes As Integer
+        Dim nightHours As Integer, nightMinutes As Integer
+
+        Astronomics.SplitDayMinutes(dayLength, dayHours, dayMinutes)
+        Astronomics.SplitDayMinutes(nightLength, nightHours, nightMinutes)
+
+        HoverDayLengthText = $"Tag: {dayHours:00}:{dayMinutes:00}h"
+        HoverNightLengthText = $"Nacht: {nightHours:00}:{nightMinutes:00}h"
+
+        '3) Sonnenhöhe/Azimut
+        Dim sunH As Double, sunAz As Double
+        Astronomics.ComputeSunHeightAzimuthAtPoint(latDeg, lonDeg, SubsolarLatDeg, SubsolarLonDeg, sunH, sunAz)
+
+        HoverSunAzimuthDeg = Wrap360(sunAz)
+
+        HoverSunHeightText = $"Höhe: {sunH:+00.0;-00.0;00.0}°"
+        HoverSunAzimuthText = $"Azimut: {sunAz:000.0}°"
     End Sub
 
     Private Sub UpdateHoverFromScreenPoint(p As Point)
 
         If _viewport Is Nothing Then
-            HoverText = ""
             Return
         End If
 
@@ -1820,13 +1828,20 @@ Public Class GlobePreviewViewModel
             )
 
         If Not hitPointWorld.HasValue Then
-            HoverText = ""
             Return
         End If
 
-        UpdateHoverLatLonFromWorldHit(hitPointWorld.Value)
+        UpdateHoverFromWorldHit(hitPointWorld.Value)
     End Sub
 
+    Private Sub ClearHoverText()
+        HoverLatText = ""
+        HoverLonText = ""
+        HoverSunHeightText = ""
+        HoverSunAzimuthText = ""
+        HoverDayLengthText = ""
+        HoverNightLengthText = ""
+    End Sub
 #End Region
 
 End Class

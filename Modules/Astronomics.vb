@@ -1,4 +1,6 @@
-﻿Module Astronomics
+﻿Imports System.Windows.Media.Media3D
+
+Module Astronomics
 
     ''' <summary>
     ''' Errechnet aus der UTC das julianische Datum
@@ -122,4 +124,111 @@
         Return RadToDeg(eE) * 4.0
 
     End Function
+
+    Public Function BodyVectorFromLatLon(latDeg As Double, lonDeg As Double) As Vector3D
+
+        Dim latRad As Double = DegToRad(latDeg)
+        Dim lonRad As Double = DegToRad(lonDeg)
+
+        Dim clat As Double = Math.Cos(latRad)
+
+        Dim x As Double = clat * Math.Cos(lonRad)
+        Dim y As Double = Math.Sin(latRad)
+        Dim z As Double = -clat * Math.Sin(lonRad)
+
+        Dim v As New Vector3D(x, y, z)
+        v.Normalize()
+        Return v
+    End Function
+
+
+    Public Sub ComputeSunHeightAzimuthAtPoint(latDeg As Double, lonDeg As Double, subsolarLatDeg As Double, subsolarLonDeg As Double, ByRef sunHeightDeg As Double, ByRef sunAzimuthDeg As Double)
+
+        'Sonnenrichtung im Body-Space (Erde->Sonne) aus dem Subsolar-Punkt
+        Dim s As Vector3D = BodyVectorFromLatLon(subsolarLatDeg, subsolarLonDeg)
+        s.Normalize()
+
+        'Oberflächen-Normale (Up) im Body-Space
+        Dim up As Vector3D = BodyVectorFromLatLon(latDeg, lonDeg)
+        up.Normalize()
+
+        'Lokale Ost/Nord im Body-Space, konsistent mit unserem Mapping:
+        'x = cos(lat)cos(lon)
+        'y = sin(lat)
+        'z = -cos(lat)sin(lon)
+        Dim latRad As Double = DegToRad(latDeg)
+        Dim lonRad As Double = DegToRad(lonDeg)
+
+        'Osten zeigt nach ansteigender Lon (Ost-positiv)
+        Dim east As New Vector3D(-Math.Sin(lonRad), 0.0, -Math.Cos(lonRad))
+        If east.LengthSquared < 0.000000000001 Then
+            sunHeightDeg = 0
+            sunAzimuthDeg = 0
+            Return
+        End If
+        east.Normalize()
+
+        'Norden zeigt nach ansteigender Lat
+        Dim north As New Vector3D(-Math.Sin(latRad) * Math.Cos(lonRad),
+                                  Math.Cos(latRad),
+                                  Math.Sin(latRad) * Math.Sin(lonRad))
+
+        If north.LengthSquared < 0.000000000001 Then
+            sunHeightDeg = 0
+            sunAzimuthDeg = 0
+            Return
+        End If
+        north.Normalize()
+
+        'Sonnenvektor auf lokale Achsen projezieren
+        Dim u As Double = Vector3D.DotProduct(s, up)        'Up-Komponente
+        Dim e As Double = Vector3D.DotProduct(s, east)      'Ost-Komponente
+        Dim n As Double = Vector3D.DotProduct(s, north)      'Nord-Komponente
+
+        u = Clamp(u, -1.0, 1.0)
+
+        'Sonnenhöhe über dem Horizont:
+        Dim hRad As Double = Math.Asin(u)
+        sunHeightDeg = RadToDeg(hRad)
+
+        'Azimuth: von Norden im Uhrzeigersinn (0=N; 90=E; 180=S; 270=W)
+        'atan2(Ost,Nord)
+        Dim azRad As Double = Math.Atan2(e, n)
+        Dim azDeg As Double = Wrap360(RadToDeg(azRad))
+        sunAzimuthDeg = azDeg
+
+    End Sub
+
+    Public Sub ComputeDayNightLength(latDeg As Double, declDeg As Double, ByRef dayMinutes As Integer, ByRef nightMinutes As Integer)
+
+        Dim latRad = DegToRad(latDeg)
+        Dim declRad = DegToRad(declDeg)
+
+        Dim cosH0 As Double = -Math.Tan(latRad) * Math.Tan(declRad)
+
+        'Polartag/Polarnacht
+        If cosH0 <= -1.0 Then
+            dayMinutes = 1440
+            nightMinutes = 0
+            Return
+        ElseIf cosH0 >= 1.0 Then
+            dayMinutes = 0
+            nightMinutes = 1440
+            Return
+        End If
+
+        Dim H0 = Math.Acos(Clamp(cosH0, -1.0, 1.0))
+        Dim dayHours As Double = (2.0 * H0) * 24.0 / (2.0 * Math.PI)
+
+        dayMinutes = CInt(Math.Round(dayHours * 60.0))
+        nightMinutes = 1440 - dayMinutes
+    End Sub
+
+    Public Sub SplitDayMinutes(totalMinutes As Integer, ByRef hh As Integer, ByRef mm As Integer)
+
+        totalMinutes = Clamp(totalMinutes, 0, 1440)
+
+        hh = totalMinutes \ 60
+        mm = totalMinutes Mod 60
+    End Sub
 End Module

@@ -269,7 +269,7 @@ Public NotInheritable Class ReliefRenderer
             ' B) HillShade rendern, Alpha mit Energy maskieren
             '----------------------------------------
 
-            Dim az As Double = ReliefRenderSettings.SunAzimutDeg * Math.PI / 180.0
+            Dim az As Double = ReliefRenderSettings.SunAzimuthDeg * Math.PI / 180.0
             Dim el As Double = ReliefRenderSettings.SunElevationDeg * Math.PI / 180.0
 
             Dim lx As Double = Math.Cos(el) * Math.Sin(az)

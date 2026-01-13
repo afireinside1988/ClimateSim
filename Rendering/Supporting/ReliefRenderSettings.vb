@@ -26,9 +26,9 @@
     Public Const EnergyMaskStrengthOcean As Double = 0.35
 
     '=================
-    ' HillShade (wie gehabt)
+    ' HillShade
     '=================
-    Public Const SunAzimutDeg As Double = 45.0
+    Public Const SunAzimuthDeg As Double = 45.0
     Public Const SunElevationDeg As Double = 45.0
 
     Public Const HillShadeNeutral As Byte = 90
