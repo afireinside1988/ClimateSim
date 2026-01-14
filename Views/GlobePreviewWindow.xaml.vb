@@ -16,4 +16,18 @@
         Dim vm = TryCast(Me.DataContext, GlobePreviewViewModel)
         vm?.DisposeAnimation()
     End Sub
+
+    Private Sub GlobePreviewWindow_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
+        Dim vm = TryCast(Me.DataContext, GlobePreviewViewModel)
+        If vm Is Nothing Then Return
+
+        AddHandler vm.RequestSetUtc, Sub()
+
+                                         Dim initialUtc = If(vm.SimulationUtc = DateTime.MinValue, DateTime.UtcNow, vm.SimulationUtc)
+                                         Dim picked As Date? = UtcDateTimeDialog.ShowDialogUtc(Me, initialUtc)
+                                         If picked.HasValue Then
+                                             vm.SetSimulationUtc(picked.Value)
+                                         End If
+                                     End Sub
+    End Sub
 End Class

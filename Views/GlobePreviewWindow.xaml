@@ -13,6 +13,27 @@
         <local:StringNotEmptyToVisibilityConverter x:Key="StrToVis"/>
         <local:EnumToBooleanConverter x:Key="EnumToBool"/>
         <local:GlobeMeshResolutionTickToStringConverter x:Key="MeshTickToString"/>
+
+        <Style x:Key="IconButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="25"/>
+            <Setter Property="Padding" Value="1"/>
+            <Setter Property="Margin" Value="0,0,2,0"/>
+            <Setter Property="ToolTipService.ShowDuration" Value="20000"/>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.5"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="IconImageStyle" TargetType="Image">
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Stretch" Value="Uniform"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="RenderOptions.BitmapScalingMode" Value="NearestNeighbor"/>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="12">
@@ -101,7 +122,9 @@
             <Border Grid.Row="1" Margin="0,8,0,0"
                     Padding="8,6"
                     CornerRadius="6"
-                    Background="#22000000">
+                    Background="#22000000"
+                    BorderThickness="2"
+                    BorderBrush="#00000000">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -335,9 +358,19 @@
                             <RowDefinition/>
                         </Grid.RowDefinitions>
 
-                        <CheckBox Grid.Row="0"
-                                  Content="Erdrotation"
+                        <Grid Grid.Row="0">
+                            <CheckBox Content="Erdrotation" HorizontalAlignment="Left"
                                   IsChecked="{Binding IsEarthRotationEnabled, Mode=TwoWay}"/>
+                            <Button Style="{StaticResource IconButtonStyle}" HorizontalAlignment="Right"
+                                    Margin="3,0,0,0"
+                                    ToolTip="UTC-Zeit der Simulation festlegen"
+                                    Command="{Binding SetSimulationUtcCommand}"
+                                    IsEnabled="{Binding IsEarthRotationEnabled}">
+                                <Image Style="{StaticResource IconImageStyle}"
+                                       Source="/Assets/Icons/UtcDateTimePicker.png"/>
+                            </Button>
+                        </Grid>
+                        
 
                         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
                             <TextBlock Text="Geschwindigkeit:" Margin="0,0,8,0"/>
@@ -354,6 +387,7 @@
                         <StackPanel Grid.Row="3" Margin="0,12,0,0">
                             <CheckBox Content="Zenit-Marker" Margin="0,0,0,3"
                                       ToolTip="Punkt auf der Erdoberfläche, an dem die Sonne gerade im Zenit steht."
+                                      IsEnabled="{Binding IsEarthRotationEnabled}"
                                       IsChecked="{Binding ShowSubsolarMarker}"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -363,10 +397,12 @@
                                 </Grid.ColumnDefinitions>
                                 <CheckBox Grid.Column="0" Content="Tag/Nacht-Grenze"
                                           ToolTip="Tag/Nacht-Grenze, an der die Sonne den Horizont passiert."
+                                          IsEnabled="{Binding IsEarthRotationEnabled}"
                                           IsChecked="{Binding ShowDayNightTerminator}" Grid.ColumnSpan="2"/>
                                 <CheckBox Grid.Column="2"
                                           Content="Dämmerungszone"
                                           ToolTip="Zivile 6°-Dämmerungszone, in der nach Sonnenuntergang noch Dämmerung sichtbar ist."
+                                          IsEnabled="{Binding IsEarthRotationEnabled}"
                                           IsChecked="{Binding ShowDawnZone}"/>
                             </Grid>
 
@@ -388,10 +424,10 @@
 
                             <TextBlock Grid.Row="0" Grid.Column="0"
                                        Text="Simulationszeit (UTC): "/>
-                            <TextBlock Grid.Row="0" Grid.Column="1"
-                                Margin="12,0,0,0" VerticalAlignment="Bottom"
+                            <TextBlock Grid.Row="0" Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Bottom"
                                        Text="{Binding SimulationUtcText}" FontFamily="Consolas"
                                        Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+
 
                             <TextBlock Grid.Row="1" Grid.Column="0"
                                        Margin="0,8,0,0"

@@ -655,6 +655,9 @@ Public Class GlobePreviewViewModel
     Public ReadOnly Property ResetCameraCommand As ICommand
     Public ReadOnly Property ClearCacheCommand As ICommand
 
+    Public Event RequestSetUtc As EventHandler
+    Public ReadOnly Property SetSimulationUtcCommand As ICommand
+
     Private Sub BeginRotate(r As PanRequest)
 
         _isDragging = True
@@ -770,6 +773,8 @@ Public Class GlobePreviewViewModel
 
         ResetCameraCommand = New RelayCommand(Of Object)(Sub(o) ResetCamera())
         ClearCacheCommand = New RelayCommand(Of Object)(Sub(o) ClearCache())
+
+        SetSimulationUtcCommand = New RelayCommand(Of Object)(Sub(o) RaiseEvent RequestSetUtc(Me, EventArgs.Empty))
 
         'Defaults setzen:
         _selectedBaseLayer = If(_p?.Topo IsNot Nothing, GlobeBaseLayer.Topo,
@@ -1800,6 +1805,26 @@ Public Class GlobePreviewViewModel
 
     Public Sub DisposeAnimation()
         StopAnimation()
+    End Sub
+
+    Public Sub SetSimulationUtc(newUtc As DateTime)
+        newUtc = DateTime.SpecifyKind(newUtc, DateTimeKind.Utc)
+
+        If Not _isAnimating Then
+            SimulationUtc = newUtc
+        End If
+
+        'Simulation neu referenzieren, ohne dt-Glitches
+        _simStartUtc = newUtc
+        _simSecondsTotal = 0
+        SimulationUtc = newUtc
+
+        'GMST0 neu setzen
+        Dim jd0 As Double = Astronomics.JulianDateUtc(newUtc)
+        _gmst0Deg = Astronomics.GmstDeg(jd0)
+
+        'einmal alles updaten
+        _lastFrameTicks = Stopwatch.GetTimestamp()
     End Sub
 
 #End Region

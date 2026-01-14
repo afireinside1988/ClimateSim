@@ -15,15 +15,24 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Remove="Assets\Icons\ArrowDown.png" />
+    <None Remove="Assets\Icons\ArrowUp.png" />
     <None Remove="Assets\Icons\Globe.png" />
     <None Remove="Assets\Icons\NextSpike.png" />
     <None Remove="Assets\Icons\Redo.png" />
     <None Remove="Assets\Icons\Save.png" />
     <None Remove="Assets\Icons\SaveAs.png" />
     <None Remove="Assets\Icons\Undo.png" />
+    <None Remove="Assets\Icons\UtcDateTimePicker.png" />
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\Icons\ArrowDown.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Assets\Icons\ArrowUp.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
     <Resource Include="Assets\Icons\Globe.png">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Resource>
@@ -61,10 +70,9 @@
     <Resource Include="Assets\Icons\Undo.png">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Resource>
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Views\Dialogues\" />
+    <Resource Include="Assets\Icons\UtcDateTimePicker.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
   </ItemGroup>
 
 </Project>
