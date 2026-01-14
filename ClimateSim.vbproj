@@ -63,4 +63,8 @@
     </Resource>
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Views\Dialogues\" />
+  </ItemGroup>
+
 </Project>

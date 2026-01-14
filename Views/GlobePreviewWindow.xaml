@@ -30,18 +30,18 @@
 
             <!-- Viewport -->
             <Border Grid.Row="0" Background="#FF000000" CornerRadius="8" Padding="8">
-                    <Grid ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True">
+                <Grid ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True">
 
-                        <Viewport3D x:Name="Vp" ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True">
-                            
+                    <Viewport3D x:Name="Vp" ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True">
+
                         <i:Interaction.Triggers>
                             <i:EventTrigger EventName="MouseLeave">
                                 <i:InvokeCommandAction Command="{Binding MouseLeaveCommand}" PassEventArgsToCommand="True"/>
                             </i:EventTrigger>
                         </i:Interaction.Triggers>
-                            
+
                         <i:Interaction.Behaviors>
-                                <local:PanAndZoomBehavior
+                            <local:PanAndZoomBehavior
                                     BeginPanCommand="{Binding BeginRotateCommand}"
                                     PanCommand="{Binding RotateCommand}"
                                     EndPanCommand="{Binding EndRotateCommand}"
@@ -50,53 +50,53 @@
                                     MouseMoveCommand="{Binding MouseMoveCommand}"
                                     MouseDownCommand="{Binding MouseDownCommand}"
                                     MouseUpCommand="{Binding MouseUpCommand}"/>
-                                </i:Interaction.Behaviors>
+                        </i:Interaction.Behaviors>
 
-                            <Viewport3D.Camera>
-                                <PerspectiveCamera
+                        <Viewport3D.Camera>
+                            <PerspectiveCamera
                                     Position="{Binding CameraPosition}"
                                     LookDirection="{Binding CameraLookDirection}"
                                     UpDirection="{Binding CameraUpDirection}"
                                     FieldOfView="{Binding CameraFov}"/>
-                                </Viewport3D.Camera>
-                    
-                            <!-- Licht -->
-                            <ModelVisual3D>
-                                <ModelVisual3D.Content>
-                                    <Model3DGroup>
-                                        <AmbientLight Color="{Binding AmbientLightColor}"/>
-                                        <DirectionalLight Color="#FFFFFF" Direction="{Binding SunDirection}"/>
-                                    </Model3DGroup>
-                                </ModelVisual3D.Content>
-                            </ModelVisual3D>
-                    
-                            <!-- Globus-Modelle -->
-                            <ModelVisual3D Content="{Binding GlobeModel}"/>
-                        </Viewport3D>
+                        </Viewport3D.Camera>
 
-                        <!-- Render-Overlay über dem Viewport -->
-                        <Border Background="#AA000000"
+                        <!-- Licht -->
+                        <ModelVisual3D>
+                            <ModelVisual3D.Content>
+                                <Model3DGroup>
+                                    <AmbientLight Color="{Binding AmbientLightColor}"/>
+                                    <DirectionalLight Color="#FFFFFF" Direction="{Binding SunDirection}"/>
+                                </Model3DGroup>
+                            </ModelVisual3D.Content>
+                        </ModelVisual3D>
+
+                        <!-- Globus-Modelle -->
+                        <ModelVisual3D Content="{Binding GlobeModel}"/>
+                    </Viewport3D>
+
+                    <!-- Render-Overlay über dem Viewport -->
+                    <Border Background="#AA000000"
                                 CornerRadius="6"
                                 Visibility="{Binding IsRendering, Converter={StaticResource BoolToVis}}"
                                 IsHitTestVisible="False">
-                            
-                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding RenderingTitle}"
+
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding RenderingTitle}"
                                            Foreground="White"
                                            FontSize="18"
                                            FontWeight="SemiBold"
                                            HorizontalAlignment="Center"/>
-                                
-                                <TextBlock Text="{Binding RenderingMessage}"
+
+                            <TextBlock Text="{Binding RenderingMessage}"
                                            Foreground="#DDFFFFFF"
                                            Opacity="0.9"
                                            Margin="0,6,0,0"
                                            HorizontalAlignment="Center"/>
-                            </StackPanel>
-                        </Border>
-                    </Grid>
+                        </StackPanel>
+                    </Border>
+                </Grid>
             </Border>
-            
+
             <!-- Status-Bar -->
             <Border Grid.Row="1" Margin="0,8,0,0"
                     Padding="8,6"
@@ -114,7 +114,7 @@
                         <ColumnDefinition Width="Auto" MinWidth="120"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    
+
                     <!-- Zeile 1: Koordinaten -->
                     <TextBlock Grid.Row="0" Grid.Column="0"
                                Margin="0,0,10,2"
@@ -128,7 +128,7 @@
                                FontFamily="Consolas" VerticalAlignment="Bottom"
                                Margin="0,0,5,2"
                                Text="{Binding HoverLonText}"/>
-                    
+
                     <!-- Zeile 2: Sonnenstand -->
                     <TextBlock Grid.Row="1" Grid.Column="0"
                                Margin="0,0,10,2"
@@ -144,7 +144,7 @@
                                FontFamily="Consolas" VerticalAlignment="Bottom"
                                Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"
                                Text="{Binding HoverSunAzimuthText}"/>
-                    
+
                     <!-- Mini-Azimut-Pfeil -->
                     <Viewbox Grid.Row="1" Grid.Column="2"
                              Margin="6,0,0,2"
@@ -152,7 +152,7 @@
                              HorizontalAlignment="Right"
                              Stretch="Fill"
                              Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}">
-                    <Grid Width="10" Height="10">
+                        <Grid Width="10" Height="10">
                             <Path Fill="#DD000000"
                                   Data="M5,0 L10,10 L5,7 L0,10 Z"
                                   RenderTransformOrigin="0.5,0.5"
@@ -163,8 +163,8 @@
                             </Path>
                         </Grid>
                     </Viewbox>
-                    
-                    
+
+
                     <!-- Zeile 3: Tageslänge -->
                     <TextBlock Grid.Row="2" Grid.Column="0"
                                Margin="0,0,10,0"
@@ -229,10 +229,10 @@
                                       Margin="0,0,0,3"
                                   IsChecked="{Binding ShowGrid, Mode=TwoWay}"/>
 
-                        <CheckBox Content="Pol-Achse"
+                            <CheckBox Content="Pol-Achse"
                                   IsChecked="{Binding ShowAxis, Mode=TwoWay}"/>
                         </StackPanel>
-                        
+
                     </Grid>
 
                 </GroupBox>
@@ -286,7 +286,7 @@
                                    Text="2048x1024" 
                                    TextAlignment="Left" FontFamily="Consolas" 
                                    VerticalAlignment="Center"/>
-                        
+
                         <!-- Displacement-Optionen -->
                         <CheckBox Grid.Row="3" Grid.ColumnSpan="4"
                                   Margin="0,12,0,8"
@@ -299,7 +299,7 @@
                         <TextBlock Grid.Row="4" Grid.Column="1"
                                    Text="{Binding ElementName=SldExaggeration, Path=Value}"
                                    TextAlignment="Left" FontFamily="Consolas" VerticalAlignment="Bottom"/>
-                        
+
                         <TextBlock Grid.Row="6" Grid.Column="0"
                                    Margin="0,0,8,0"
                                    Text="0x"
@@ -353,11 +353,25 @@
 
                         <StackPanel Grid.Row="3" Margin="0,12,0,0">
                             <CheckBox Content="Zenit-Marker" Margin="0,0,0,3"
+                                      ToolTip="Punkt auf der Erdoberfläche, an dem die Sonne gerade im Zenit steht."
                                       IsChecked="{Binding ShowSubsolarMarker}"/>
-                            <CheckBox Content="Tag-Nacht-Grenze"
-                                      IsChecked="{Binding ShowDayNightTerminator}"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="29*"/>
+                                    <ColumnDefinition Width="122*"/>
+                                    <ColumnDefinition Width="151*"/>
+                                </Grid.ColumnDefinitions>
+                                <CheckBox Grid.Column="0" Content="Tag/Nacht-Grenze"
+                                          ToolTip="Tag/Nacht-Grenze, an der die Sonne den Horizont passiert."
+                                          IsChecked="{Binding ShowDayNightTerminator}" Grid.ColumnSpan="2"/>
+                                <CheckBox Grid.Column="2"
+                                          Content="Dämmerungszone"
+                                          ToolTip="Zivile 6°-Dämmerungszone, in der nach Sonnenuntergang noch Dämmerung sichtbar ist."
+                                          IsChecked="{Binding ShowDawnZone}"/>
+                            </Grid>
+
                         </StackPanel>
-                        
+
                         <Grid Grid.Row="4" Margin="0,12,0,0">
                             <Grid.RowDefinitions>
                                 <RowDefinition/>
@@ -371,7 +385,7 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            
+
                             <TextBlock Grid.Row="0" Grid.Column="0"
                                        Text="Simulationszeit (UTC): "/>
                             <TextBlock Grid.Row="0" Grid.Column="1"
@@ -429,7 +443,7 @@
                                        ToolTip="Differenz zwischen Sonnenzeit und mittlerer Uhrzeit (UTC)"
                                        Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
                         </Grid>
-                        
+
                     </Grid>
                 </GroupBox>
 
@@ -464,7 +478,7 @@
                                 Command="{Binding ResetCameraCommand}"/>
                     </Grid>
                 </GroupBox>
-                
+
                 <!-- Cache -->
                 <GroupBox Header="Cache" Margin="8">
                     <Grid Margin="8">

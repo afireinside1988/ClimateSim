@@ -1,6 +1,7 @@
 ﻿Imports System.Globalization
 Imports System.Net.Security
 Imports System.Reflection.Metadata
+Imports System.Runtime.InteropServices
 Imports System.Threading
 Imports System.Transactions
 Imports System.Windows.Media.Media3D
@@ -1062,9 +1063,13 @@ Public Class GlobePreviewViewModel
         _dayNightTerminatorGeo = GlobeMeshRenderer.RenderDayNightTerminatorModel()
         _dayNightTerminatorVisible = False
 
+        'Dawn-Zone vorbereiten
+        _dawnZoneGeo = GlobeMeshRenderer.RenderDawnModel()
+        _dawnTerminatorVisible = False
+
         'Initial die Marker updaten
         UpdateSubsolarMarkerVisibility()
-        UpdateDayNightTerminatorVisibility()
+        UpdateDayNightVisibility()
 
         'Transforms: Spin (um Y) + Tilt (um X)
         _spinRot = New AxisAngleRotation3D(New Vector3D(0, 1, 0), 0.0)
@@ -1189,8 +1194,10 @@ Public Class GlobePreviewViewModel
     Private _subsolarGeo As GeometryModel3D
     Private _subsolarTf As TranslateTransform3D
     Private _dayNightTerminatorGeo As GeometryModel3D
+    Private _dawnZoneGeo As GeometryModel3D
     Private _subsolarVisible As Boolean
     Private _dayNightTerminatorVisible As Boolean
+    Private _dawnTerminatorVisible As Boolean
 
     Private _isEarthRotationEnabled As Boolean
     Public Property IsEarthRotationEnabled As Boolean
@@ -1227,7 +1234,20 @@ Public Class GlobePreviewViewModel
         End Get
         Set(value As Boolean)
             If SetProperty(_showDayNightTerminator, value) Then
-                UpdateDayNightTerminatorVisibility()
+                UpdateDayNightVisibility()
+                OnPropertyChanged(NameOf(ShowDawnZone))
+            End If
+        End Set
+    End Property
+
+    Private _showDawnZone As Boolean = False
+    Public Property ShowDawnZone As Boolean
+        Get
+            Return _showDawnZone
+        End Get
+        Set(value As Boolean)
+            If SetProperty(_showDawnZone, value) Then
+                UpdateDayNightVisibility()
             End If
         End Set
     End Property
@@ -1515,18 +1535,131 @@ Public Class GlobePreviewViewModel
         _dayNightTerminatorGeo.Geometry = mesh
     End Sub
 
-    Private Sub UpdateDayNightTerminatorVisibility()
-        If _group Is Nothing OrElse _dayNightTerminatorGeo Is Nothing Then Return
+    Private Sub UpdateDawnZone(Optional twilightNightDeg As Double = 6.0,
+                               Optional twilightDayDeg As Double = 2.0)
 
-        If ShowDayNightTerminator Then
-            If Not _dayNightTerminatorVisible Then
-                _group.Children.Add(_dayNightTerminatorGeo)
-                _dayNightTerminatorVisible = True
+        If _dawnZoneGeo Is Nothing Then Return
+        If _animTransform Is Nothing Then Return
+
+        'Sonnenrichtung in Bodyspace (Erde->Sonne)
+        Dim sun As New Vector3D(-SunDirection.X, -SunDirection.Y, -SunDirection.Z)
+        If sun.LengthSquared <= 0 Then Return
+        sun.Normalize()
+
+        Dim m As Matrix3D = _animTransform.Value
+        If Not m.HasInverse Then Return
+        m.Invert()
+
+        Dim s As Vector3D = m.Transform(sun)
+        If s.LengthSquared <= 0 Then Return
+        s.Normalize()
+
+        'Basis u,v in Ebene senkrecht zu s
+        Dim up As New Vector3D(0, 1, 0)
+        Dim u As Vector3D = Vector3D.CrossProduct(s, up)
+        If u.LengthSquared < 0.000000000001 Then u = Vector3D.CrossProduct(s, New Vector3D(1, 0, 0))
+        u.Normalize()
+
+        Dim v As Vector3D = Vector3D.CrossProduct(s, u)
+        v.Normalize()
+
+        Dim aNight As Double = DegToRad(twilightNightDeg)
+        Dim cosNight As Double = Math.Cos(aNight)
+        Dim sinNight As Double = Math.Sin(aNight)
+        Dim aDay As Double = DegToRad(twilightDayDeg)
+        Dim cosDay As Double = Math.Cos(aDay)
+        Dim sinDay As Double = Math.Sin(aDay)
+
+        Const N As Integer = 180
+        Dim r As Double = 1.1  'leicht über der Oberfläche
+
+        Dim pos As New Point3DCollection((N + 1) * 2)
+        Dim tc As New PointCollection((N + 1) * 2)
+        Dim idx As New Int32Collection(N * 6)
+
+        For i As Integer = 0 To N
+            Dim t As Double = (i / CDbl(N)) * (2.0 * Math.PI)
+            Dim c As Double = Math.Cos(t)
+            Dim si As Double = Math.Sin(t)
+
+            'Terminator-Basispunkt p (|p|=1, p ⟂ s)
+            Dim p As New Vector3D(u.X * c + v.X * si,
+                                  u.Y * c + v.Y * si,
+                                  u.Z * c + v.Z * si)
+            p.Normalize()
+
+            'Tagkante
+            Dim pDay As New Vector3D(p.X * cosDay + s.X * sinDay,
+                                      p.Y * cosDay + s.Y * sinDay,
+                                      p.Z * cosDay + s.Z * sinDay)
+            pDay.Normalize()
+
+            'Nachtkante
+            Dim pNight As New Vector3D(p.X * cosNight - s.X * sinNight,
+                                       p.Y * cosNight - s.Y * sinNight,
+                                       p.Z * cosNight - s.Z * sinNight)
+            pNight.Normalize()
+
+            pos.Add(New Point3D(pDay.X * r, pDay.Y * r, pDay.Z * r))
+            pos.Add(New Point3D(pNight.X * r, pNight.Y * r, pNight.Z * r))
+
+            'Textur: u entland, v quer (0..1), Peak ist im Material bei 0.5
+            Dim uu As Double = i / CDbl(N)
+            tc.Add(New Point(uu, 0.0))
+            tc.Add(New Point(uu, 1.0))
+        Next
+
+        For i As Integer = 0 To N - 1
+            Dim a0 As Integer = i * 2
+            Dim a1 As Integer = a0 + 1
+            Dim b0 As Integer = a0 + 2
+            Dim b1 As Integer = a0 + 3
+
+            idx.Add(a0) : idx.Add(b0) : idx.Add(a1)
+            idx.Add(a1) : idx.Add(b0) : idx.Add(b1)
+        Next
+
+        Dim mesh As New MeshGeometry3D With {
+            .Positions = pos,
+            .TextureCoordinates = tc,
+            .TriangleIndices = idx
+        }
+        If mesh.CanFreeze Then mesh.Freeze()
+
+        _dawnZoneGeo.Geometry = mesh
+
+    End Sub
+
+    Private Sub UpdateDayNightVisibility()
+        If _group Is Nothing Then Return
+
+        '--- Terminator (harte Linie) ---
+        If _dayNightTerminatorGeo IsNot Nothing Then
+            If ShowDayNightTerminator Then
+                If Not _dayNightTerminatorVisible Then
+                    If Not _group.Children.Contains(_dayNightTerminatorGeo) Then _group.Children.Add(_dayNightTerminatorGeo)
+                    _dayNightTerminatorVisible = True
+                End If
+            Else
+                If _dayNightTerminatorVisible Then
+                    If _group.Children.Contains(_dayNightTerminatorGeo) Then _group.Children.Remove(_dayNightTerminatorGeo)
+                    _dayNightTerminatorVisible = False
+                End If
             End If
-        Else
-            If _dayNightTerminatorVisible Then
-                _group.Children.Remove(_dayNightTerminatorGeo)
-                _dayNightTerminatorVisible = False
+        End If
+
+        '--- DawnZone (Soft-Zone) ---
+        If _dawnZoneGeo IsNot Nothing Then
+            If ShowDawnZone Then
+                If Not _dawnTerminatorVisible Then
+                    If Not _group.Children.Contains(_dawnZoneGeo) Then _group.Children.Add(_dawnZoneGeo)
+                    _dawnTerminatorVisible = True
+                End If
+            Else
+                If _dawnTerminatorVisible Then
+                    If _group.Children.Contains(_dawnZoneGeo) Then _group.Children.Remove(_dawnZoneGeo)
+                    _dawnTerminatorVisible = False
+                End If
             End If
         End If
     End Sub
@@ -1565,6 +1698,7 @@ Public Class GlobePreviewViewModel
         'Sonnen-Marker deaktivieren
         ShowSubsolarMarker = False
         ShowDayNightTerminator = False
+        ShowDawnZone = False
 
         SunDirection = New Vector3D(-0.6, -0.3, -1)     'Default Sonne wiederherstellen
         AmbientLightColor = Color.FromRgb(100, 100, 100)
@@ -1623,8 +1757,10 @@ Public Class GlobePreviewViewModel
 
                 'Marker/Terminator aus Subsolar-Lat/Lon ist hier ok
                 SolarDeclinationDeg = dec
-                UpdateSubsolarMarker()
-                UpdateDayNightTerminator()
+
+                If ShowSubsolarMarker Then UpdateSubsolarMarker()
+                If ShowDayNightTerminator Then UpdateDayNightTerminator()
+                If ShowDawnZone Then UpdateDawnZone()
 
             Case GlobeFrameMode.RotatingEarth       'Erde rotiert: Spin = (GMST - GMST0)
 
@@ -1645,8 +1781,10 @@ Public Class GlobePreviewViewModel
 
                 'In RotatingEarth muss der Marker aus der echten Sonnenrichtung im Body kommen:
                 '-> Body-Sun = inverse(globeTransform) * (Earth->Sun in World)
-                UpdateSubsolarMarkerFromSun()
-                UpdateDayNightTerminator()
+                If ShowSubsolarMarker Then UpdateSubsolarMarkerFromSun()
+                If ShowDayNightTerminator Then UpdateDayNightTerminator()
+                If ShowDawnZone Then UpdateDawnZone()
+
         End Select
 
         'Hover live aktualisieren
@@ -1842,6 +1980,7 @@ Public Class GlobePreviewViewModel
         HoverDayLengthText = ""
         HoverNightLengthText = ""
     End Sub
+
 #End Region
 
 End Class

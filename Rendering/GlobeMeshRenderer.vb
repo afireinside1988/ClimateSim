@@ -292,6 +292,33 @@ Public NotInheritable Class GlobeMeshRenderer
         Return gm
     End Function
 
+    Public Shared Function RenderDawnModel() As GeometryModel3D
+
+        'Material: Emissive mit weichem Alpha-Band (0->max->o)
+        Dim lg As New LinearGradientBrush()
+        lg.StartPoint = New Point(0, 0)
+        lg.EndPoint = New Point(0, 1)
+        lg.GradientStops.Add(New GradientStop(Color.FromArgb(0, 120, 170, 255), 0.0))
+        lg.GradientStops.Add(New GradientStop(Color.FromArgb(80, 120, 170, 255), 0.15))   'Peak-Alpha
+        lg.GradientStops.Add(New GradientStop(Color.FromArgb(0, 120, 170, 255), 1.0))
+        lg.Freeze()
+
+        Dim mat As New EmissiveMaterial(lg)
+        If mat.CanFreeze Then mat.Freeze()
+
+        Dim mesh As New MeshGeometry3D()
+        If mesh.CanFreeze Then mesh.Freeze()
+
+        Dim gm As New GeometryModel3D With {
+            .Geometry = mesh,
+            .Material = mat,
+            .BackMaterial = mat
+        }
+
+        Return gm
+
+    End Function
+
 #End Region
 
 #Region "Resampling"
