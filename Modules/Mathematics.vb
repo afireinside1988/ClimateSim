@@ -43,4 +43,12 @@
         Return deg
     End Function
 
+    Public Sub SplitDayMinutes(totalMinutes As Integer, ByRef hh As Integer, ByRef mm As Integer)
+
+        totalMinutes = Clamp(totalMinutes, 0, 1440)
+
+        hh = totalMinutes \ 60
+        mm = totalMinutes Mod 60
+    End Sub
+
 End Module

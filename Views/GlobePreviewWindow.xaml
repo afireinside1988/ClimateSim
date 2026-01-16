@@ -15,7 +15,7 @@
         <local:GlobeMeshResolutionTickToStringConverter x:Key="MeshTickToString"/>
 
         <Style x:Key="IconButtonStyle" TargetType="Button">
-            <Setter Property="Width" Value="30"/>
+            <Setter Property="Width" Value="25"/>
             <Setter Property="Height" Value="25"/>
             <Setter Property="Padding" Value="1"/>
             <Setter Property="Margin" Value="0,0,2,0"/>
@@ -203,6 +203,36 @@
                                FontFamily="Consolas" VerticalAlignment="Bottom"
                                Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"
                                Text="{Binding HoverNightLengthText}"/>
+                    <Grid Grid.Row="2" Grid.Column="3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto" MinWidth="120"/>
+                            <ColumnDefinition Width="Auto" MinWidth="120"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Margin="0,0,10,0"
+                                   Opacity="0.75"
+                                   Text="tägliche Insolation:"/>
+                        <TextBlock Grid.Column="1"
+                                   Margin="0,0,5,0"
+                                   FontFamily="Consolas" VerticalAlignment="Bottom"
+                                   Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"
+                                   Text="{Binding HoverInsolationMeanText}"
+                                   ToolTip="Durchschnittliche Insolation"/>
+                        <TextBlock Grid.Column="2"
+                                   Margin="0,0,5,0"
+                                   FontFamily="Consolas" VerticalAlignment="Bottom"
+                                   Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"
+                                   Text="{Binding HoverInsolationEnergyText}"
+                                   ToolTip="Tägliche Insolationsenergie (Klicken zum Umschalten MJ ↔ kWh)">
+                            <TextBlock.InputBindings>
+                                <MouseBinding MouseAction="LeftClick"
+                                              Command="{Binding ToggleInsolationUnitCommand}"/>
+                            </TextBlock.InputBindings>
+                        </TextBlock>
+                    </Grid>
                 </Grid>
             </Border>
 
@@ -211,8 +241,8 @@
         <!-- Rechts: Einstellungen -->
         <ScrollViewer Grid.Column="1"
                       Margin="12,0,0,0"
-                      Padding="0,0,5,0"
-                      VerticalScrollBarVisibility="Auto">
+                      VerticalScrollBarVisibility="Visible"
+                      HorizontalScrollBarVisibility="Disabled">
 
             <StackPanel>
                 <TextBlock Text="Globus-Einstellungen" FontSize="16" FontWeight="Bold"
@@ -320,7 +350,7 @@
                                    Margin="0,0,8,0"
                                    Text="Überhöhung:"/>
                         <TextBlock Grid.Row="4" Grid.Column="1"
-                                   Text="{Binding ElementName=SldExaggeration, Path=Value}"
+                                   Text="{Binding ElementName=SldExaggeration, Path=Value, StringFormat={}{0}x}"
                                    TextAlignment="Left" FontFamily="Consolas" VerticalAlignment="Bottom"/>
 
                         <TextBlock Grid.Row="6" Grid.Column="0"
@@ -348,7 +378,7 @@
                 </GroupBox>
 
                 <!-- Animation -->
-                <GroupBox Header="Animation" Margin="8">
+                <GroupBox Header="Simulation" Margin="8">
                     <Grid Margin="8">
                         <Grid.RowDefinitions>
                             <RowDefinition/>
@@ -362,7 +392,7 @@
                             <CheckBox Content="Erdrotation" HorizontalAlignment="Left"
                                   IsChecked="{Binding IsEarthRotationEnabled, Mode=TwoWay}"/>
                             <Button Style="{StaticResource IconButtonStyle}" HorizontalAlignment="Right"
-                                    Margin="3,0,0,0"
+                                    Margin="3,0,0,0" Width="30"
                                     ToolTip="UTC-Zeit der Simulation festlegen"
                                     Command="{Binding SetSimulationUtcCommand}"
                                     IsEnabled="{Binding IsEarthRotationEnabled}">
@@ -378,11 +408,21 @@
                                        FontFamily="Consolas" VerticalAlignment="Bottom"/>
                         </StackPanel>
 
-                        <Slider Grid.Row="2" Margin="0,6,0,0"
-                                Minimum="-6" Maximum="6" TickFrequency="1"
+                        <Grid Grid.Row="2" Margin="0,6,0,0">
+                            <Border Width="1" Height="14"
+                                    Background="#FF000000"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,0,0,2"
+                                    IsHitTestVisible="False"/>
+                            <Slider Minimum="-7" Maximum="7"
+                                TickFrequency="1" SmallChange="1" LargeChange="1"
                                 IsSnapToTickEnabled="True"
                                 Value="{Binding AnimationSpeedTick, Mode=TwoWay}"
                                 IsEnabled="{Binding IsEarthRotationEnabled}"/>
+                            
+                        </Grid>
+                        
 
                         <StackPanel Grid.Row="3" Margin="0,12,0,0">
                             <CheckBox Content="Zenit-Marker" Margin="0,0,0,3"
@@ -413,9 +453,6 @@
                                 <RowDefinition/>
                                 <RowDefinition/>
                                 <RowDefinition/>
-                                <RowDefinition/>
-                                <RowDefinition/>
-                                <RowDefinition/>
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -428,58 +465,164 @@
                                        Text="{Binding SimulationUtcText}" FontFamily="Consolas"
                                        Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
 
-
-                            <TextBlock Grid.Row="1" Grid.Column="0"
+                            <TextBlock Grid.Row="1" Grid.Column="0" 
                                        Margin="0,8,0,0"
-                                       Text="Solare Deklination:"
-                                       ToolTip="Winkel der Sonne relativ zur Äquatorebene der Erde (in Grad)"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1"
-                                       Margin="8,0,0,0" VerticalAlignment="Bottom"
-                                       Text="{Binding SolarDeclinationText}" FontFamily="Consolas"
-                                       ToolTip="Winkel der Sonne relativ zur Äquatorebene der Erde (in Grad)"
-                                       Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+                                       Text="Astronomische Daten" FontWeight="SemiBold"/>
+                            <Button Grid.Row="1" Grid.Column="1" HorizontalAlignment="Right"
+                                    Height="16" Width="16" VerticalAlignment="Bottom"
+                                    Style="{StaticResource IconButtonStyle}"
+                                    IsEnabled="{Binding IsEarthRotationEnabled}"
+                                    Command="{Binding ToggleAstroExpandedCommand}">
+                                <Image SnapsToDevicePixels="True"
+                                       Stretch="Uniform"
+                                       RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                       Width="16" Height="16"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Image.Style>
+                                        <Style TargetType="Image">
+                                            <Setter Property="Source" Value="/Assets/Icons/ArrowUp.png"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsAstroExpanded}" Value="False">
+                                                    <Setter Property="Source" Value="/Assets/Icons/ArrowDown.png"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Image.Style>
+                                </Image>
+                            </Button>
 
-                            <TextBlock Grid.Row="2" Grid.Column="0"
-                                       Margin="0,4,0,0"
-                                       Text="Subsolarpunkt (Zenit):"
-                                       ToolTip="Ort, an dem Sonne senkrecht steht"/>
-                            <TextBlock Grid.Row="2" Grid.Column="1"
-                                       Margin="8,0,0,0" VerticalAlignment="Bottom"
-                                       Text="{Binding SubsolarText}" FontFamily="Consolas"
-                                       ToolTip="Ort, an dem Sonne senkrecht steht"
-                                       Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+                            <Border Grid.Row="2" Grid.ColumnSpan="2"
+                                    Margin="0,6,0,0"
+                                    Background="#00000000"
+                                    ClipToBounds="True">
 
-                            <TextBlock Grid.Row="3" Grid.Column="0"
-                                       Margin="0,4,0,0"
-                                       Text="Rektaszension (Sonne):"
-                                       ToolTip="Himmelslängengrad der Sonne im Äquatorsystem"/>
-                            <TextBlock Grid.Row="3" Grid.Column="1"
-                                       Margin="8,0,0,0" VerticalAlignment="Bottom"
-                                       Text="{Binding SunRaText}" FontFamily="Consolas"
-                                       ToolTip="Himmelslängengrad der Sonne im Äquatorsystem"
-                                       Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Opacity" Value="1"/>
+                                        <Setter Property="MaxHeight" Value="240"/>
+                                        <Style.Triggers>
 
-                            <TextBlock Grid.Row="4" Grid.Column="0"
-                                       Margin="0,4,0,0"
-                                       Text="GMST:"
-                                       ToolTip="Rotationswinkel der Erde relativ zu den Fixsternen (in Relation zu Greenwich)"/>
-                            <TextBlock Grid.Row="4" Grid.Column="1"
-                                       Margin="8,0,0,0" VerticalAlignment="Bottom"
-                                       Text="{Binding GmstText}" FontFamily="Consolas"
-                                       ToolTip="Rotationswinkel der Erde relativ zu den Fixsternen (in Relation zu Greenwich)"
-                                       Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+                                            <!-- Wenn Erdrotation aus: einklappen -->
+                                            <DataTrigger Binding="{Binding IsEarthRotationEnabled}" Value="False">
+                                                <DataTrigger.EnterActions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                             To="0" Duration="0:0:0.10"/>
+                                                            <DoubleAnimation Storyboard.TargetProperty="MaxHeight"
+                                                                             To="0" Duration="0:0:0.18">
+                                                                <DoubleAnimation.EasingFunction>
+                                                                    <QuadraticEase EasingMode="EaseIn"/>
+                                                                </DoubleAnimation.EasingFunction>
+                                                            </DoubleAnimation>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </DataTrigger.EnterActions>
+                                                <Setter Property="IsHitTestVisible" Value="False"/>
+                                            </DataTrigger>
 
-                            <TextBlock Grid.Row="5" Grid.Column="0"
-                                       Margin="0,4,0,0"
-                                       Text="Zeitabweichung:"
-                                       ToolTip="Differenz zwischen Sonnenzeit und mittlerer Uhrzeit (UTC)"/>
-                            <TextBlock Grid.Row="5" Grid.Column="1"
-                                       Margin="8,0,0,0" VerticalAlignment="Bottom"
-                                       Text="{Binding EquationOfTimeText}" FontFamily="Consolas"
-                                       ToolTip="Differenz zwischen Sonnenzeit und mittlerer Uhrzeit (UTC)"
-                                       Visibility="{Binding IsEarthRotationEnabled, Converter={StaticResource BoolToVis}}"/>
+                                            <!-- Collapse-Animation -->
+                                            <DataTrigger Binding="{Binding IsAstroExpanded}" Value="False">
+                                                <DataTrigger.EnterActions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                             To="0" Duration="0:0:0.10"/>
+                                                            <DoubleAnimation Storyboard.TargetProperty="MaxHeight"
+                                                                             To="0" Duration="0:0:0.18">
+                                                                <DoubleAnimation.EasingFunction>
+                                                                    <QuadraticEase EasingMode="EaseIn"/>
+                                                                </DoubleAnimation.EasingFunction>
+                                                            </DoubleAnimation>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </DataTrigger.EnterActions>
+
+                                                <DataTrigger.ExitActions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                             To="1" Duration="0:0:0.10"/>
+                                                            <DoubleAnimation Storyboard.TargetProperty="MaxHeight"
+                                                                             To="240" Duration="0:0:0.18">
+                                                                <DoubleAnimation.EasingFunction>
+                                                                    <QuadraticEase EasingMode="EaseOut"/>
+                                                                </DoubleAnimation.EasingFunction>
+                                                            </DoubleAnimation>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </DataTrigger.ExitActions>
+                                                <Setter Property="IsHitTestVisible" Value="False"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Solare Deklination -->
+                                    <TextBlock Grid.Row="0" Grid.Column="0"
+                                               Margin="0,6,0,0"
+                                               Text="Solare Deklination:"
+                                               ToolTip="Winkel der Sonne relativ zur Äquatorebene der Erde (in Grad)"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1"
+                                               Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                               Text="{Binding SolarDeclinationText}" FontFamily="Consolas"
+                                               ToolTip="Winkel der Sonne relativ zur Äquatorebene der Erde (in Grad)"/>
+
+                                    <!-- Subsolarpunkt -->
+                                    <TextBlock Grid.Row="1" Grid.Column="0"
+                                               Margin="0,4,0,0"
+                                               Text="Subsolarpunkt (Zenit):"
+                                               ToolTip="Ort, an dem Sonne senkrecht steht"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1"
+                                               Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                               Text="{Binding SubsolarText}" FontFamily="Consolas"
+                                               ToolTip="Ort, an dem Sonne senkrecht steht"/>
+
+                                    <!-- RA -->
+                                    <TextBlock Grid.Row="2" Grid.Column="0"
+                                               Margin="0,4,0,0"
+                                               Text="Rektaszension (Sonne):"
+                                               ToolTip="Himmelslängengrad der Sonne im Äquatorsystem"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1"
+                                               Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                               Text="{Binding SunRaText}" FontFamily="Consolas"
+                                               ToolTip="Himmelslängengrad der Sonne im Äquatorsystem"/>
+
+                                    <!-- GMST -->
+                                    <TextBlock Grid.Row="3" Grid.Column="0"
+                                               Margin="0,4,0,0"
+                                               Text="GMST:"
+                                               ToolTip="Rotationswinkel der Erde relativ zu den Fixsternen (in Relation zu Greenwich)"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="1"
+                                               Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                               Text="{Binding GmstText}" FontFamily="Consolas"
+                                               ToolTip="Rotationswinkel der Erde relativ zu den Fixsternen (in Relation zu Greenwich)"/>
+
+                                    <!-- EoT -->
+                                    <TextBlock Grid.Row="6" Grid.Column="0"
+                                               Margin="0,4,0,0"
+                                               Text="Zeitabweichung:"
+                                               ToolTip="Differenz zwischen Sonnenzeit und mittlerer Uhrzeit (UTC)"/>
+                                    <TextBlock Grid.Row="6" Grid.Column="1"
+                                               Margin="8,0,0,0" VerticalAlignment="Bottom"
+                                               Text="{Binding EquationOfTimeText}" FontFamily="Consolas"
+                                               ToolTip="Differenz zwischen Sonnenzeit und mittlerer Uhrzeit (UTC)"/>
+                                </Grid>
+                            </Border>
                         </Grid>
-
                     </Grid>
                 </GroupBox>
 

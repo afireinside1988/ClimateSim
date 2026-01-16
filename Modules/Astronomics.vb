@@ -2,6 +2,8 @@
 
 Module Astronomics
 
+    Private Const SecondsPerDay As Double = 86400.0
+
     ''' <summary>
     ''' Errechnet aus der UTC das julianische Datum
     ''' </summary>
@@ -141,7 +143,6 @@ Module Astronomics
         Return v
     End Function
 
-
     Public Sub ComputeSunHeightAzimuthAtPoint(latDeg As Double, lonDeg As Double, subsolarLatDeg As Double, subsolarLonDeg As Double, ByRef sunHeightDeg As Double, ByRef sunAzimuthDeg As Double)
 
         'Sonnenrichtung im Body-Space (Erde->Sonne) aus dem Subsolar-Punkt
@@ -224,11 +225,97 @@ Module Astronomics
         nightMinutes = 1440 - dayMinutes
     End Sub
 
-    Public Sub SplitDayMinutes(totalMinutes As Integer, ByRef hh As Integer, ByRef mm As Integer)
 
-        totalMinutes = Clamp(totalMinutes, 0, 1440)
+    ''' <summary>
+    ''' Erde-Sonne Distanz-Faktor  f=1AE/r^2
+    ''' </summary>
+    ''' <param name="jd">Julianisches Datum</param>
+    Public Function EarthSunDistanceFactor(jd As Double) As Double
 
-        hh = totalMinutes \ 60
-        mm = totalMinutes Mod 60
+        Dim T As Double = (jd - 2451545.0) / 36525.0
+
+        'Mittlere Anomalie (deg)
+        Dim M As Double = 357.52911 + 35999.05029 * T - 0.0001537 * T * T
+        M = Wrap360(M)
+        Dim Mrad As Double = DegToRad(M)
+
+        'Exzentrizität
+        Dim e As Double = 0.016708634 - 0.000042037 * T - 0.0000001267 * T * T
+
+        'Mittelpunktgleichung (deg)
+        Dim C As Double =
+            (1.914602 - 0.004817 * T - 0.000014 * T * T) * Math.Sin(Mrad) +
+            (0.019993 - 0.000101 * T) * Math.Sin(2 * Mrad) +
+            0.000289 * Math.Sin(3 * Mrad)
+
+        'Wahre Anomalie näherungsweise: nu ≈ M + C
+        Dim nu As Double = DegToRad(M + C)
+
+        'Radius in AE
+        Dim r As Double = (1.0 - e * e) / (1.0 + e * Math.Cos(nu))
+
+        If r <= 0.0 Then Return 1.0
+
+        'Distanzfaktor = 1/r^2
+        Return 1.0 / (r * r)
+    End Function
+
+    ''' <summary>
+    ''' Tagesgemittelte solare Einstrahlung am TOA (W/m²) für gegebene Breite und solare Deklination
+    ''' </summary>
+    Public Function ComputeDailyMeanInsolationTOA(latDeg As Double, declDeg As Double, Optional distanceFactor As Double = 1.0) As Double
+
+        Dim meanWm2 As Double, energyJm2 As Double
+        ComputeDailyInsolationTOA(latDeg, declDeg, distanceFactor, meanWm2, energyJm2)
+        Return meanWm2
+    End Function
+
+    ''' <summary>
+    ''' Tägliche Insolationsenergie am TOA (J/m²/Tag) für gegebene Breite und solare Deklination
+    ''' </summary>
+    Public Function ComputeDailyEnergyInsolationTOA(latDeg As Double, declDeg As Double, Optional distanceFactor As Double = 1.0) As Double
+
+        Dim meanWm2 As Double, energyJm2 As Double
+        ComputeDailyInsolationTOA(latDeg, declDeg, distanceFactor, meanWm2, energyJm2)
+        Return energyJm2
+    End Function
+
+    ''' <summary>
+    ''' Liefert Tagesmittel (W/m²) und Tagesenergie (J/m²/Tag) am TOA.
+    ''' </summary>
+    Public Sub ComputeDailyInsolationTOA(latDeg As Double, declDeg As Double, distanceFactor As Double,
+                                         ByRef dailyMeanWm2 As Double,
+                                         ByRef dailyEnergyJm2 As Double)
+
+        Dim phi As Double = DegToRad(latDeg)
+        Dim delta As Double = DegToRad(declDeg)
+
+        Dim cosH0 As Double = -Math.Tan(phi) * Math.Tan(delta)
+
+        Dim H0 As Double
+        If cosH0 <= -1.0 Then       'Polartag
+            H0 = Math.PI
+        ElseIf cosH0 >= 1.0 Then    'Polarnacht
+            dailyMeanWm2 = 0.0
+            dailyEnergyJm2 = 0.0
+            Return
+        Else
+            H0 = Math.Acos(Clamp(cosH0, -1.0, 1.0))
+        End If
+
+        Dim sinPhi As Double = Math.Sin(phi)
+        Dim cosPhi As Double = Math.Cos(phi)
+        Dim sinDel As Double = Math.Sin(delta)
+        Dim cosDel As Double = Math.Cos(delta)
+
+        Dim Q As Double =
+            (ClimateConstants.SolarConstantWm2 * distanceFactor / Math.PI) *
+            (H0 * sinPhi * sinDel + cosPhi * cosDel * Math.Sin(H0))
+
+        If Q < 0.0 Then Q = 0.0
+
+        dailyMeanWm2 = Q
+        dailyEnergyJm2 = Q * SecondsPerDay
+
     End Sub
 End Module

@@ -226,11 +226,11 @@ Public Class ClimateModel2D
             yearFraction -= Math.Floor(yearFraction)
         End If
 
-        Dim dayOfYear As Double = yearFraction * ClimateConstants.DaysPerYear
+        Dim dayOfYear As Double = yearFraction * ClimateConstants.ExactDaysPerYear
 
         '2) --- Solare Deklination δ(N) ---
         ' δ ≈ ε * sin( 2π * (N + 284) / 365 )
-        Dim gamma As Double = 2.0 * Math.PI * (dayOfYear + 284.0) / DaysPerYear
+        Dim gamma As Double = 2.0 * Math.PI * (dayOfYear + 284.0) / ExactDaysPerYear
         Dim decl As Double = ClimateConstants.EarthObliquityRad * Math.Sin(gamma)
 
         '3) --- Breite in Radiant ---

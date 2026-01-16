@@ -658,6 +658,10 @@ Public Class GlobePreviewViewModel
     Public Event RequestSetUtc As EventHandler
     Public ReadOnly Property SetSimulationUtcCommand As ICommand
 
+    Public ReadOnly Property ToggleAstroExpandedCommand As ICommand
+    Public ReadOnly Property ToggleInsolationUnitCommand As ICommand
+
+
     Private Sub BeginRotate(r As PanRequest)
 
         _isDragging = True
@@ -753,7 +757,6 @@ Public Class GlobePreviewViewModel
 
 #End Region
 
-
     Public Sub New(payload As GlobePreviewPayload)
 
         _p = payload
@@ -775,6 +778,9 @@ Public Class GlobePreviewViewModel
         ClearCacheCommand = New RelayCommand(Of Object)(Sub(o) ClearCache())
 
         SetSimulationUtcCommand = New RelayCommand(Of Object)(Sub(o) RaiseEvent RequestSetUtc(Me, EventArgs.Empty))
+
+        ToggleAstroExpandedCommand = New RelayCommand(Of Object)(Sub(o) IsAstroExpanded = Not IsAstroExpanded)
+        ToggleInsolationUnitCommand = New RelayCommand(Of Object)(Sub(o) HoverInsolationUseKwh = Not HoverInsolationUseKwh)
 
         'Defaults setzen:
         _selectedBaseLayer = If(_p?.Topo IsNot Nothing, GlobeBaseLayer.Topo,
@@ -1215,8 +1221,19 @@ Public Class GlobePreviewViewModel
                     StartAnimation()
                 Else
                     StopAnimation()
+                    IsAstroExpanded = False
                 End If
             End If
+        End Set
+    End Property
+
+    Private _isAstroExpanded As Boolean = False
+    Public Property IsAstroExpanded As Boolean
+        Get
+            Return _isAstroExpanded
+        End Get
+        Set(value As Boolean)
+            SetProperty(_isAstroExpanded, value)
         End Set
     End Property
 
@@ -1257,13 +1274,13 @@ Public Class GlobePreviewViewModel
         End Set
     End Property
 
-    Private _animationSpeedTick As Integer = 2
+    Private _animationSpeedTick As Integer = 3
     Public Property AnimationSpeedTick As Integer
         Get
             Return _animationSpeedTick
         End Get
         Set(value As Integer)
-            value = Clamp(value, -6, 6)
+            value = Clamp(value, -7, 7)
             If SetProperty(_animationSpeedTick, value) Then
                 OnPropertyChanged(NameOf(AnimationSpeedText))
             End If
@@ -1272,10 +1289,11 @@ Public Class GlobePreviewViewModel
 
     Public ReadOnly Property AnimationSpeedText As String
         Get
-            Dim absTick As Integer = Math.Abs(_animationSpeedTick)
-            Dim f As Double = Math.Pow(10, absTick)          '10er-Potenz als Faktor
+            If _animationSpeedTick = 0 Then Return "Pause"
+
+            Dim fAbs As Double = Math.Abs(SpeedMultiplierFromTick(_animationSpeedTick))
             Dim dir As String = If(_animationSpeedTick < 0, "-", "")
-            Return dir & f.ToString("N0", CultureInfo.CurrentCulture) & " x"
+            Return dir & fAbs.ToString("N0", CultureInfo.CurrentCulture) & "x"
         End Get
     End Property
 
@@ -1350,7 +1368,7 @@ Public Class GlobePreviewViewModel
         End Set
     End Property
 
-    Private _ambientLightColor As Color = Color.FromRgb(100, 100, 100)
+    Private _ambientLightColor As Color = Color.FromRgb(255, 255, 255)
     Public Property AmbientLightColor As Color
         Get
             Return _ambientLightColor
@@ -1706,7 +1724,7 @@ Public Class GlobePreviewViewModel
         ShowDawnZone = False
 
         SunDirection = New Vector3D(-0.6, -0.3, -1)     'Default Sonne wiederherstellen
-        AmbientLightColor = Color.FromRgb(100, 100, 100)
+        AmbientLightColor = Color.FromRgb(255, 255, 255)
         SolarDeclinationDeg = 0.0
         OnPropertyChanged(NameOf(SolarDeclinationText))
     End Sub
@@ -1720,9 +1738,7 @@ Public Class GlobePreviewViewModel
         _lastFrameTicks = nowTicks
 
         'Zeitbasis: 1s real = 1s Simulation * 10^tick
-        Dim speedFactor As Double = Math.Pow(10, Math.Abs(AnimationSpeedTick))
-        Dim dirSign As Double = If(AnimationSpeedTick < 0, -1.0, 1.0)
-        Dim simSeconds As Double = dtReal * speedFactor * dirSign
+        Dim simSeconds As Double = dtReal * SpeedMultiplierFromTick(AnimationSpeedTick)
 
         'Zeitberechnung
         _simSecondsTotal += simSeconds
@@ -1827,6 +1843,16 @@ Public Class GlobePreviewViewModel
         _lastFrameTicks = Stopwatch.GetTimestamp()
     End Sub
 
+    Private Shared Function SpeedMultiplierFromTick(tick As Integer) As Double
+        If tick = 0 Then Return 0.0
+
+        Dim pow As Integer = Math.Abs(tick) - 1
+        Dim f As Double = Math.Pow(10.0, pow)
+
+        If tick < 0 Then f = -f
+        Return f
+    End Function
+
 #End Region
 
 #Region "RayCast & Hover"
@@ -1909,6 +1935,40 @@ Public Class GlobePreviewViewModel
         End Set
     End Property
 
+    Private _hoverInsolationMeanText As String
+    Public Property HoverInsolationMeanText As String
+        Get
+            Return _hoverInsolationMeanText
+        End Get
+        Set(value As String)
+            SetProperty(_hoverInsolationMeanText, value)
+        End Set
+    End Property
+
+    Private _hoverInsolationEnergyText As String
+    Public Property HoverInsolationEnergyText As String
+        Get
+            Return _hoverInsolationEnergyText
+        End Get
+        Set(value As String)
+            SetProperty(_hoverInsolationEnergyText, value)
+        End Set
+    End Property
+
+    Private _hoverInsolationUseKwh As Boolean = False
+    Public Property HoverInsolationUseKwh As Boolean
+        Get
+            Return _hoverInsolationUseKwh
+        End Get
+        Set(value As Boolean)
+            If SetProperty(_hoverInsolationUseKwh, value) Then
+                If _lastMouseInViewport Then
+                    UpdateHoverFromScreenPoint(_lastMousePos)
+                End If
+            End If
+        End Set
+    End Property
+
     Private Sub UpdateHoverFromWorldHit(hitWorld As Point3D)
 
         If _animTransform Is Nothing Then Return
@@ -1947,8 +2007,8 @@ Public Class GlobePreviewViewModel
         Dim dayHours As Integer, dayMinutes As Integer
         Dim nightHours As Integer, nightMinutes As Integer
 
-        Astronomics.SplitDayMinutes(dayLength, dayHours, dayMinutes)
-        Astronomics.SplitDayMinutes(nightLength, nightHours, nightMinutes)
+        Mathematics.SplitDayMinutes(dayLength, dayHours, dayMinutes)
+        Mathematics.SplitDayMinutes(nightLength, nightHours, nightMinutes)
 
         HoverDayLengthText = $"Tag: {dayHours:00}:{dayMinutes:00}h"
         HoverNightLengthText = $"Nacht: {nightHours:00}:{nightMinutes:00}h"
@@ -1961,6 +2021,29 @@ Public Class GlobePreviewViewModel
 
         HoverSunHeightText = $"Höhe: {sunH:+00.0;-00.0;00.0}°"
         HoverSunAzimuthText = $"Azimut: {sunAz:000.0}°"
+
+        '4) TOA Insolation
+        Dim jd As Double = 0.0
+        If SimulationUtc <> DateTime.MinValue Then
+            jd = Astronomics.JulianDateUtc(SimulationUtc)
+        Else
+            jd = Astronomics.JulianDateUtc(DateTime.UtcNow)
+        End If
+
+        Dim distF As Double = Astronomics.EarthSunDistanceFactor(jd)
+
+        Dim meanWm2 As Double, energyJm2 As Double
+        Astronomics.ComputeDailyInsolationTOA(latDeg, SolarDeclinationDeg, distF, meanWm2, energyJm2)
+
+        HoverInsolationMeanText = $"TOA: {meanWm2:0.0} W/m²"
+
+        If Not HoverInsolationUseKwh Then
+            Dim mj As Double = energyJm2 / 1000000.0
+            HoverInsolationEnergyText = $"E: {mj:0.0} MJ/m²·d"
+        Else
+            Dim kwh As Double = energyJm2 / 3600000.0
+            HoverInsolationEnergyText = $"E: {kwh:0.00} kWh/m²·d"
+        End If
     End Sub
 
     Private Sub UpdateHoverFromScreenPoint(p As Point)
@@ -2004,6 +2087,8 @@ Public Class GlobePreviewViewModel
         HoverSunAzimuthText = ""
         HoverDayLengthText = ""
         HoverNightLengthText = ""
+        HoverInsolationEnergyText = ""
+        HoverInsolationMeanText = ""
     End Sub
 
 #End Region
