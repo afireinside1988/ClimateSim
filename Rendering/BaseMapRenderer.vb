@@ -113,7 +113,7 @@ Public Class BaseMapRenderer
 
                     Dim xNorm As Double = (x + 0.5) / width
                     Dim lon As Double = camera.CenterLon + (xNorm - 0.5) * camera.SpanLon
-                    lon = WrapLon180(lon)
+                    lon = Wrap180(lon)
 
                     'Cache-basiertes Sampling (Zellindex) – keine Provider-Abhängigkeit
                     Dim c As Color = SampleBaseColorFromCache(cache, lat, lon)

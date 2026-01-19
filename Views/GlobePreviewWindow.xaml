@@ -115,6 +115,22 @@
                                            HorizontalAlignment="Center"/>
                         </StackPanel>
                     </Border>
+                    
+                    <!-- Beobachter-Modus-Overlay über dem Viewport -->
+                    <Border Background="#00000000"
+                            CornerRadius="6"
+                            Visibility="{Binding IsObserverMode, Converter={StaticResource BoolToVis}}"
+                            IsHitTestVisible="False">
+
+                        <TextBlock HorizontalAlignment="Left" VerticalAlignment="Top"
+                                   Margin="8,0,8,0"
+                                   Foreground="Red"
+                                   Opacity="0.75"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Text="Beobachter-Modus"/>
+
+                    </Border>
                 </Grid>
             </Border>
 
@@ -123,8 +139,19 @@
                     Padding="8,6"
                     CornerRadius="6"
                     Background="#22000000"
-                    BorderThickness="2"
-                    BorderBrush="#00000000">
+                    BorderThickness="2">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="BorderBrush" Value="#00000000"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsObserverMode}" Value="True">
+                                <Setter Property="BorderBrush" Value="#E53635"/>
+                                <Setter Property="BorderThickness" Value="2"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -151,6 +178,15 @@
                                FontFamily="Consolas" VerticalAlignment="Bottom"
                                Margin="0,0,5,2"
                                Text="{Binding HoverLonText}"/>
+
+                    <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="3"
+                            Margin="0,0,0,0"
+                            Padding="3"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Content="Beobachter entfernen"
+                            Command="{Binding ClearObserverCommand}"
+                            Visibility="{Binding IsObserverMode, Converter={StaticResource BoolToVis}}"/>
 
                     <!-- Zeile 2: Sonnenstand -->
                     <TextBlock Grid.Row="1" Grid.Column="0"

@@ -4,6 +4,32 @@ Module Astronomics
 
     Private Const SecondsPerDay As Double = 86400.0
 
+    Public Structure SolarContext
+
+        Public Jd As Double
+        Public T As Double
+
+        Public L0Deg As Double
+        Public MDeg As Double
+        Public MRad As Double
+
+        Public Ecc As Double            'e
+        Public EpsDeg As Double         'ε (Obliquity)
+        Public EpsRad As Double
+
+        Public CDeg As Double
+
+        Public LambdaDeg As Double
+        Public LambdaRad As Double
+
+        Public NuRad As Double
+        Public R_AU As Double
+        Public DistFactor As Double     '1/r^2
+
+        Public Y As Double              'tan(ε/2)^2 (für Equation of Time)
+
+    End Structure
+
     ''' <summary>
     ''' Errechnet aus der UTC das julianische Datum
     ''' </summary>
@@ -32,54 +58,72 @@ Module Astronomics
 
     End Function
 
+    Public Function BuildSolarContext(jd As Double) As SolarContext
+
+        Dim ctx As New SolarContext()
+        ctx.Jd = jd
+
+        ctx.T = (jd - 2451545.0) / 36525.0
+
+        'L0, M
+        Dim L0 As Double = 280.46646 + 36000.76983 * ctx.T + 0.0003032 * ctx.T * ctx.T
+        Dim M As Double = 357.52911 + 35999.05029 * ctx.T - 0.0001537 * ctx.T * ctx.T
+
+        ctx.L0Deg = Mathematics.Wrap360(L0)
+        ctx.MDeg = Mathematics.Wrap360(M)
+        ctx.MRad = Mathematics.DegToRad(ctx.MDeg)
+
+        'e, eps
+        ctx.Ecc = 0.016708634 - 0.000042037 * ctx.T - 0.0000001267 * ctx.T * ctx.T
+        ctx.EpsDeg = 23.439291 - 0.0130042 * ctx.T
+        ctx.EpsRad = Mathematics.DegToRad(ctx.EpsDeg)
+
+        'Equation of center C (deg)
+        ctx.CDeg =
+            (1.914602 - 0.004817 * ctx.T - 0.000014 * ctx.T * ctx.T) * Math.Sin(ctx.MRad) +
+            (0.019993 - 0.000101 * ctx.T) * Math.Sin(2 * ctx.MRad) +
+            0.000289 * Math.Sin(3 * ctx.MRad)
+
+        'True ecliptic longitude lambda (deg)
+        ctx.LambdaDeg = Mathematics.Wrap360(ctx.L0Deg + ctx.CDeg)
+        ctx.LambdaRad = Mathematics.DegToRad(ctx.LambdaDeg)
+
+        'y = tan(eps/2)^2  (Equation of Time)
+        Dim t2 As Double = Math.Tan(ctx.EpsRad / 2.0)
+        ctx.Y = t2 * t2
+
+        'True anomaly approx: nu ≈ M + C
+        ctx.NuRad = Mathematics.DegToRad(ctx.MDeg + ctx.CDeg)
+
+        'Distance r in AU
+        ctx.R_AU = (1.0 - ctx.Ecc * ctx.Ecc) / (1.0 + ctx.Ecc * Math.Cos(ctx.NuRad))
+        If ctx.R_AU <= 0.0 Then ctx.R_AU = 1.0
+
+        ctx.DistFactor = 1.0 / (ctx.R_AU * ctx.R_AU)
+
+        Return ctx
+
+    End Function
+
     ''' <summary>
-    ''' Errechnet aus dem julianischen Datum die Rektaszension und Deklination der Sonne
+    ''' Errechnet die Rektaszension und Deklination der Sonne
     ''' </summary>
-    Public Function SunRaDecDeg(jd As Double, ByRef raDeg As Double, ByRef decDeg As Double) As Boolean
-        'Sehr gängige Näherung: mittlere Länge + Gleichung des Zentrums (genug für Tag/Nacht)
-        Dim T As Double = (jd - 2451545.0) / 36525.0
+    Public Function SunRaDecDeg(ctx As SolarContext, ByRef raDeg As Double, ByRef decDeg As Double) As Boolean
 
-        'Durchschnittliche Longitude L0 und Anomalie M
-        Dim L0 As Double = 280.46646 + 36000.76983 * T + 0.0003032 * T * T
-        Dim M As Double = 357.52911 + 35999.05029 * T - 0.0001537 * T * T
-
-        L0 = Wrap360(L0)
-        M = Wrap360(M)
-
-        Dim Mrad = DegToRad(M)
-
-        'Mittelpunktgleichung C
-        Dim C As Double =
-            (1.914602 - 0.004817 * T - 0.000014 * T * T) * Math.Sin(Mrad) +
-            (0.019993 - 0.000101 * T) * Math.Sin(2 * Mrad) +
-            0.000289 * Math.Sin(3 * Mrad)
-
-        'Wahre ekliptische Longitude
-        Dim lambda As Double = L0 + C
-        lambda = Wrap360(lambda)
-
-        'Durchschnittliche Neigung + Korrektur
-        Dim eps0 As Double = 23.439291 - 0.0130042 * T
-
-        Dim epsRad As Double = DegToRad(eps0)
-        Dim lamRad As Double = DegToRad(lambda)
-
-        'Ekliptik->Äquatorial
-        Dim sinLam As Double = Math.Sin(lamRad)
-        Dim cosLam As Double = Math.Cos(lamRad)
+        Dim sinLam As Double = Math.Sin(ctx.LambdaRad)
+        Dim cosLam As Double = Math.Cos(ctx.LambdaRad)
 
         Dim x As Double = cosLam
-        Dim y As Double = Math.Cos(epsRad) * sinLam
-        Dim z As Double = Math.Sin(epsRad) * sinLam
+        Dim y As Double = Math.Cos(ctx.EpsRad) * sinLam
+        Dim z As Double = Math.Sin(ctx.EpsRad) * sinLam
 
-        'RA = ATan2(y, x); Dec = ASin(z)
         Dim ra As Double = Math.Atan2(y, x)
-        Dim dec As Double = Math.Asin(Clamp(z, -1.0, 1.0))
+        Dim dec As Double = Math.Asin(Mathematics.Clamp(z, -1.0, 1.0))
 
-        raDeg = Wrap360(RadToDeg(ra))
-        decDeg = RadToDeg(dec)
-
+        raDeg = Mathematics.Wrap360(Mathematics.RadToDeg(ra))
+        decDeg = Mathematics.RadToDeg(dec)
         Return True
+
     End Function
 
     ''' <summary>
@@ -96,34 +140,25 @@ Module Astronomics
              0.000387933 * T * T -
              (T * T * T) / 38710000.0
 
-        Return Wrap360(gmst)
+        Return Mathematics.Wrap360(gmst)
     End Function
 
-    Public Function EquationOfTimeMinutes(jd As Double) As Double
+    Public Function EquationOfTimeMinutes(ctx As SolarContext) As Double
 
-        Dim T As Double = (jd - 2451545.0) / 36525.0
-
-        Dim L0 As Double = Wrap360(280.46646 + 36000.76983 * T + 0.0003032 * T * T)
-        Dim M As Double = Wrap360(357.52911 + 35999.05029 * T - 0.0001537 * T * T)
-
-        Dim e As Double = 0.016708634 - 0.000042037 * T - 0.0000001267 * T * T
-        Dim eps As Double = DegToRad(23.439291 - 0.0130042 * T)
-
-        Dim y As Double = Math.Tan(eps / 2.0)
-        y *= y
-
-        Dim L0r As Double = DegToRad(L0)
-        Dim Mr As Double = DegToRad(M)
+        Dim L0r As Double = Mathematics.DegToRad(ctx.L0Deg)
+        Dim Mr As Double = ctx.MRad
+        Dim e As Double = ctx.Ecc
+        Dim y As Double = ctx.Y
 
         Dim eE As Double =
-        y * Math.Sin(2 * L0r) -
-        2 * e * Math.Sin(Mr) +
-        4 * e * y * Math.Sin(Mr) * Math.Cos(2 * L0r) -
-        0.5 * y * y * Math.Sin(4 * L0r) -
-        1.25 * e * e * Math.Sin(2 * Mr)
+            y * Math.Sin(2 * L0r) -
+            2 * e * Math.Sin(Mr) +
+            4 * e * y * Math.Sin(Mr) * Math.Cos(2 * L0r) -
+            0.5 * y * y * Math.Sin(4 * L0r) -
+            1.25 * e * e * Math.Sin(2 * Mr)
 
         'E in RAD -> Minuten
-        Return RadToDeg(eE) * 4.0
+        Return Mathematics.RadToDeg(eE) * 4.0
 
     End Function
 
@@ -225,39 +260,15 @@ Module Astronomics
         nightMinutes = 1440 - dayMinutes
     End Sub
 
-
     ''' <summary>
     ''' Erde-Sonne Distanz-Faktor  f=1AE/r^2
     ''' </summary>
     ''' <param name="jd">Julianisches Datum</param>
     Public Function EarthSunDistanceFactor(jd As Double) As Double
 
-        Dim T As Double = (jd - 2451545.0) / 36525.0
+        Dim ctx As SolarContext = BuildSolarContext(jd)
+        Return ctx.DistFactor
 
-        'Mittlere Anomalie (deg)
-        Dim M As Double = 357.52911 + 35999.05029 * T - 0.0001537 * T * T
-        M = Wrap360(M)
-        Dim Mrad As Double = DegToRad(M)
-
-        'Exzentrizität
-        Dim e As Double = 0.016708634 - 0.000042037 * T - 0.0000001267 * T * T
-
-        'Mittelpunktgleichung (deg)
-        Dim C As Double =
-            (1.914602 - 0.004817 * T - 0.000014 * T * T) * Math.Sin(Mrad) +
-            (0.019993 - 0.000101 * T) * Math.Sin(2 * Mrad) +
-            0.000289 * Math.Sin(3 * Mrad)
-
-        'Wahre Anomalie näherungsweise: nu ≈ M + C
-        Dim nu As Double = DegToRad(M + C)
-
-        'Radius in AE
-        Dim r As Double = (1.0 - e * e) / (1.0 + e * Math.Cos(nu))
-
-        If r <= 0.0 Then Return 1.0
-
-        'Distanzfaktor = 1/r^2
-        Return 1.0 / (r * r)
     End Function
 
     ''' <summary>
@@ -318,4 +329,5 @@ Module Astronomics
         dailyEnergyJm2 = Q * SecondsPerDay
 
     End Sub
+
 End Module

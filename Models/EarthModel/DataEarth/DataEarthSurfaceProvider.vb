@@ -74,7 +74,7 @@ Public Class DataEarthSurfaceProvider
 
     Public Function GetSurfaceInfo(latitudeDeg As Double, longitudeDeg As Double) As SurfaceInfo Implements IEarthSurfaceProvider.GetSurfaceInfo
         Dim lat As Double = Clamp(latitudeDeg, -90.0, 90.0)
-        Dim lon As Double = WrapLon180(longitudeDeg)
+        Dim lon As Double = Wrap180(longitudeDeg)
 
         'Index aus Zellzentren ableiten
         Dim latIdx As Integer = LatToIndex(lat, _cache.Meta.LatCount, _cache.Meta.CellSizeDeg)

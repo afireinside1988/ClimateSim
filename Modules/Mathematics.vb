@@ -24,12 +24,6 @@
     ''' <summary>
     ''' Wrap auf [-180,+180]
     ''' </summary>
-    Public Function WrapLon180(lonDeg As Double) As Double
-        Dim x As Double = lonDeg
-
-        x = ((x + 180.0) Mod 360.0 + 360.0) Mod 360.0
-        Return x - 180.0
-    End Function
 
     Public Function Wrap360(deg As Double) As Double
         deg = deg Mod 360.0

@@ -10,7 +10,7 @@
         End Get
     End Property
 
-    Public Const ExactSecondsPerDay As Double = 86164.0905          'Exakte Sekunden pro Tag
+    Public Const SideralSecondsPerDay As Double = 86164.0905          'Exakte Sekunden pro Tag
     Public Const ExactDaysPerYear As Double = 365.2422           'Exakte Tage pro Jahr
 
 End Module

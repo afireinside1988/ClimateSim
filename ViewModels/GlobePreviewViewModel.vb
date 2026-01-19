@@ -1,9 +1,5 @@
 ﻿Imports System.Globalization
-Imports System.Net.Security
-Imports System.Reflection.Metadata
-Imports System.Runtime.InteropServices
 Imports System.Threading
-Imports System.Transactions
 Imports System.Windows.Media.Media3D
 
 Public Class GlobePreviewViewModel
@@ -661,6 +657,8 @@ Public Class GlobePreviewViewModel
     Public ReadOnly Property ToggleAstroExpandedCommand As ICommand
     Public ReadOnly Property ToggleInsolationUnitCommand As ICommand
 
+    Public ReadOnly Property ClearObserverCommand As ICommand
+
 
     Private Sub BeginRotate(r As PanRequest)
 
@@ -740,7 +738,27 @@ Public Class GlobePreviewViewModel
     End Sub
 
     Private Sub OnMouseDown(r As MapMouseDownRequest)
-        'später evtl Pick/Info
+
+        If r Is Nothing Then Return
+        If Not r.IsLeftButton Then Return
+        If Not r.Ctrl Then Return
+
+        Dim hitWorld As Point3D
+        If Not TryHitGlobePoint(r.MousePos, hitWorld) Then Return
+
+
+        'Hit -> Lat/Lon
+        Dim latDeg As Double, lonDeg As Double
+        If Not TryWorldHitToLatLon(hitWorld, latDeg, lonDeg) Then Return
+
+        _observerLatDeg = latDeg
+        _observerLonDeg = lonDeg
+        IsObserverMode = True
+
+        'Statusbar sofort auf Observer aktualisieren
+        UpdateObserverPinTransform()
+        UpdateHoverFromObserver()
+
     End Sub
 
     Private Sub OnMouseUp(r As MapMouseUpRequest)
@@ -749,7 +767,9 @@ Public Class GlobePreviewViewModel
 
     Private Sub OnMouseLeave()
         _lastMouseInViewport = False
-        ClearHoverText()
+        If Not IsObserverMode Then
+            ClearHoverText()
+        End If
     End Sub
 
 #Enable Warning IDE0060
@@ -781,6 +801,8 @@ Public Class GlobePreviewViewModel
 
         ToggleAstroExpandedCommand = New RelayCommand(Of Object)(Sub(o) IsAstroExpanded = Not IsAstroExpanded)
         ToggleInsolationUnitCommand = New RelayCommand(Of Object)(Sub(o) HoverInsolationUseKwh = Not HoverInsolationUseKwh)
+
+        ClearObserverCommand = New RelayCommand(Of Object)(Sub(o) ClearObserver())
 
         'Defaults setzen:
         _selectedBaseLayer = If(_p?.Topo IsNot Nothing, GlobeBaseLayer.Topo,
@@ -959,33 +981,6 @@ Public Class GlobePreviewViewModel
 
     End Function
 
-    Private Shared Function CreateAxisModel() As GeometryModel3D
-
-        'Globus-Radius = 1.0 -> Achse soll etwas überstehen
-        Dim protrude As Double = 0.2
-        Dim height As Double = 2.0 * (1.0 + protrude)
-        Dim radius As Double = 0.001
-
-        Dim mesh As MeshGeometry3D = GlobeMeshRenderer.RenderCylinderMeshY(radius, height, segments:=8, cap:=True)
-
-        Dim brush As New SolidColorBrush(Color.FromRgb(255, 255, 255))
-        If brush.CanFreeze Then brush.Freeze()
-
-        Dim mat As New EmissiveMaterial(brush)
-        If mat.CanFreeze Then mat.Freeze()
-
-        Dim gm As New GeometryModel3D With {
-            .Geometry = mesh,
-            .Material = mat,
-            .BackMaterial = mat
-        }
-
-        If gm.CanFreeze Then gm.Freeze()
-
-        Return gm
-
-    End Function
-
     Private Function BuildImageMaterial(img As ImageSource, hq As Boolean, grid As Boolean) As Material
 
         Dim ib As New ImageBrush(img) With {
@@ -1061,8 +1056,8 @@ Public Class GlobePreviewViewModel
 
         _group.Children.Add(_baseGeo)
 
-        'Achse vorbereiten, aber noch nicht hinzufügen
-        _axisGeo = CreateAxisModel()
+        'Pol-Aches vorbereiten
+        _axisGeo = GlobeMeshRenderer.RenderPoleAxisModel()
 
         'Subsolar-Marker vorbereiten
         _subsolarGeo = GlobeMeshRenderer.RenderSubsolarMarkerModel()
@@ -1078,6 +1073,19 @@ Public Class GlobePreviewViewModel
         _dawnZoneGeo = GlobeMeshRenderer.RenderDawnModel()
         _dawnTerminatorVisible = False
 
+        'Observer-Pin vorbereiten
+        _observerGeo = GlobeMeshRenderer.RenderObserverPinModel(ObserverPinRadius, ObserverPinHeight, segments:=12, cap:=True)
+        _observerRot = New QuaternionRotation3D(Media3D.Quaternion.Identity)
+        Dim rotTf As New RotateTransform3D(_observerRot)
+        _observerTf = New TranslateTransform3D(0, 0, 0)
+
+        Dim tg As New Transform3DGroup()
+        tg.Children.Add(rotTf)
+        tg.Children.Add(_observerTf)
+
+        _observerGeo.Transform = tg
+        _observerVisible = False
+
         'Initial die Marker updaten
         UpdateSubsolarMarkerVisibility()
         UpdateDayNightVisibility()
@@ -1090,6 +1098,7 @@ Public Class GlobePreviewViewModel
         Dim tiltTf As New RotateTransform3D(_tiltRot)
 
         _animTransform = New Transform3DGroup
+
         'Wichtig: erst Spin, dann Tilt -> Spin-Achse wird mitgeneigt
         _animTransform.Children.Add(spinTf)
         _animTransform.Children.Add(tiltTf)
@@ -1193,6 +1202,8 @@ Public Class GlobePreviewViewModel
     Private _isAnimating As Boolean
     Private _lastFrameTicks As Long
 
+    Private _solarCtx As Astronomics.SolarContext
+    Private _hasSolarCtx As Boolean
     Private _gmst0Deg As Double
 
     Private _spinRot As AxisAngleRotation3D
@@ -1532,7 +1543,7 @@ Public Class GlobePreviewViewModel
 
             'Band-Offset in Tangentialrichtung ~ s (weil s x p = 0 auf Terminator)
             Dim p1 As Vector3D = New Vector3D(p.X * r + s.X * halfW, p.Y * r + s.Y * halfW, p.Z * r + s.Z * halfW)
-            Dim p2 As Vector3D = New Vector3D(p.X * r - s.X * halfW, p.Y * r + s.Y * halfW, p.Z * r - s.Z * halfW)
+            Dim p2 As Vector3D = New Vector3D(p.X * r - s.X * halfW, p.Y * r - s.Y * halfW, p.Z * r - s.Z * halfW)
 
             pos.Add(New Point3D(p1.X, p1.Y, p1.Z))
             pos.Add(New Point3D(p2.X, p2.Y, p2.Z))
@@ -1696,6 +1707,7 @@ Public Class GlobePreviewViewModel
         _simStartUtc = DateTime.UtcNow
         _simSecondsTotal = 0
         SimulationUtc = _simStartUtc
+        _hasSolarCtx = False
 
         Dim jd0 As Double = Astronomics.JulianDateUtc(SimulationUtc)
         _gmst0Deg = Astronomics.GmstDeg(jd0)
@@ -1711,6 +1723,7 @@ Public Class GlobePreviewViewModel
         If Not _isAnimating Then Return
 
         _isAnimating = False
+        _hasSolarCtx = False
         RemoveHandler CompositionTarget.Rendering, AddressOf OnRenderingFrame
 
         _spinRot.Angle = 0.0
@@ -1746,10 +1759,13 @@ Public Class GlobePreviewViewModel
 
         Dim jd As Double = Astronomics.JulianDateUtc(SimulationUtc)
 
+        _solarCtx = Astronomics.BuildSolarContext(jd)
+        _hasSolarCtx = True
+
         Dim ra As Double, dec As Double
-        Astronomics.SunRaDecDeg(jd, ra, dec)
+        Astronomics.SunRaDecDeg(_solarCtx, ra, dec)
         Dim gmst As Double = Astronomics.GmstDeg(jd)
-        Dim eot As Double = Astronomics.EquationOfTimeMinutes(jd)
+        Dim eot As Double = Astronomics.EquationOfTimeMinutes(_solarCtx)
 
         SunRaDeg = ra
         GmstDeg = gmst
@@ -1817,6 +1833,12 @@ Public Class GlobePreviewViewModel
             End If
         End If
 
+        If IsObserverMode Then
+            UpdateObserverPinVisibility()
+            UpdateHoverFromObserver()
+            UpdateObserverPinTransform()
+        End If
+
     End Sub
 
     Public Sub DisposeAnimation()
@@ -1841,6 +1863,7 @@ Public Class GlobePreviewViewModel
 
         'einmal alles updaten
         _lastFrameTicks = Stopwatch.GetTimestamp()
+        _hasSolarCtx = False
     End Sub
 
     Private Shared Function SpeedMultiplierFromTick(tick As Integer) As Double
@@ -1969,12 +1992,53 @@ Public Class GlobePreviewViewModel
         End Set
     End Property
 
-    Private Sub UpdateHoverFromWorldHit(hitWorld As Point3D)
+    Private Function TryHitGlobePoint(screenPt As Point, ByRef hitWorld As Point3D) As Boolean
 
-        If _animTransform Is Nothing Then Return
+        If _viewport Is Nothing Then Return False
+
+        Dim hit As Nullable(Of Point3D) = Nothing
+
+        VisualTreeHelper.HitTest(
+                        _viewport,
+                        Nothing,
+                        Function(result As HitTestResult)
+
+                            Dim ray As RayHitTestResult = TryCast(result, RayHitTestResult)
+                            If ray Is Nothing Then Return HitTestResultBehavior.Continue
+
+                            Dim meshHit As RayMeshGeometry3DHitTestResult = TryCast(ray, RayMeshGeometry3DHitTestResult)
+                            If meshHit Is Nothing Then Return HitTestResultBehavior.Continue
+
+                            'Overlay-Modell ignorieren
+                            Dim mh As Model3D = TryCast(meshHit.ModelHit, Model3D)
+                            If mh Is _dayNightTerminatorGeo OrElse
+                               mh Is _dawnZoneGeo OrElse
+                               mh Is _subsolarGeo OrElse
+                               mh Is _observerGeo Then
+
+                                Return HitTestResultBehavior.Continue
+
+                            End If
+
+                            hit = meshHit.PointHit
+                            Return HitTestResultBehavior.Stop
+
+                        End Function,
+                        New PointHitTestParameters(screenPt))
+
+        If Not hit.HasValue Then Return False
+
+        hitWorld = hit.Value
+        Return True
+
+    End Function
+
+    Private Function TryWorldHitToLatLon(hitWorld As Point3D, ByRef latDeg As Double, ByRef lonDeg As Double) As Boolean
+
+        If _animTransform Is Nothing Then Return False
 
         Dim m As Matrix3D = _animTransform.Value
-        If Not m.HasInverse Then Return
+        If Not m.HasInverse Then Return False
         m.Invert()
 
         Dim pBody As Point3D = m.Transform(hitWorld)
@@ -1982,7 +2046,7 @@ Public Class GlobePreviewViewModel
         'Normieren, falls Displacement/Radius minimal anders
         Dim v As New Vector3D(pBody.X, pBody.Y, pBody.Z)
         If v.LengthSquared < 0.000000000001 Then
-            Return
+            Return False
         End If
         v.Normalize()
 
@@ -1992,21 +2056,24 @@ Public Class GlobePreviewViewModel
         'Lon: 0° bei +X, +90° bei +Z
         Dim lonRad As Double = Math.Atan2(-v.Z, v.X)
 
-        Dim latDeg As Double = RadToDeg(latRad)
-        Dim lonDeg As Double = Wrap180(RadToDeg(lonRad))
+        latDeg = RadToDeg(latRad)
+        lonDeg = Wrap180(RadToDeg(lonRad))
+        Return True
 
-        '=== Hover-Texte ===
+    End Function
+
+    Private Sub UpdateHoverFromLatLon(latDeg As Double, lonDeg As Double)
+
         '1) Koordinaten
         HoverLatText = $"Lat: {latDeg:+00.00;-00.00;00.00}°"
         HoverLonText = $"Lon: {lonDeg:+000.00;-000.00;000.00}°"
 
         '2) Tages/Nacht-Länge
         Dim dayLength As Integer, nightLength As Integer
-        ComputeDayNightLength(latDeg, SolarDeclinationDeg, dayLength, nightLength)
+        Astronomics.ComputeDayNightLength(latDeg, SolarDeclinationDeg, dayLength, nightLength)
 
         Dim dayHours As Integer, dayMinutes As Integer
         Dim nightHours As Integer, nightMinutes As Integer
-
         Mathematics.SplitDayMinutes(dayLength, dayHours, dayMinutes)
         Mathematics.SplitDayMinutes(nightLength, nightHours, nightMinutes)
 
@@ -2017,20 +2084,18 @@ Public Class GlobePreviewViewModel
         Dim sunH As Double, sunAz As Double
         Astronomics.ComputeSunHeightAzimuthAtPoint(latDeg, lonDeg, SubsolarLatDeg, SubsolarLonDeg, sunH, sunAz)
 
-        HoverSunAzimuthDeg = Wrap360(sunAz)
-
+        HoverSunAzimuthDeg = Mathematics.Wrap360(sunAz)
         HoverSunHeightText = $"Höhe: {sunH:+00.0;-00.0;00.0}°"
         HoverSunAzimuthText = $"Azimut: {sunAz:000.0}°"
 
         '4) TOA Insolation
-        Dim jd As Double = 0.0
-        If SimulationUtc <> DateTime.MinValue Then
-            jd = Astronomics.JulianDateUtc(SimulationUtc)
+        Dim distF As Double
+        If _hasSolarCtx Then
+            distF = _solarCtx.DistFactor
         Else
-            jd = Astronomics.JulianDateUtc(DateTime.UtcNow)
+            Dim jd As Double = Astronomics.JulianDateUtc(If(SimulationUtc <> DateTime.MinValue, SimulationUtc, DateTime.UtcNow))
+            distF = Astronomics.EarthSunDistanceFactor(jd)
         End If
-
-        Dim distF As Double = Astronomics.EarthSunDistanceFactor(jd)
 
         Dim meanWm2 As Double, energyJm2 As Double
         Astronomics.ComputeDailyInsolationTOA(latDeg, SolarDeclinationDeg, distF, meanWm2, energyJm2)
@@ -2044,40 +2109,38 @@ Public Class GlobePreviewViewModel
             Dim kwh As Double = energyJm2 / 3600000.0
             HoverInsolationEnergyText = $"E: {kwh:0.00} kWh/m²·d"
         End If
+
+    End Sub
+
+    Private Sub UpdateHoverFromWorldHit(hitWorld As Point3D)
+
+        Dim latDeg As Double, lonDeg As Double
+        If Not TryWorldHitToLatLon(hitWorld, latDeg, lonDeg) Then Return
+
+        UpdateHoverFromLatLon(latDeg, lonDeg)
     End Sub
 
     Private Sub UpdateHoverFromScreenPoint(p As Point)
 
-        If _viewport Is Nothing Then
+        If IsObserverMode Then
+            UpdateHoverFromObserver()
             Return
         End If
 
-        Dim hitPointWorld As Nullable(Of Point3D) = Nothing
+        Dim hitworld As Point3D
+        If Not TryHitGlobePoint(p, hitworld) Then Return
 
-        VisualTreeHelper.HitTest(
-            _viewport,
-            Nothing,
-            Function(result As HitTestResult)
+        UpdateHoverFromWorldHit(hitworld)
 
-                Dim ray = TryCast(result, RayHitTestResult)
-                If ray Is Nothing Then Return HitTestResultBehavior.Continue
+    End Sub
 
-                Dim meshHit = TryCast(ray, RayMeshGeometry3DHitTestResult)
-                If meshHit Is Nothing Then Return HitTestResultBehavior.Continue
+    Private Sub UpdateHoverFromObserver()
 
-                hitPointWorld = meshHit.PointHit
-                Return HitTestResultBehavior.Stop
+        If Not IsObserverMode Then Return
+        If _animTransform Is Nothing Then Return
 
+        UpdateHoverFromLatLon(_observerLatDeg, _observerLonDeg)
 
-            End Function,
-            New PointHitTestParameters(p)
-            )
-
-        If Not hitPointWorld.HasValue Then
-            Return
-        End If
-
-        UpdateHoverFromWorldHit(hitPointWorld.Value)
     End Sub
 
     Private Sub ClearHoverText()
@@ -2090,6 +2153,168 @@ Public Class GlobePreviewViewModel
         HoverInsolationEnergyText = ""
         HoverInsolationMeanText = ""
     End Sub
+
+#End Region
+
+#Region "Observer"
+
+    Private _isObserverMode As Boolean
+    Public Property IsObserverMode As Boolean
+        Get
+            Return _isObserverMode
+        End Get
+        Set(value As Boolean)
+            If SetProperty(_isObserverMode, value) Then
+                UpdateObserverPinVisibility()
+
+                If value Then
+                    UpdateObserverPinTransform()
+                End If
+
+                'Wenn Observer aus: Hover sofort leeren/neu setzen
+                If Not value AndAlso _observerTf IsNot Nothing Then
+                    _observerTf.OffsetX = 0
+                    _observerTf.OffsetY = 0
+                    _observerTf.OffsetZ = 0
+                End If
+            End If
+        End Set
+    End Property
+
+    Private _observerLatDeg As Double
+    Private _observerLonDeg As Double
+
+    Private _observerGeo As GeometryModel3D
+    Private _observerTf As TranslateTransform3D
+    Private _observerRot As QuaternionRotation3D
+    Private _observerVisible As Boolean
+
+    Private Const ObserverPinHeight As Double = 0.05
+    Private Const ObserverPinRadius As Double = 0.002
+
+    Private Sub ClearObserver()
+        IsObserverMode = False
+        UpdateObserverPinVisibility()
+        'Statusbar wieder Hover-basiert
+        If _lastMouseInViewport Then
+            UpdateHoverFromScreenPoint(_lastMousePos)
+        Else
+            ClearHoverText()
+        End If
+    End Sub
+
+    Private Function SampleHeightAtLatLonMeters(latDeg As Double, lonDeg As Double) As Double
+
+        If HeightMap Is Nothing OrElse _p Is Nothing OrElse _p.CacheMeta Is Nothing Then Return 0.0
+
+        Dim w As Integer = _p.CacheMeta.LonCount
+        Dim h As Integer = _p.CacheMeta.LatCount
+        Dim w1 As Integer = w - 1
+        Dim h1 As Integer = h - 1
+        If w <= 1 OrElse h <= 1 Then Return 0.0
+
+        Dim u As Double = (Wrap180(lonDeg) + 180.0) / 360.0
+        Dim v As Double = (90.0 - Clamp(latDeg, -90.0, 90.0)) / 180.0
+
+        If HeightSampling = ResamplingMode.Bilinear Then
+            Return GlobeMeshRenderer.SampleHeightBilinear(HeightMap, w, w1, h1, u, v)
+        Else
+            Return GlobeMeshRenderer.SampleHeightNearest(HeightMap, w, h, u, v)
+        End If
+
+    End Function
+
+    Private Sub UpdateObserverPinTransform()
+
+        If _observerTf Is Nothing OrElse _observerRot Is Nothing Then Return
+        If Not IsObserverMode Then Return
+
+        'Radial/up in Body-Space
+        Dim up As Vector3D = Astronomics.BodyVectorFromLatLon(_observerLatDeg, _observerLonDeg)
+        If up.LengthSquared <= 0 Then Return
+        up.Normalize()
+
+        'Displacement as dieser Stelle in "Mesh-Radius"-Einheiten
+        Dim hm As Double = SampleHeightAtLatLonMeters(_observerLatDeg, _observerLonDeg)
+
+        'offset = hm * (exaggeration / EarthRadiusM)
+        Dim scale As Double = (DisplacementExaggeration / GlobeMeshRenderer.EarthRadiusM)
+        Dim dispR As Double = hm * scale
+
+        'Basisradius der Oberfläche am Punkt (Sphere=1.0 + Displacement)
+        Dim surfaceR As Double = 1.0 + dispR
+
+        'Pin minimal embedden, damit er nicht schwebt
+        Const embed As Double = 0.005
+
+        'Zylinderhöhe aus dem Mesh
+        Dim halfH As Double = ObserverPinHeight * 0.5
+
+        'Zylinder ist im Ursprung zentriert
+        Dim baseR As Double = surfaceR - embed
+        Dim centerR As Double = baseR + halfH
+
+        'Rotation: Y-Achse -> up
+        _observerRot.Quaternion = QuaternionFromTo(New Vector3D(0, 1, 0), up)
+
+        'Translation: Mittelpunkt auf centerR entlang up
+        _observerTf.OffsetX = up.X * centerR
+        _observerTf.OffsetY = up.Y * centerR
+        _observerTf.OffsetZ = up.Z * centerR
+    End Sub
+
+    Private Sub UpdateObserverPinVisibility()
+
+        If _group Is Nothing OrElse _observerGeo Is Nothing Then Return
+
+        If IsObserverMode Then
+            If Not _observerVisible Then
+                _group.Children.Add(_observerGeo)
+                _observerVisible = True
+            End If
+        Else
+            If _observerVisible Then
+                _group.Children.Remove(_observerGeo)
+                _observerVisible = False
+            End If
+        End If
+
+    End Sub
+
+    Private Shared Function QuaternionFromTo(fromV As Vector3D, toV As Vector3D) As Media3D.Quaternion
+
+        If fromV.LengthSquared <= 0 OrElse toV.LengthSquared <= 0 Then
+            Return Media3D.Quaternion.Identity
+        End If
+
+        fromV.Normalize()
+        toV.Normalize()
+
+        Dim dot As Double = Vector3D.DotProduct(fromV, toV)
+        dot = Clamp(dot, -1.0, 1.0)
+
+        If dot > 0.999999 Then
+            Return Media3D.Quaternion.Identity
+        End If
+
+        If dot < -0.999999 Then
+            Dim axis As Vector3D = Vector3D.CrossProduct(fromV, New Vector3D(1, 0, 0))
+            If axis.LengthSquared < 0.0000001 Then
+                axis = Vector3D.CrossProduct(fromV, New Vector3D(0, 0, 1))
+            End If
+            axis.Normalize()
+            Return New Media3D.Quaternion(axis, 180.0)
+        End If
+
+        Dim axis2 As Vector3D = Vector3D.CrossProduct(fromV, toV)
+        axis2.Normalize()
+
+        Dim angleRad As Double = Math.Acos(dot)
+        Dim angleDeg As Double = RadToDeg(angleRad)
+
+        Return New Media3D.Quaternion(axis2, angleDeg)
+
+    End Function
 
 #End Region
 

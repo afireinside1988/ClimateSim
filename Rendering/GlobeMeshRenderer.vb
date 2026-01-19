@@ -2,7 +2,7 @@
 
 Public NotInheritable Class GlobeMeshRenderer
 
-    Private Const EarthRadiusM As Double = 6371000.0
+    Public Const EarthRadiusM As Double = 6371000.0
 
     Private Sub New()
     End Sub
@@ -255,19 +255,48 @@ Public NotInheritable Class GlobeMeshRenderer
 
     End Function
 
-    Public Shared Function RenderSubsolarMarkerModel() As GeometryModel3D
-        Dim mesh As MeshGeometry3D = GlobeMeshRenderer.RenderSphereMesh(radius:=0.01, lonSegments:=16, latSegments:=12)
+    Public Shared Function RenderPoleAxisModel() As GeometryModel3D
 
-        Dim brush As New SolidColorBrush(Color.FromArgb(220, 255, 220, 80))     'Marker-Farbe
+        'Globus-Radius = 1.0 -> Achse soll etwas überstehen
+        Dim protrude As Double = 0.2
+        Dim height As Double = 2.0 * (1.0 + protrude)
+        Dim radius As Double = 0.001
+
+        Dim mesh As MeshGeometry3D = GlobeMeshRenderer.RenderCylinderMeshY(radius, height, segments:=8, cap:=True)
+
+        Dim brush As New SolidColorBrush(Color.FromRgb(255, 255, 255))
         If brush.CanFreeze Then brush.Freeze()
 
-        Dim mat As New EmissiveMaterial(brush)
-        If mat.CanFreeze Then mat.Freeze()
+        Dim mg As New MaterialGroup()
+        mg.Children.Add(New DiffuseMaterial(brush))
+        mg.Children.Add(New EmissiveMaterial(brush))
+        If mg.CanFreeze Then mg.Freeze()
 
         Dim gm As New GeometryModel3D With {
             .Geometry = mesh,
-            .Material = mat,
-            .BackMaterial = mat
+            .Material = mg,
+            .BackMaterial = mg
+        }
+
+        Return gm
+
+    End Function
+
+    Public Shared Function RenderSubsolarMarkerModel() As GeometryModel3D
+        Dim mesh As MeshGeometry3D = GlobeMeshRenderer.RenderSphereMesh(radius:=0.01, lonSegments:=16, latSegments:=12)
+
+        Dim brush As New SolidColorBrush(Color.FromRgb(255, 220, 80))     'Marker-Farbe
+        If brush.CanFreeze Then brush.Freeze()
+
+        Dim mg As New MaterialGroup()
+        mg.Children.Add(New DiffuseMaterial(brush))
+        mg.Children.Add(New EmissiveMaterial(brush))
+        If mg.CanFreeze Then mg.Freeze()
+
+        Dim gm As New GeometryModel3D With {
+            .Geometry = mesh,
+            .Material = mg,
+            .BackMaterial = mg
         }
 
         Return gm
@@ -277,16 +306,18 @@ Public NotInheritable Class GlobeMeshRenderer
     Public Shared Function RenderDayNightTerminatorModel() As GeometryModel3D
         Dim mesh As New MeshGeometry3D()
 
-        Dim brush As New SolidColorBrush(Color.FromArgb(200, 180, 220, 255))
+        Dim brush As New SolidColorBrush(Color.FromRgb(180, 220, 255))
         If brush.CanFreeze Then brush.Freeze()
 
-        Dim mat As New EmissiveMaterial(brush)
-        If mat.CanFreeze Then mat.Freeze()
+        Dim mg As New MaterialGroup()
+        mg.Children.Add(New DiffuseMaterial(brush))
+        mg.Children.Add(New EmissiveMaterial(brush))
+        If mg.CanFreeze Then mg.Freeze()
 
         Dim gm As New GeometryModel3D With {
             .Geometry = mesh,
-            .Material = mat,
-            .BackMaterial = mat
+            .Material = mg,
+            .BackMaterial = mg
         }
 
         Return gm
@@ -319,11 +350,34 @@ Public NotInheritable Class GlobeMeshRenderer
 
     End Function
 
+    Public Shared Function RenderObserverPinModel(radius As Double, height As Double, segments As Integer, Optional cap As Boolean = True) As GeometryModel3D
+
+        'Kleiner "Pin-Stift" als Zylinder (Y-Achse)
+        Dim mesh As MeshGeometry3D = RenderCylinderMeshY(radius, height, segments, cap)
+
+        Dim brush As New SolidColorBrush(Color.FromRgb(255, 0, 0))     'rot
+        If brush.CanFreeze Then brush.Freeze()
+
+        Dim mg As New MaterialGroup()
+        mg.Children.Add(New DiffuseMaterial(brush))
+        mg.Children.Add(New EmissiveMaterial(brush))
+        If mg.CanFreeze Then mg.Freeze()
+
+        Dim gm As New GeometryModel3D With {
+            .Geometry = mesh,
+            .Material = mg,
+            .BackMaterial = mg
+        }
+
+        Return gm
+
+    End Function
+
 #End Region
 
 #Region "Resampling"
 
-    Private Shared Function SampleHeightNearest(height As Single(), w As Integer, h As Integer, u As Double, v As Double) As Double
+    Public Shared Function SampleHeightNearest(height As Single(), w As Integer, h As Integer, u As Double, v As Double) As Double
 
         'Wrap u /Clamp v
         u -= Math.Floor(u)
@@ -339,7 +393,7 @@ Public NotInheritable Class GlobeMeshRenderer
 
     End Function
 
-    Private Shared Function SampleHeightBilinear(height As Single(), w As Integer, w1 As Integer, h1 As Integer, u As Double, v As Double) As Double
+    Public Shared Function SampleHeightBilinear(height As Single(), w As Integer, w1 As Integer, h1 As Integer, u As Double, v As Double) As Double
 
         'Fast Clamp v
         If v <= 0.0 Then
@@ -388,6 +442,7 @@ Public NotInheritable Class GlobeMeshRenderer
         Return a + (b - a) * ty
 
     End Function
+
 #End Region
 
     Private Shared Sub RecalculateNormals(mesh As MeshGeometry3D)

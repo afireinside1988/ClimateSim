@@ -2382,7 +2382,7 @@ Public Class EarthSurfaceViewModel
 
         'Clamp/Wrap
         lat = Clamp(lat, -90.0, 90.0)
-        lon = WrapLon180(lon)
+        lon = Wrap180(lon)
 
         Return (lat, lon)
 

@@ -146,7 +146,7 @@
 
                     Dim xNorm As Double = (x + 0.5) / width
                     Dim lon As Double = camera.CenterLon + (xNorm - 0.5) * camera.SpanLon
-                    lon = WrapLon180(lon)
+                    lon = Wrap180(lon)
 
                     Dim c As Color = SampleTopoColor(cache, lat, lon)
 
