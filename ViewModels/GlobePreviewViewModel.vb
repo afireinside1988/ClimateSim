@@ -741,6 +741,11 @@ Public Class GlobePreviewViewModel
 
         If r Is Nothing Then Return
         If Not r.IsLeftButton Then Return
+        If r.Alt Then
+            ClearObserver()
+            Return
+        End If
+
         If Not r.Ctrl Then Return
 
         Dim hitWorld As Point3D
@@ -2068,46 +2073,49 @@ Public Class GlobePreviewViewModel
         HoverLatText = $"Lat: {latDeg:+00.00;-00.00;00.00}°"
         HoverLonText = $"Lon: {lonDeg:+000.00;-000.00;000.00}°"
 
-        '2) Tages/Nacht-Länge
-        Dim dayLength As Integer, nightLength As Integer
-        Astronomics.ComputeDayNightLength(latDeg, SolarDeclinationDeg, dayLength, nightLength)
+        If IsEarthRotationEnabled Then
+            '2) Tages/Nacht-Länge
+            Dim dayLength As Integer, nightLength As Integer
+            Astronomics.ComputeDayNightLength(latDeg, SolarDeclinationDeg, dayLength, nightLength)
 
-        Dim dayHours As Integer, dayMinutes As Integer
-        Dim nightHours As Integer, nightMinutes As Integer
-        Mathematics.SplitDayMinutes(dayLength, dayHours, dayMinutes)
-        Mathematics.SplitDayMinutes(nightLength, nightHours, nightMinutes)
+            Dim dayHours As Integer, dayMinutes As Integer
+            Dim nightHours As Integer, nightMinutes As Integer
+            Mathematics.SplitDayMinutes(dayLength, dayHours, dayMinutes)
+            Mathematics.SplitDayMinutes(nightLength, nightHours, nightMinutes)
 
-        HoverDayLengthText = $"Tag: {dayHours:00}:{dayMinutes:00}h"
-        HoverNightLengthText = $"Nacht: {nightHours:00}:{nightMinutes:00}h"
+            HoverDayLengthText = $"Tag: {dayHours:00}:{dayMinutes:00}h"
+            HoverNightLengthText = $"Nacht: {nightHours:00}:{nightMinutes:00}h"
 
-        '3) Sonnenhöhe/Azimut
-        Dim sunH As Double, sunAz As Double
-        Astronomics.ComputeSunHeightAzimuthAtPoint(latDeg, lonDeg, SubsolarLatDeg, SubsolarLonDeg, sunH, sunAz)
+            '3) Sonnenhöhe/Azimut
+            Dim sunH As Double, sunAz As Double
+            Astronomics.ComputeSunHeightAzimuthAtPoint(latDeg, lonDeg, SubsolarLatDeg, SubsolarLonDeg, sunH, sunAz)
 
-        HoverSunAzimuthDeg = Mathematics.Wrap360(sunAz)
-        HoverSunHeightText = $"Höhe: {sunH:+00.0;-00.0;00.0}°"
-        HoverSunAzimuthText = $"Azimut: {sunAz:000.0}°"
+            HoverSunAzimuthDeg = Mathematics.Wrap360(sunAz)
+            HoverSunHeightText = $"Höhe: {sunH:+00.0;-00.0;00.0}°"
+            HoverSunAzimuthText = $"Azimut: {sunAz:000.0}°"
 
-        '4) TOA Insolation
-        Dim distF As Double
-        If _hasSolarCtx Then
-            distF = _solarCtx.DistFactor
-        Else
-            Dim jd As Double = Astronomics.JulianDateUtc(If(SimulationUtc <> DateTime.MinValue, SimulationUtc, DateTime.UtcNow))
-            distF = Astronomics.EarthSunDistanceFactor(jd)
-        End If
+            '4) TOA Insolation
+            Dim distF As Double
+            If _hasSolarCtx Then
+                distF = _solarCtx.DistFactor
+            Else
+                Dim jd As Double = Astronomics.JulianDateUtc(If(SimulationUtc <> DateTime.MinValue, SimulationUtc, DateTime.UtcNow))
+                distF = Astronomics.EarthSunDistanceFactor(jd)
+            End If
 
-        Dim meanWm2 As Double, energyJm2 As Double
-        Astronomics.ComputeDailyInsolationTOA(latDeg, SolarDeclinationDeg, distF, meanWm2, energyJm2)
+            Dim meanWm2 As Double, energyJm2 As Double
+            Astronomics.ComputeDailyInsolationTOA(latDeg, SolarDeclinationDeg, distF, meanWm2, energyJm2)
 
-        HoverInsolationMeanText = $"TOA: {meanWm2:0.0} W/m²"
+            HoverInsolationMeanText = $"TOA: {meanWm2:0.0} W/m²"
 
-        If Not HoverInsolationUseKwh Then
-            Dim mj As Double = energyJm2 / 1000000.0
-            HoverInsolationEnergyText = $"E: {mj:0.0} MJ/m²·d"
-        Else
-            Dim kwh As Double = energyJm2 / 3600000.0
-            HoverInsolationEnergyText = $"E: {kwh:0.00} kWh/m²·d"
+            If Not HoverInsolationUseKwh Then
+                Dim mj As Double = energyJm2 / 1000000.0
+                HoverInsolationEnergyText = $"E: {mj:0.0} MJ/m²·d"
+            Else
+                Dim kwh As Double = energyJm2 / 3600000.0
+                HoverInsolationEnergyText = $"E: {kwh:0.00} kWh/m²·d"
+            End If
+
         End If
 
     End Sub

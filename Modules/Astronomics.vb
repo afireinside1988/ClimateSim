@@ -1,37 +1,95 @@
 ﻿Imports System.Windows.Media.Media3D
 
+''' <summary>
+''' Astronomie-Hilfsfunktionen für SCOACH
+''' </summary>
 Module Astronomics
 
+    ''' <summary>
+    ''' Sekunden des mittleren Sonnentages.
+    ''' </summary>
     Private Const SecondsPerDay As Double = 86400.0
 
+    ''' <summary>
+    ''' Bündelt mehrfach benötigte Hilfsgrößen, die aus einem julianischem Datum abgeleitet werden.
+    ''' </summary>
     Public Structure SolarContext
 
+        ''' <summary>
+        ''' Julianisches Datum (UTC-basiert)
+        ''' </summary>
         Public Jd As Double
+        ''' <summary>
+        ''' Julianische Jahrhunderte seit J2000.0
+        ''' </summary>
         Public T As Double
 
+        ''' <summary>
+        ''' Mittlere ekliptikale Länge der Sonne [Grad]
+        ''' </summary>
         Public L0Deg As Double
+
+        ''' <summary>
+        ''' Mittlere Anomalie [Grad]
+        ''' </summary>
         Public MDeg As Double
+        ''' <summary>
+        ''' Mittlere Anomalie [Radient]
+        ''' </summary>
         Public MRad As Double
 
-        Public Ecc As Double            'e
-        Public EpsDeg As Double         'ε (Obliquity)
+        ''' <summary>
+        ''' Exzentrizität der Erbahn e
+        ''' </summary>
+        Public Ecc As Double
+        ''' <summary>
+        ''' Neigung der Ekliptik ε [Grad]
+        ''' </summary>
+        Public EpsDeg As Double
+        ''' <summary>
+        ''' Neigung der Ekliptik ε [Radient]
+        ''' </summary>
         Public EpsRad As Double
 
+        ''' <summary>
+        ''' Ergebnis der Mittelpunktgleichung C [Grad]
+        ''' korrigiert die mittlere Anomalie, um die elliptische Bahn zu berücksichtigen
+        ''' </summary>
         Public CDeg As Double
 
+        ''' <summary>
+        ''' Wahre ekliptische Länge λ = L0 + C [Grad]
+        ''' </summary>
         Public LambdaDeg As Double
+        ''' <summary>
+        ''' Wahre ekliptische Länge λ = L0 + C [Radient]
+        ''' </summary>
         Public LambdaRad As Double
 
+        ''' <summary>
+        ''' Wahre Anomalie v (näherungsweise ν ≈ M + C) [Radient]
+        ''' </summary>
         Public NuRad As Double
+        ''' <summary>
+        ''' Erde-Sonne-Distanz r in Astronomischen Einheiten (AU)
+        ''' </summary>
         Public R_AU As Double
+        ''' <summary>
+        ''' Distanzfaktor Erde<->Sonne 1/r²
+        ''' Skaliert die Solarkonstante, um Perihel/Aphel zu berücksichtigen
+        ''' </summary>
         Public DistFactor As Double     '1/r^2
 
-        Public Y As Double              'tan(ε/2)^2 (für Equation of Time)
+        ''' <summary>
+        ''' tan(ε/2)^2 (für Equation of Time)
+        ''' </summary>
+        Public Y As Double
 
     End Structure
 
     ''' <summary>
-    ''' Errechnet aus der UTC das julianische Datum
+    ''' Errechnet aus der UTC das julianische Datum;
+    ''' Standard-Algorithmus (gregorianischer Kalender) mit Tagesbruchteil
     ''' </summary>
     Public Function JulianDateUtc(t As DateTime) As Double
 
@@ -58,6 +116,10 @@ Module Astronomics
 
     End Function
 
+    ''' <summary>
+    ''' Errechnet aus dem julianischen Datum Sonnen-Hilfsgrößen;
+    ''' Formeln sind gängige Näherungen nachn Meeus/NOAA
+    ''' </summary>
     Public Function BuildSolarContext(jd As Double) As SolarContext
 
         Dim ctx As New SolarContext()
@@ -65,7 +127,7 @@ Module Astronomics
 
         ctx.T = (jd - 2451545.0) / 36525.0
 
-        'L0, M
+        'Mittlere exkliptikale Länge L0 und mittlere Anomalie M
         Dim L0 As Double = 280.46646 + 36000.76983 * ctx.T + 0.0003032 * ctx.T * ctx.T
         Dim M As Double = 357.52911 + 35999.05029 * ctx.T - 0.0001537 * ctx.T * ctx.T
 
@@ -73,18 +135,18 @@ Module Astronomics
         ctx.MDeg = Mathematics.Wrap360(M)
         ctx.MRad = Mathematics.DegToRad(ctx.MDeg)
 
-        'e, eps
+        'Exzentrizität und Neigung der Ekliptik
         ctx.Ecc = 0.016708634 - 0.000042037 * ctx.T - 0.0000001267 * ctx.T * ctx.T
         ctx.EpsDeg = 23.439291 - 0.0130042 * ctx.T
         ctx.EpsRad = Mathematics.DegToRad(ctx.EpsDeg)
 
-        'Equation of center C (deg)
+        'Mittelpunktgleichung C
         ctx.CDeg =
             (1.914602 - 0.004817 * ctx.T - 0.000014 * ctx.T * ctx.T) * Math.Sin(ctx.MRad) +
             (0.019993 - 0.000101 * ctx.T) * Math.Sin(2 * ctx.MRad) +
             0.000289 * Math.Sin(3 * ctx.MRad)
 
-        'True ecliptic longitude lambda (deg)
+        'Wahre ekliptikale Länge
         ctx.LambdaDeg = Mathematics.Wrap360(ctx.L0Deg + ctx.CDeg)
         ctx.LambdaRad = Mathematics.DegToRad(ctx.LambdaDeg)
 
@@ -92,13 +154,14 @@ Module Astronomics
         Dim t2 As Double = Math.Tan(ctx.EpsRad / 2.0)
         ctx.Y = t2 * t2
 
-        'True anomaly approx: nu ≈ M + C
+        'Wahre Anomalie v
         ctx.NuRad = Mathematics.DegToRad(ctx.MDeg + ctx.CDeg)
 
-        'Distance r in AU
+        'Erde-Sonne-Distanz in Astronomischen Einheiten (Keppler-Geometrie)
         ctx.R_AU = (1.0 - ctx.Ecc * ctx.Ecc) / (1.0 + ctx.Ecc * Math.Cos(ctx.NuRad))
         If ctx.R_AU <= 0.0 Then ctx.R_AU = 1.0
 
+        'Distanzfaktor für Strahlungsfluss
         ctx.DistFactor = 1.0 / (ctx.R_AU * ctx.R_AU)
 
         Return ctx
@@ -143,6 +206,9 @@ Module Astronomics
         Return Mathematics.Wrap360(gmst)
     End Function
 
+    ''' <summary>
+    ''' Zeitabweichung EoT in Minuten zwischen wahrer Sonnenzeit und mittlerer UTC-Uhrzeit
+    ''' </summary>
     Public Function EquationOfTimeMinutes(ctx As SolarContext) As Double
 
         Dim L0r As Double = Mathematics.DegToRad(ctx.L0Deg)
@@ -178,6 +244,9 @@ Module Astronomics
         Return v
     End Function
 
+    ''' <summary>
+    ''' Errechnet die Sonnenhöhe und das Azimut für einen Punkt der Erdoberfläche
+    ''' </summary>
     Public Sub ComputeSunHeightAzimuthAtPoint(latDeg As Double, lonDeg As Double, subsolarLatDeg As Double, subsolarLonDeg As Double, ByRef sunHeightDeg As Double, ByRef sunAzimuthDeg As Double)
 
         'Sonnenrichtung im Body-Space (Erde->Sonne) aus dem Subsolar-Punkt
@@ -235,6 +304,9 @@ Module Astronomics
 
     End Sub
 
+    ''' <summary>
+    ''' Errechnet die Tages- und Nachtlänge für einen Punkt der Erdoberfläche
+    ''' </summary>
     Public Sub ComputeDayNightLength(latDeg As Double, declDeg As Double, ByRef dayMinutes As Integer, ByRef nightMinutes As Integer)
 
         Dim latRad = DegToRad(latDeg)
@@ -261,9 +333,8 @@ Module Astronomics
     End Sub
 
     ''' <summary>
-    ''' Erde-Sonne Distanz-Faktor  f=1AE/r^2
+    ''' Erde-Sonne Distanz-Faktor in Astronomischen Einheiten  f=1AE/r^2
     ''' </summary>
-    ''' <param name="jd">Julianisches Datum</param>
     Public Function EarthSunDistanceFactor(jd As Double) As Double
 
         Dim ctx As SolarContext = BuildSolarContext(jd)
