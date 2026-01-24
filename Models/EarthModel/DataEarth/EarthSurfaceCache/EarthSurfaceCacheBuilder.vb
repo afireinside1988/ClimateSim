@@ -5,10 +5,6 @@ Imports System.Threading
 
 Public NotInheritable Class EarthSurfaceCacheBuilder
 
-    Private Sub New()
-
-    End Sub
-
     Public Class BuildOptions
         Public Property SourceName As String
         Public Property HeightZipPath As String

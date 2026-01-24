@@ -30,16 +30,12 @@ Public NotInheritable Class EarthSurfaceCacheFormat
     Private Const Magic As String = "ESCF"
 
     <Flags>
-    Public Enum CacheFlags As Integer
+    Public Enum EarthSurfaceCacheFlags As Integer
         None = 0
         HasHeight = 1
         HasTid = 2
         HasLandMask = 4
     End Enum
-
-    Private Sub New()
-
-    End Sub
 
     ''' <summary>
     ''' Speichert Cache als Binary-Datei.
@@ -63,10 +59,10 @@ Public NotInheritable Class EarthSurfaceCacheFormat
             Throw New InvalidDataException("LandMask-Array fehlt oder hat eine falsche Länge.")
         End If
 
-        Dim flags As CacheFlags = CacheFlags.None
-        If meta.HasHeight Then flags = flags Or CacheFlags.HasHeight
-        If meta.HasTid Then flags = flags Or CacheFlags.HasTid
-        If meta.HasLandMask Then flags = flags Or CacheFlags.HasLandMask
+        Dim flags As EarthSurfaceCacheFlags = EarthSurfaceCacheFlags.None
+        If meta.HasHeight Then flags = flags Or EarthSurfaceCacheFlags.HasHeight
+        If meta.HasTid Then flags = flags Or EarthSurfaceCacheFlags.HasTid
+        If meta.HasLandMask Then flags = flags Or EarthSurfaceCacheFlags.HasLandMask
 
 
         Dim dir As String = Path.GetDirectoryName(binPath)
@@ -162,7 +158,7 @@ Public NotInheritable Class EarthSurfaceCacheFormat
     End Sub
 
     Public Shared Function ReadCache(binPath As String, Optional progress As IProgress(Of ProgressInfo) = Nothing, Optional ct As CancellationToken = Nothing) As _
-                                    (latCount As Integer, lonCount As Integer, cellSizeDeg As Double, flags As CacheFlags, height As Single(), tid As Byte(), landMask As Byte())
+                                    (latCount As Integer, lonCount As Integer, cellSizeDeg As Double, flags As EarthSurfaceCacheFlags, height As Single(), tid As Byte(), landMask As Byte())
 
         If Not File.Exists(binPath) Then
             Throw New FileNotFoundException("Cache-Datei nicht gefunden.", binPath)
@@ -191,7 +187,7 @@ Public NotInheritable Class EarthSurfaceCacheFormat
                 Dim latCount As Integer = br.ReadInt32()
                 Dim lonCount As Integer = br.ReadInt32()
                 Dim cellSize As Double = br.ReadDouble()
-                Dim flags As CacheFlags = CType(br.ReadInt32(), CacheFlags)
+                Dim flags As EarthSurfaceCacheFlags = CType(br.ReadInt32(), EarthSurfaceCacheFlags)
                 br.ReadInt32() 'Reserved-Int
 
                 If latCount <= 0 OrElse lonCount <= 0 Then
@@ -205,14 +201,14 @@ Public NotInheritable Class EarthSurfaceCacheFormat
                 Dim landMask As Byte() = Nothing
 
                 Dim totalValues As Integer = 0
-                If flags.HasFlag(CacheFlags.HasHeight) Then totalValues += n
-                If flags.HasFlag(CacheFlags.HasTid) Then totalValues += n
-                If flags.HasFlag(CacheFlags.HasLandMask) Then totalValues += n
+                If flags.HasFlag(EarthSurfaceCacheFlags.HasHeight) Then totalValues += n
+                If flags.HasFlag(EarthSurfaceCacheFlags.HasTid) Then totalValues += n
+                If flags.HasFlag(EarthSurfaceCacheFlags.HasLandMask) Then totalValues += n
 
                 Dim reportEvery As Integer = Math.Max(4096, totalValues \ 200)
                 Dim processed As Integer = 0
 
-                If flags.HasFlag(CacheFlags.HasHeight) Then
+                If flags.HasFlag(EarthSurfaceCacheFlags.HasHeight) Then
                     progress?.Report(New ProgressInfo("Cache laden: Höhenfeld...", 2))
 
                     height = New Single(n - 1) {}
@@ -230,7 +226,7 @@ Public NotInheritable Class EarthSurfaceCacheFormat
                     Next
                 End If
 
-                If flags.HasFlag(CacheFlags.HasTid) Then
+                If flags.HasFlag(EarthSurfaceCacheFlags.HasTid) Then
                     progress?.Report(New ProgressInfo("Cache laden: TID-Feld...", 75))
 
                     tid = New Byte(n - 1) {}
@@ -248,7 +244,7 @@ Public NotInheritable Class EarthSurfaceCacheFormat
                     Next
                 End If
 
-                If flags.HasFlag(CacheFlags.HasLandMask) Then
+                If flags.HasFlag(EarthSurfaceCacheFlags.HasLandMask) Then
                     progress?.Report(New ProgressInfo("Cache laden: LandMask-Feld...", 85))
 
                     landMask = New Byte(n - 1) {}

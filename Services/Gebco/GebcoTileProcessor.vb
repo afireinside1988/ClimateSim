@@ -33,10 +33,6 @@ Public NotInheritable Class GebcoTileProcessor
         End Function
     End Class
 
-    Private Sub New()
-
-    End Sub
-
     ''' <summary>
     ''' Tile-Processor für Height-Tiles (für Nearest-Resampling)
     Public Shared Sub ProcessHeightTileNearest(zipPath As String,

@@ -62,8 +62,6 @@ Public NotInheritable Class AsciiIntTokenizer
         GC.SuppressFinalize(Me)
     End Sub
 
-
-
     Public Function TryReadInt(ByRef value As Integer) As Boolean
         value = 0
 

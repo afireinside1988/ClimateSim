@@ -4,8 +4,4 @@ Public Module EarthSurfacePaths
     Public ReadOnly Property RawDirectory As String = Path.Combine(RootDirectory, "Raw")
     Public ReadOnly Property CacheDirectory As String = Path.Combine(RootDirectory, "Cache")
 
-    'Raw-Dateien (aktuelle Namen)
-    Public ReadOnly Property RawTidPath As String = Path.Combine(RawDirectory, "gebco_2025_tid_ascii.zip")
-    Public ReadOnly Property RawHeightPath As String = Path.Combine(RawDirectory, "gebco_2025_sub_ice_ascii.zip")
-
 End Module

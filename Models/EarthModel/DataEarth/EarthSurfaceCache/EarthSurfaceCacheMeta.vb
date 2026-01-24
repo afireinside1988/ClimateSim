@@ -6,11 +6,12 @@
 ''' </summary>
 Public Class EarthSurfaceCacheMeta
     Public Property CacheVersion As Integer = 2         'Version 2 für: TID von Single auf Byte umgestellt
+    Public Property CacheType As CacheType = CacheType.EarthSurface
 
     'Identifiziert die Datenquellen und Layer (für Menschen + spätere Auswahl in UI)
     Public Property Source As String = "GEBCO_2025"
     Public Property LandMaskSource As String = "FromHeight"
-    Public Property LandMaskNotes As String = "v0.3: height>=0 then 3x3 hysteresis majority (6/3), 1 iter"
+    Public Property LandMaskNotes As String = "LandMask is used as fallback, if there is no LandCover"
     Public Property UseHysteresis As Boolean = True
     Public Property HysteresisIterations As Integer = 1
     Public Property LandThreshold As Integer = 6

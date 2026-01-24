@@ -1,0 +1,93 @@
+﻿<Window x:Class="LandCoverSmokeTestWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        xmlns:conv="clr-namespace:ClimateSim"
+        xmlns:climatesim="clr-namespace:ClimateSim"
+        mc:Ignorable="d"
+        Title="LandCover Import SmokeTest"
+        Height="520" Width="900"
+        WindowStartupLocation="CenterOwner">
+    
+    <Window.Resources>
+        <conv:BooleanAndToVisibilityConverter x:Key="AndToVis"/>
+    </Window.Resources>
+    <Grid>
+        <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Class TIF -->
+        <TextBlock Grid.Row="0" Text="Copernicus Class-map GeoTIFF" Opacity="0.8"/>
+        <Grid Grid.Row="1" Margin="0,6,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0"
+                     Text="{Binding ClassTifPath, UpdateSourceTrigger=PropertyChanged}"
+                     IsReadOnly="True"
+                     VerticalContentAlignment="Center"
+                     ToolTip="Entfernen mit [Entf] oder [Backspace]"/>
+            <Button Grid.Column="1" Content="..." Width="34" Margin="8,0,0,0"
+                    Command="{Binding BrowseClassCommand}"/>
+        </Grid>
+
+        <!-- Proba TIF (optional) -->
+        <TextBlock Grid.Row="2" Text="Copernicus Proba GeoTIFF (optional)" Opacity="0.8"/>
+        <Grid Grid.Row="3" Margin="0,6,0,10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Grid.Column="0"
+                         Text="{Binding ProbaTifPath, UpdateSourceTrigger=PropertyChanged}"
+                         IsReadOnly="True"
+                         VerticalContentAlignment="Center"
+                         ToolTip="Optional – entfernen mit [Entf] oder [Backspace]"/>
+                <Button Grid.Column="1" Content="..." Width="34" Margin="8,0,0,0"
+                        Command="{Binding BrowseProbaCommand}"/>
+            </Grid>
+
+            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,8">
+                <Button Content="Import starten" Width="140" Height="32"
+                        Command="{Binding RunImportCommand}"
+                        IsEnabled="{Binding CanRunImport}"/>
+            </StackPanel>
+
+            <TextBox Grid.Row="2"
+                     Text="{Binding ReportText}"
+                     IsReadOnly="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"/>
+        </Grid>
+</Grid>
+        <!-- Overlay -->
+        <climatesim:ProgressOverlay Panel.ZIndex="999"
+                             Grid.Row="0"
+                             Grid.RowSpan="2"
+                             HorizontalAlignment="Stretch"
+                             VerticalAlignment="Stretch">
+
+            <climatesim:ProgressOverlay.Visibility>
+                <MultiBinding Converter="{StaticResource AndToVis}">
+                    <Binding Path="IsBusy"/>
+                    <Binding Path="BusyShowOverlay"/>
+                </MultiBinding>
+            </climatesim:ProgressOverlay.Visibility>
+        </climatesim:ProgressOverlay>
+    </Grid>
+</Window>

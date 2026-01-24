@@ -1,0 +1,459 @@
+﻿<Window x:Class="LandCoverWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:climatesim="clr-namespace:ClimateSim"
+        xmlns:local="clr-namespace:ClimateSim"
+        xmlns:conv="clr-namespace:ClimateSim"
+        mc:Ignorable="d"
+        Title="LandCover (Cache-Generator)"
+        Height="787" Width="1200"
+        WindowStartupLocation="CenterOwner">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:BooleanAndToVisibilityConverter x:Key="AndToVis"/>
+
+        <Style x:Key="IconButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="25"/>
+            <Setter Property="Height" Value="25"/>
+            <Setter Property="Padding" Value="1"/>
+            <Setter Property="Margin" Value="0,0,2,0"/>
+            <Setter Property="ToolTipService.ShowDuration" Value="20000"/>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.5"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="IconImageStyle" TargetType="Image">
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Stretch" Value="Uniform"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="RenderOptions.BitmapScalingMode" Value="NearestNeighbor"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Menü -->
+        <Menu Grid.Row="0">
+            <MenuItem Header="_Cache">
+                <MenuItem Header="Cache _laden" Command="{Binding LoadCacheCommand}"/>
+                <Separator/>
+                <MenuItem Header="Cache _generieren"
+                          Command="{Binding GenerateCacheCommand}"
+                          IsEnabled="{Binding CanGenerateCache}"/>
+            </MenuItem>
+        </Menu>
+
+        <Grid Margin="12" Grid.Row="1">
+            <!-- 2 Spalten: links Preview, rechts Settings -->
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="420"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT: PREVIEW -->
+            <Border Grid.Column="0"
+                    Padding="12"
+                    CornerRadius="10"
+                    BorderBrush="#22000000"
+                    BorderThickness="1"
+                    Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}">
+
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <!-- Header -->
+                        <RowDefinition Height="*"/>
+                        <!-- Preview -->
+                        <RowDefinition Height="Auto"/>
+                        <!-- Statusbar -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Header + Overlay-Toggles -->
+                    <StackPanel x:Name="HeaderStack" Grid.Row="0" Margin="0,0,0,10">
+                        <TextBlock Text="Vorschau" FontSize="16" FontWeight="Bold" Margin="0,0,0,5"/>
+
+                        <Grid MinHeight="25" Width="{Binding ElementName=HeaderStack, Path=ActualWidth}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <!-- Overlay-Auswahl -->
+                            </Grid.RowDefinitions>
+
+                            <!-- Overlays -->
+                            <WrapPanel Grid.Column="0" Grid.Row="0" VerticalAlignment="Center">
+                                <CheckBox Content="Gitternetz"
+                                          IsChecked="{Binding ShowGridLayer}"
+                                          Margin="0,0,12,0"/>
+                                <CheckBox Content="Confidence"
+                                          IsChecked="{Binding ShowConfidenceOverlay}"
+                                          Margin="0,0,12,0"/>
+                                <CheckBox Content="LandIceThickness"
+                                          IsChecked="{Binding ShowLandIceThicknessOverlay}"
+                                          Margin="0,0,12,0"/>
+                            </WrapPanel>
+
+                            <!-- Globe Preview -->
+                            <StackPanel Orientation="Horizontal" Grid.Column="1" Grid.Row="0">
+                                <Button Margin="10,0,0,0"
+                                        Style="{StaticResource IconButtonStyle}"
+                                        Command="{Binding OpenGlobePreviewCommand}"
+                                        IsEnabled="{Binding CanOpenGlobePreview}"
+                                        ToolTip="3D-Globus-Vorschau">
+                                    <Image Style="{StaticResource IconImageStyle}"
+                                           Source="pack://application:,,,/Assets/Icons/Globe.png"/>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Preview Host -->
+                    <Border Grid.Row="1"
+                            BorderBrush="#33000000"
+                            BorderThickness="1"
+                            Background="#66000000"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch">
+
+                        <Grid x:Name="MapHost"
+                              ClipToBounds="True"
+                              Background="#66000000"
+                              SnapsToDevicePixels="True"
+                              UseLayoutRounding="True">
+
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="MouseLeave">
+                                    <i:InvokeCommandAction Command="{Binding MapMouseLeaveCommand}" PassEventArgsToCommand="True"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+
+                            <i:Interaction.Behaviors>
+                                <local:PanAndZoomBehavior
+                                    BeginPanCommand="{Binding BeginPanCommand}"
+                                    PanCommand="{Binding PanCommand}"
+                                    EndPanCommand="{Binding EndPanCommand}"
+                                    ZoomCommand="{Binding ZoomCommand}"
+                                    ViewportChangedCommand="{Binding ViewportChangedCommand}"
+                                    MouseDownCommand="{Binding MapMouseDownCommand}"
+                                    MouseUpCommand="{Binding MapMouseUpCommand}"
+                                    MouseMoveCommand="{Binding MapMouseMoveCommand}" />
+                            </i:Interaction.Behaviors>
+
+                            <!-- CONTENT: zoom/pan-transformiert -->
+                            <Canvas x:Name="MapContent"
+                                    Width="{Binding ContentWidth}"
+                                    Height="{Binding ContentHeight}"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    SnapsToDevicePixels="True"
+                                    UseLayoutRounding="True">
+
+                                <Canvas.Resources>
+                                    <Style TargetType="{x:Type Image}">
+                                        <Setter Property="Canvas.Left" Value="0"/>
+                                        <Setter Property="Canvas.Top" Value="0"/>
+                                        <Setter Property="Stretch" Value="None"/>
+                                        <Setter Property="SnapsToDevicePixels" Value="True"/>
+                                        <Setter Property="RenderOptions.BitmapScalingMode" Value="NearestNeighbor"/>
+                                    </Style>
+                                </Canvas.Resources>
+
+                                <!-- Gemeinsamer Transform für ALLE Layer -->
+                                <Canvas.RenderTransform>
+                                    <TransformGroup>
+                                        <ScaleTransform ScaleX="{Binding Zoom}"
+                                                        ScaleY="{Binding Zoom}"/>
+                                        <TranslateTransform X="{Binding PanX}"
+                                                            Y="{Binding PanY}"/>
+                                    </TransformGroup>
+                                </Canvas.RenderTransform>
+
+                                <!-- Layer 1: LandCover (Base) -->
+                                <Image Source="{Binding LandCoverLayer}"
+                                       x:Name="LandCoverMap"/>
+
+                                <!-- Layer 2: Confidence Overlay (Graustufen) -->
+                                <Image Source="{Binding ConfidenceOverlay}"
+                                       Visibility="{Binding ShowConfidenceOverlay, Converter={StaticResource BoolToVis}}"/>
+
+                                <!-- Layer 3: LandIceThickness Overlay (Heatmap) -->
+                                <Image Source="{Binding LandIceThicknessOverlay}"
+                                       Visibility="{Binding ShowLandIceThicknessOverlay, Converter={StaticResource BoolToVis}}"/>
+                            </Canvas>
+
+                            <!-- OVERLAY: Screen-Space (zoomt/panned NICHT) -->
+                            <Canvas x:Name="MapOverlay"
+                                    IsHitTestVisible="True"
+                                    Panel.ZIndex="50"
+                                    SnapsToDevicePixels="True"
+                                    UseLayoutRounding="True">
+
+                                <!-- Grid -->
+                                <local:GeoGridOverlay2D
+                                    Canvas.Left="0"
+                                    Canvas.Top="0"
+                                    Width="{Binding ElementName=MapHost, Path=ActualWidth}"
+                                    Height="{Binding ElementName=MapHost, Path=ActualHeight}"
+                                    IsHitTestVisible="False"
+                                    Visibility="{Binding ShowGridLayer, Converter={StaticResource BoolToVis}}"
+                                    RenderOptions.EdgeMode="Aliased"
+                                    Zoom="{Binding Zoom}"
+                                    PanX="{Binding PanX}"
+                                    PanY="{Binding PanY}"
+                                    CacheMeta="{Binding CacheMeta}" />
+
+                                <!-- Floating-Label am Mauszeiger -->
+                                <Border Visibility="{Binding ShowHoverOverlay, Converter={StaticResource BoolToVis}}"
+                                        Canvas.Left="{Binding HoverOverlayX}"
+                                        Canvas.Top="{Binding HoverOverlayY}"
+                                        Background="#E0101010"
+                                        BorderBrush="#FFDDDDDD"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="8,5"
+                                        SnapsToDevicePixels="True">
+                                    <TextBlock Text="{Binding HoverOverlayText}"
+                                               Foreground="#FFFFFFFF"
+                                               FontFamily="Consolas"
+                                               FontSize="11"
+                                               TextWrapping="Wrap"/>
+                                </Border>
+                            </Canvas>
+
+                            <!-- NoPreview -->
+                            <Grid IsHitTestVisible="False">
+                                <TextBlock Text="Noch keine Vorschau - Cache generieren oder laden."
+                                           Foreground="#AAFFFFFF"
+                                           FontSize="16"
+                                           TextWrapping="Wrap"
+                                           TextAlignment="Center"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <!-- Trigger analog EarthSurfaceWindow -->
+                                                <DataTrigger Binding="{Binding LandCoverLayer}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </Grid>
+                    </Border>
+
+                    <!-- Statusbar -->
+                    <StatusBar Grid.Row="2">
+                        <StatusBarItem>
+                            <TextBlock MinWidth="90" FontFamily="Consolas" Text="{Binding StatusLatText}"/>
+                        </StatusBarItem>
+                        <StatusBarItem>
+                            <TextBlock MinWidth="90" FontFamily="Consolas" Text="{Binding StatusLonText}" Margin="0,0,20,0"/>
+                        </StatusBarItem>
+
+                        <!-- sinnvoll fürs LandCover -->
+                        <StatusBarItem>
+                            <TextBlock MinWidth="180" FontFamily="Consolas" Text="{Binding StatusLandCoverClassText}" Margin="0,0,20,0"/>
+                        </StatusBarItem>
+                        <StatusBarItem>
+                            <TextBlock MinWidth="140" FontFamily="Consolas" Text="{Binding StatusConfidenceText}" Margin="0,0,20,0"/>
+                        </StatusBarItem>
+                        <StatusBarItem>
+                            <TextBlock MinWidth="170" FontFamily="Consolas" Text="{Binding StatusLandIceThicknessText}" Margin="0,0,20,0"/>
+                        </StatusBarItem>
+
+                        <StatusBarItem HorizontalAlignment="Right">
+                            <TextBlock TextAlignment="Right" MinWidth="100" FontFamily="Consolas" Text="{Binding StatusZoomText}"/>
+                        </StatusBarItem>
+                    </StatusBar>
+                </Grid>
+            </Border>
+
+            <!-- RIGHT: SETTINGS -->
+            <ScrollViewer Grid.Column="1"
+                          Margin="12,0,0,0"
+                          VerticalScrollBarVisibility="Visible">
+
+                <StackPanel>
+                    <TextBlock Text="Cache-Einstellungen"
+                               FontSize="16"
+                               FontWeight="Bold"
+                               Margin="8,0,0,10"/>
+
+                    <!-- Rohdaten -->
+                    <GroupBox Header="Rohdaten" Margin="8">
+                        <StackPanel Margin="10">
+
+                            <TextBlock Text="Quelle (Name)" Opacity="0.8"/>
+                            <TextBox Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged}"
+                                     Margin="0,4,0,10"/>
+
+                            <!-- NEU: EarthSurfaceCache-Basis -->
+                            <TextBlock Text="EarthSurface-Cache (Basis)" Opacity="0.8"/>
+                            <Grid Margin="0,4,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding BaseEarthSurfaceCachePath, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalContentAlignment="Center"
+                                         Margin="0,0,8,0"
+                                         IsReadOnly="True"
+                                         ToolTip="Entfernen mit [Entf] oder [Backspace]">
+                                    <i:Interaction.Behaviors>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearBaseEarthSurfaceCacheCommand}"/>
+                                    </i:Interaction.Behaviors>
+                                </TextBox>
+                                <Button Grid.Column="1"
+                                        Content="..."
+                                        Width="34"
+                                        Command="{Binding BrowseBaseEarthSurfaceCacheCommand}"/>
+                            </Grid>
+
+                            <!-- Copernicus: Class TIF -->
+                            <TextBlock Text="Copernicus LC100 Class-TIF" Opacity="0.8"/>
+                            <Grid Margin="0,4,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding RawClassTifFile, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalContentAlignment="Center"
+                                         Margin="0,0,8,0"
+                                         IsReadOnly="True"
+                                         ToolTip="Entfernen mit [Entf] oder [Backspace]">
+                                    <i:Interaction.Behaviors>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearClassTifFileCommand}"/>
+                                    </i:Interaction.Behaviors>
+                                </TextBox>
+                                <Button Grid.Column="1"
+                                        Content="..."
+                                        Width="34"
+                                        Command="{Binding BrowseClassTifCommand}"/>
+                            </Grid>
+
+                            <!-- Copernicus: Proba TIF -->
+                            <TextBlock Text="Copernicus LC100 Proba-TIF" Opacity="0.8"/>
+                            <Grid Margin="0,4,0,14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding RawProbaTifFile, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalContentAlignment="Center"
+                                         Margin="0,0,8,0"
+                                         IsReadOnly="True"
+                                         ToolTip="Entfernen mit [Entf] oder [Backspace]">
+                                    <i:Interaction.Behaviors>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearProbaTifFileCommand}"/>
+                                    </i:Interaction.Behaviors>
+                                </TextBox>
+                                <Button Grid.Column="1"
+                                        Content="..."
+                                        Width="34"
+                                        Command="{Binding BrowseProbaTifCommand}"/>
+                            </Grid>
+
+                            <!-- BedMachine (später implementiert) -->
+                            <TextBlock Text="BedMachine (optional, später)" Opacity="0.8" Margin="0,0,0,6"/>
+
+                            <TextBlock Text="BedMachine Greenland" Opacity="0.8"/>
+                            <Grid Margin="0,4,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding RawBedMachineGreenlandFile, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalContentAlignment="Center"
+                                         Margin="0,0,8,0"
+                                         IsReadOnly="True"
+                                         ToolTip="Entfernen mit [Entf] oder [Backspace]">
+                                    <i:Interaction.Behaviors>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearBedMachineGreenlandFileCommand}"/>
+                                    </i:Interaction.Behaviors>
+                                </TextBox>
+                                <Button Grid.Column="1"
+                                        Content="..."
+                                        Width="34"
+                                        Command="{Binding BrowseBedMachineGreenlandCommand}"/>
+                            </Grid>
+
+                            <TextBlock Text="BedMachine Antarctica" Opacity="0.8"/>
+                            <Grid Margin="0,4,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding RawBedMachineAntarcticaFile, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalContentAlignment="Center"
+                                         Margin="0,0,8,0"
+                                         IsReadOnly="True"
+                                         ToolTip="Entfernen mit [Entf] oder [Backspace]">
+                                    <i:Interaction.Behaviors>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearBedMachineAntarcticaFileCommand}"/>
+                                    </i:Interaction.Behaviors>
+                                </TextBox>
+                                <Button Grid.Column="1"
+                                        Content="..."
+                                        Width="34"
+                                        Command="{Binding BrowseBedMachineAntarcticaCommand}"/>
+                            </Grid>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <!-- Actions -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Cache generieren"
+                                Width="140" Height="32" Margin="0,0,8,0"
+                                Command="{Binding GenerateCacheCommand}"
+                                IsEnabled="{Binding CanGenerateCache}"/>
+                    </StackPanel>
+
+                    <!-- Status/Report -->
+                    <TextBox Margin="8"
+                             Height="110"
+                             Text="{Binding LastReport}"
+                             IsReadOnly="True"
+                             TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- Progress Overlay -->
+        <climatesim:ProgressOverlay Panel.ZIndex="999"
+                                    Grid.Row="0"
+                                    Grid.RowSpan="2"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Stretch">
+            <climatesim:ProgressOverlay.Visibility>
+                <MultiBinding Converter="{StaticResource AndToVis}">
+                    <Binding Path="IsBusy"/>
+                    <Binding Path="BusyShowOverlay"/>
+                </MultiBinding>
+            </climatesim:ProgressOverlay.Visibility>
+        </climatesim:ProgressOverlay>
+    </Grid>
+</Window>

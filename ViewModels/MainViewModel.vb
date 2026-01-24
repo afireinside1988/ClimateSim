@@ -46,6 +46,7 @@ Public Class MainViewModel
     Public Event StepRequested As EventHandler
     Public Event ShowHistoryRequested As EventHandler
     Public Event ShowEarthSurfaceWindowRequested As EventHandler
+    Public Event ShowLandCoverSmokeTestWindowRequested As EventHandler
     Public Event SimulationConfigRequested As EventHandler
 
 #End Region
@@ -58,6 +59,7 @@ Public Class MainViewModel
     Public ReadOnly Property StepCommand As ICommand
     Public ReadOnly Property ShowHistoryCommand As ICommand
     Public ReadOnly Property ShowEarthSurfaceWindowCommand As ICommand
+    Public ReadOnly Property ShowLandCoverSmokeTestWindowCommand As ICommand
     Public ReadOnly Property SimulationConfigCommand As ICommand
 
 #End Region
@@ -359,6 +361,10 @@ Public Class MainViewModel
             Sub(o As Object)
                 RaiseEvent ShowEarthSurfaceWindowRequested(Me, EventArgs.Empty)
             End Sub)
+
+        ShowLandCoverSmokeTestWindowCommand = New RelayCommand(Of Object)(Sub(o As Object)
+                                                                              RaiseEvent ShowLandCoverSmokeTestWindowRequested(Me, EventArgs.Empty)
+                                                                          End Sub)
 
         'Simulations-Konfiguration aufrufen
         SimulationConfigCommand = New RelayCommand(Of Object)(

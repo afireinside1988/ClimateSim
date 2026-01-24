@@ -30,6 +30,7 @@
                 </MenuItem>
                 <MenuItem Header="_Szenarien">
                     <MenuItem Header="Erdoberfläche" Command="{Binding ShowEarthSurfaceWindowCommand}"/>
+                    <MenuItem Header="LandCover" Command="{Binding ShowLandCoverSmokeTestWindowCommand}"/>
                     <Separator/>
                     <MenuItem Header="_CO₂-Szenarien..." IsEnabled="False"/>
                     <MenuItem Header="_Ozon-Szenarien..." IsEnabled="False"/>

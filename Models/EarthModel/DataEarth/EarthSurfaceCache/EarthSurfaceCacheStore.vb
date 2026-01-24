@@ -1,11 +1,7 @@
-﻿Imports System.Drawing.Imaging
-Imports System.IO
-Imports System.Linq.Expressions
-Imports System.Net.Http.Headers
+﻿Imports System.IO
 Imports System.Text
 Imports System.Text.Json
 Imports System.Threading
-Imports System.Windows.Media.Converters
 
 Public Enum CacheOpenErrorKind
     None = 0
@@ -17,21 +13,12 @@ End Enum
 
 Public Class EarthSurfaceCacheStore
 
-
-    Private Sub New()
-
-    End Sub
-
     Public Shared ReadOnly Property CacheDir As String = EarthSurfacePaths.CacheDirectory
 
     ''' <summary>
     ''' Erzeugt den standardisierten Cache-Dateinamen (ohne Extension)
     ''' Beispiel: "GEBCO_2025_1.0deg_nearest"
     ''' </summary>
-    ''' <param name="source"></param>
-    ''' <param name="cellSizeDeg"></param>
-    ''' <param name="resampling"></param>
-    ''' <returns></returns>
     Public Shared Function BuildCacheBaseName(source As String, cellSizeDeg As Double, resampling As String,
                                               Optional landMaskVariant As String = Nothing) As String
 
@@ -49,7 +36,7 @@ Public Class EarthSurfaceCacheStore
         Directory.CreateDirectory(CacheDir)
 
         Dim baseName As String = BuildCacheBaseName(source, cellSizeDeg, resampling, landMaskVariant)
-        Dim binPath As String = Path.Combine(CacheDir, baseName & ".bin")
+        Dim binPath As String = Path.Combine(CacheDir, baseName & ".escf")
         Dim metaPath As String = Path.Combine(CacheDir, baseName & ".meta.json")
         Return (binPath, metaPath)
     End Function
@@ -134,9 +121,9 @@ Public Class EarthSurfaceCacheStore
             End If
 
             'Cross-Check: Flags
-            Dim hasHeightBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasHeight)
-            Dim hasTidBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasTid)
-            Dim hasLandMaskBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasLandMask)
+            Dim hasHeightBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.EarthSurfaceCacheFlags.HasHeight)
+            Dim hasTidBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.EarthSurfaceCacheFlags.HasTid)
+            Dim hasLandMaskBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.EarthSurfaceCacheFlags.HasLandMask)
 
             If hasHeightBin <> meta.HasHeight OrElse
                hasTidBin <> meta.HasTid OrElse
@@ -183,7 +170,7 @@ Public Class EarthSurfaceCacheStore
             Return False
         End If
 
-        Dim binPath As String = Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), "bin")
+        Dim binPath As String = Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), "escf")
         If Not File.Exists(binPath) Then
             errorKind = CacheOpenErrorKind.NotFound
             errorMessage = "Cache-Datei fehlt."
@@ -232,9 +219,9 @@ Public Class EarthSurfaceCacheStore
                 Return False
             End If
 
-            Dim hasHeightBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasHeight)
-            Dim hasTidBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasTid)
-            Dim hasLandMask As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.CacheFlags.HasLandMask)
+            Dim hasHeightBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.EarthSurfaceCacheFlags.HasHeight)
+            Dim hasTidBin As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.EarthSurfaceCacheFlags.HasTid)
+            Dim hasLandMask As Boolean = r.flags.HasFlag(EarthSurfaceCacheFormat.EarthSurfaceCacheFlags.HasLandMask)
 
             If hasHeightBin <> meta.HasHeight OrElse hasTidBin <> meta.HasTid OrElse hasLandMask <> meta.HasLandMask Then
                 errorKind = CacheOpenErrorKind.BinaryInvalid
@@ -273,7 +260,7 @@ Public Class EarthSurfaceCacheStore
         progress?.Report(New ProgressInfo("Cache speichern: Meta...", 98))
         ct.ThrowIfCancellationRequested()
         Dim metaJson As String = JsonSerializer.Serialize(cache.Meta, ConfigStore.JsonOptions)
-        WriteTextAtomic(paths.metaPath, metaJson, ct)
+        IOHelpers.WriteTextAtomic(paths.metaPath, metaJson, ct)
 
         progress?.Report(New ProgressInfo("Cache gespeichert.", 100))
     End Sub
@@ -295,29 +282,13 @@ Public Class EarthSurfaceCacheStore
         progress?.Report(New ProgressInfo("Cache speicher: Meta...", 98))
         ct.ThrowIfCancellationRequested()
         Dim metaJson As String = JsonSerializer.Serialize(cache.Meta, ConfigStore.JsonOptions)
-        WriteTextAtomic(metaPath, metaJson, ct)
+        IOHelpers.WriteTextAtomic(metaPath, metaJson, ct)
 
         progress?.Report(New ProgressInfo("Cache gespeichert.", 100))
 
     End Sub
+
 #Region "Helper"
-
-    Private Shared Sub WriteTextAtomic(savePath As String, content As String, Optional ct As CancellationToken = Nothing)
-
-        ct.ThrowIfCancellationRequested()
-
-        Directory.CreateDirectory(Path.GetDirectoryName(savePath))
-        Dim tmp As String = savePath & ".tmp"
-        File.WriteAllText(tmp, content, Encoding.UTF8)
-
-        ct.ThrowIfCancellationRequested()
-
-        If File.Exists(savePath) Then
-            File.Replace(tmp, savePath, destinationBackupFileName:=Nothing)
-        Else
-            File.Move(tmp, savePath)
-        End If
-    End Sub
 
     Private Shared Function NormalizeNamePart(part As String) As String
 

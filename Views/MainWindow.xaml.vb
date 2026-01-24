@@ -57,6 +57,7 @@ Class MainWindow
         AddHandler _viewModel.StepRequested, AddressOf OnStepRequested
         AddHandler _viewModel.ShowHistoryRequested, AddressOf OnShowHistoryRequested
         AddHandler _viewModel.ShowEarthSurfaceWindowRequested, AddressOf OnShowEarthSurfaceWindowRequested
+        AddHandler _viewModel.ShowLandCoverSmokeTestWindowRequested, AddressOf OnShowLandCoverSmokeTestWindowRequested
         AddHandler _viewModel.SimulationConfigRequested, AddressOf OnSimulationConfigRequested
 
         'Mouseovers
@@ -285,6 +286,12 @@ Class MainWindow
 
     Private Sub OnShowEarthSurfaceWindowRequested(sender As Object, e As EventArgs)
         Dim wnd As New EarthSurfaceWindow()
+        wnd.Owner = Me
+        wnd.Show()
+    End Sub
+
+    Private Sub OnShowLandCoverSmokeTestWindowRequested(sender As Object, e As EventArgs)
+        Dim wnd As New LandCoverWindow()
         wnd.Owner = Me
         wnd.Show()
     End Sub

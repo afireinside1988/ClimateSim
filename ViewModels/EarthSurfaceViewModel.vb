@@ -4,7 +4,6 @@ Imports System.IO
 Imports System.Text
 Imports System.Text.Json
 Imports System.Threading
-Imports System.Windows.Automation.Peers
 Imports Microsoft.Win32
 
 Public Class EarthSurfaceViewModel
@@ -107,7 +106,7 @@ Public Class EarthSurfaceViewModel
     Private Sub SetLoadedCachePathsFromMetaPath(metaPath As String)
         _loadedMetaPath = metaPath
         _loadedBinPath = If(String.IsNullOrWhiteSpace(metaPath), Nothing,
-            Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), "bin"))
+            Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), "escf"))
     End Sub
 
 #End Region

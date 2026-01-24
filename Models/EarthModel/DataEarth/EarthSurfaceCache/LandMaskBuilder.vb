@@ -11,10 +11,6 @@
 ''' </summary>
 Public NotInheritable Class LandMaskBuilder
 
-    Private Sub New()
-
-    End Sub
-
 #Region "Öffentliche Hauptfunktion"
     ''' <summary>
     ''' Erzeugt LandMask aus HeightM + optionalem Majority-Filter.
