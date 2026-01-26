@@ -2197,10 +2197,6 @@ Public Class EarthSurfaceViewModel
                         Throw New InvalidDataException($"Cache konnte nicht wieder geöffnet werden: {ek} - {em}")
                     End If
 
-                    'DEBUG
-                    Dim bmp = EarthSurfacePreviewRenderer.BuildLandOceanBitmapFromHeight(opened)
-                    EarthSurfacePreviewRenderer.SavePng(bmp, EarthSurfacePaths.CacheDirectory & "\preview.png")
-
                     ct.ThrowIfCancellationRequested()
 
                     Dim sampleReport As String = BuildGenerateReport(opened)

@@ -24,7 +24,7 @@
         AddHandler vm.RequestSetUtc, Sub()
 
                                          Dim initialUtc = If(vm.SimulationUtc = DateTime.MinValue, DateTime.UtcNow, vm.SimulationUtc)
-                                         Dim picked As Date? = UtcDateTimeDialog.ShowDialogUtc(Me, initialUtc)
+                                         Dim picked As Date? = UtcDateTimeDialog.ShowDialogUtc(Me, initialUtc, "Simulationszeit (UTC)")
                                          If picked.HasValue Then
                                              vm.SetSimulationUtc(picked.Value)
                                          End If

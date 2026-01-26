@@ -13,6 +13,10 @@ Public NotInheritable Class LandCoverCacheBuilder
         Public Property ProbaTifPath As String
         Public Property TargetCellSizeDeg As Double
 
+        'EarthSurface-Reference
+        Public Property EarthSurfaceReference As String
+        Public Property EarthSurfaceCreateUTC As DateTime
+
         'Rastervertrag
         Public Property LonMinCenter As Double = -179.5
         Public Property LatMaxCenter As Double = 89.5  'N->S
@@ -74,6 +78,8 @@ Public NotInheritable Class LandCoverCacheBuilder
             .LatCount = latCount,
             .LonCount = lonCount,
             .HasConfidence = includeConf,
+            .EarthSurfaceRef = opts.EarthSurfaceReference,
+            .EarthSurfaceCreateUtc = opts.EarthSurfaceCreateUTC,
             .RawClassFile = opts.ClassTifPath,
             .RawProbaFile = If(includeConf, opts.ProbaTifPath, Nothing),
             .ImportNotes = "Copernicus LC100 Discrete-classification",

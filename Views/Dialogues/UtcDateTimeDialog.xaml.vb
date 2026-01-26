@@ -1,13 +1,13 @@
 ﻿Public Class UtcDateTimeDialog
     Inherits Window
 
-    Public Sub New(initialUtc As DateTime)
+    Public Sub New(initialUtc As DateTime, title As String)
 
         ' Dieser Aufruf ist für den Designer erforderlich.
         InitializeComponent()
 
         ' Fügen Sie Initialisierungen nach dem InitializeComponent()-Aufruf hinzu.
-        DataContext = New UtcDateTimeDialogViewModel(Me, initialUtc)
+        DataContext = New UtcDateTimeDialogViewModel(Me, initialUtc, title)
     End Sub
 
     Public ReadOnly Property SelectedUtc As DateTime?
@@ -17,8 +17,8 @@
         End Get
     End Property
 
-    Public Shared Function ShowDialogUtc(owner As Window, initialUtc As DateTime) As DateTime?
-        Dim dlg As New UtcDateTimeDialog(initialUtc) With {
+    Public Shared Function ShowDialogUtc(owner As Window, initialUtc As DateTime, title As String) As DateTime?
+        Dim dlg As New UtcDateTimeDialog(initialUtc, title) With {
             .Owner = owner
         }
 

@@ -102,7 +102,7 @@
                                 <CheckBox Content="Confidence"
                                           IsChecked="{Binding ShowConfidenceOverlay}"
                                           Margin="0,0,12,0"/>
-                                <CheckBox Content="LandIceThickness"
+                                <CheckBox Content="Landeis"
                                           IsChecked="{Binding ShowLandIceThicknessOverlay}"
                                           Margin="0,0,12,0"/>
                             </WrapPanel>
@@ -421,6 +421,36 @@
                                         Command="{Binding BrowseBedMachineAntarcticaCommand}"/>
                             </Grid>
                         </StackPanel>
+                    </GroupBox>
+                    
+                    <!-- Zielraster -->
+                    <GroupBox Header="Zielraster" Margin="8">
+                        <Grid Margin="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Margin="0,0,5,5"
+                                       Text="Zellgröße:"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1"
+                                       FontFamily="Consolas"
+                                       VerticalAlignment="Center"
+                                       Text="{Binding TargetCellSizeText}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Margin="0,0,5,0"
+                                       Text="Zielauflösung:"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1"
+                                       FontFamily="Consolas"
+                                       VerticalAlignment="Bottom"
+                                       Text="{Binding TargetResolutionText}"/>
+
+                        </Grid>
                     </GroupBox>
 
                     <!-- Actions -->

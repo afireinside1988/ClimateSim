@@ -1,5 +1,9 @@
 ﻿Imports System.Windows.Input
 Imports System.Windows.Media
+Imports System.IO
+Imports Microsoft.Win32
+Imports System.Text.Json
+Imports System.Text
 
 Public Class LandCoverViewModel
     Inherits ViewModelBase
@@ -7,6 +11,8 @@ Public Class LandCoverViewModel
 #Region "Konstruktor"
 
     Public Sub New()
+
+        SourceName = "COPERNICUS_2019"
 
         ' Defaults wie im EarthSurfaceWindow (Grid an, Overlays aus)
         _showGridLayer = True
@@ -39,13 +45,13 @@ Public Class LandCoverViewModel
 
         ' Commands (Browse/Clear)
         _BrowseBaseEarthSurfaceCacheCommand = New RelayCommand(Of Object)(Sub(o) BrowseBaseEarthSurfaceCache(), Function(o) Not IsBusy)
-        _ClearBaseEarthSurfaceCacheCommand = New RelayCommand(Of Object)(Sub(o) ClearBaseEarthSurfaceCache(), Function(o) HasBaseEarthSurfaceCachePath AndAlso Not IsBusy)
+        _ClearBaseEarthSurfaceCacheCommand = New RelayCommand(Of Object)(Sub(o) ClearBaseEarthSurfaceCache(), Function(o) Not String.IsNullOrWhiteSpace(BaseEarthSurfaceCachePath))
 
         _BrowseClassTifCommand = New RelayCommand(Of Object)(Sub(o) BrowseClassTif(), Function(o) Not IsBusy)
-        _ClearClassTifFileCommand = New RelayCommand(Of Object)(Sub(o) ClearClassTifFile(), Function(o) HasClassTif AndAlso Not IsBusy)
+        _ClearClassTifFileCommand = New RelayCommand(Of Object)(Sub(o) ClearClassTifFile(), Function(o) RawClassTifFile IsNot Nothing)
 
         _BrowseProbaTifCommand = New RelayCommand(Of Object)(Sub(o) BrowseProbaTif(), Function(o) Not IsBusy)
-        _ClearProbaTifFileCommand = New RelayCommand(Of Object)(Sub(o) ClearProbaTifFile(), Function(o) HasProbaTif AndAlso Not IsBusy)
+        _ClearProbaTifFileCommand = New RelayCommand(Of Object)(Sub(o) ClearProbaTifFile(), Function(o) RawProbaTifFile IsNot Nothing)
 
         _BrowseBedMachineGreenlandCommand = New RelayCommand(Of Object)(Sub(o) BrowseBedMachineGreenland(), Function(o) Not IsBusy)
         _ClearBedMachineGreenlandFileCommand = New RelayCommand(Of Object)(Sub(o) ClearBedMachineGreenlandFile(), Function(o) HasBedMachineGreenland AndAlso Not IsBusy)
@@ -55,16 +61,16 @@ Public Class LandCoverViewModel
 
         ' Commands (Pan/Zoom/Mouse; exakt passend zum Behavior)
         _BeginPanCommand = New RelayCommand(Of PanRequest)(AddressOf BeginPan, Function(r) Not IsBusy)
-        _panCommand = New RelayCommand(Of PanRequest)(AddressOf Pan, Function(r) Not IsBusy)
-        _endPanCommand = New RelayCommand(Of Object)(AddressOf EndPan, Function(o) Not IsBusy)
-        _zoomCommand = New RelayCommand(Of ZoomRequest)(AddressOf ZoomMap, Function(r) Not IsBusy)
-        _viewportChangedCommand = New RelayCommand(Of ViewportChangedRequest)(AddressOf ViewportChanged, Function(r) Not IsBusy)
+        _PanCommand = New RelayCommand(Of PanRequest)(AddressOf Pan, Function(r) Not IsBusy)
+        _EndPanCommand = New RelayCommand(Of Object)(AddressOf EndPan, Function(o) Not IsBusy)
+        _ZoomCommand = New RelayCommand(Of ZoomRequest)(AddressOf ZoomMap, Function(r) Not IsBusy)
+        _ViewportChangedCommand = New RelayCommand(Of ViewportChangedRequest)(AddressOf ViewportChanged, Function(r) Not IsBusy)
 
-        _mapMouseDownCommand = New RelayCommand(Of MapMouseDownRequest)(AddressOf MapMouseDown, Function(r) Not IsBusy)
-        _mapMouseUpCommand = New RelayCommand(Of MapMouseUpRequest)(AddressOf MapMouseUp, Function(r) Not IsBusy)
-        _mapMouseMoveCommand = New RelayCommand(Of MapMouseMoveRequest)(AddressOf MapMouseMove, Function(r) Not IsBusy)
+        _MapMouseDownCommand = New RelayCommand(Of MapMouseDownRequest)(AddressOf MapMouseDown, Function(r) Not IsBusy)
+        _MapMouseUpCommand = New RelayCommand(Of MapMouseUpRequest)(AddressOf MapMouseUp, Function(r) Not IsBusy)
+        _MapMouseMoveCommand = New RelayCommand(Of MapMouseMoveRequest)(AddressOf MapMouseMove, Function(r) Not IsBusy)
 
-        _mapMouseLeaveCommand = New RelayCommand(Of Object)(AddressOf MapMouseLeave, Function(o) True)
+        _MapMouseLeaveCommand = New RelayCommand(Of Object)(AddressOf MapMouseLeave, Function(o) True)
 
         ' Report
         _lastReport = ""
@@ -144,16 +150,9 @@ Public Class LandCoverViewModel
         End Get
         Set(value As String)
             If SetProperty(_rawClassTifFile, value) Then
-                OnPropertyChanged(NameOf(HasClassTif))
                 OnPropertyChanged(NameOf(CanGenerateCache))
             End If
         End Set
-    End Property
-
-    Public ReadOnly Property HasClassTif As Boolean
-        Get
-            Return Not String.IsNullOrWhiteSpace(_rawClassTifFile)
-        End Get
     End Property
 
     Private _rawProbaTifFile As String
@@ -163,16 +162,9 @@ Public Class LandCoverViewModel
         End Get
         Set(value As String)
             If SetProperty(_rawProbaTifFile, value) Then
-                OnPropertyChanged(NameOf(HasProbaTif))
                 OnPropertyChanged(NameOf(CanGenerateCache))
             End If
         End Set
-    End Property
-
-    Public ReadOnly Property HasProbaTif As Boolean
-        Get
-            Return Not String.IsNullOrWhiteSpace(_rawProbaTifFile)
-        End Get
     End Property
 
     Private _rawBedMachineGreenlandFile As String
@@ -224,7 +216,24 @@ Public Class LandCoverViewModel
     Public ReadOnly Property CanGenerateCache As Boolean
         Get
             ' minimaler Satz gemäß deiner Vorgabe: Dimensionen kommen aus BaseEarthSurfaceCache
-            Return HasBaseEarthSurfaceCachePath AndAlso HasClassTif AndAlso HasProbaTif
+            If EarthSurfaceCacheMeta Is Nothing Then
+                Return False
+            Else
+                Return EarthSurfaceCacheMeta.CellSizeDeg > 0 AndAlso RawClassTifFile IsNot Nothing
+            End If
+        End Get
+    End Property
+
+    Public ReadOnly Property TargetCellSizeText As String
+        Get
+            If EarthSurfaceCacheMeta IsNot Nothing Then Return EarthSurfaceCacheMeta.CellSizeDeg.ToString() & "°"
+            Return ""
+        End Get
+    End Property
+    Public ReadOnly Property TargetResolutionText As String
+        Get
+            If EarthSurfaceCacheMeta IsNot Nothing Then Return EarthSurfaceCacheMeta.LonCount.ToString() & " x " & EarthSurfaceCacheMeta.LatCount.ToString()
+            Return ""
         End Get
     End Property
 
@@ -264,14 +273,23 @@ Public Class LandCoverViewModel
         End Set
     End Property
 
-    ' Für GeoGridOverlay2D (bleibt bewusst als Object, bis wir euren Meta-Typ einhängen)
-    Private _cacheMeta As Object
-    Public Property CacheMeta As Object
+    Private _earthSurfaceCacheMeta As EarthSurfaceCacheMeta
+    Public Property EarthSurfaceCacheMeta As EarthSurfaceCacheMeta
         Get
-            Return _cacheMeta
+            Return _earthSurfaceCacheMeta
         End Get
-        Set(value As Object)
-            SetProperty(_cacheMeta, value)
+        Set(value As EarthSurfaceCacheMeta)
+            SetProperty(_earthSurfaceCacheMeta, value)
+        End Set
+    End Property
+
+    Private _landCoverCacheMeta As LandCoverCacheMeta
+    Public Property LandCoverCacheMeta As LandCoverCacheMeta
+        Get
+            Return _landCoverCacheMeta
+        End Get
+        Set(value As LandCoverCacheMeta)
+            SetProperty(_landCoverCacheMeta, value)
         End Set
     End Property
 
@@ -498,13 +516,86 @@ Public Class LandCoverViewModel
     End Function
 
     Private Async Function GenerateCacheAsync() As Task
-        ' TODO: Build + Render
-        BusyTitle = "Cache generieren..."
-        BusyMessage = ""
-        BusyIsIndeterminate = True
         IsBusy = True
         Try
-            LastReport = "TODO: GenerateCacheAsync"
+            LastReport = ""
+
+            ' GDAL init (einmalig; hier im SmokeTest ok)
+
+
+            Dim report =
+                Await BusyRunner.RunAsync(Of String)(
+                    Me,
+                    "LandCover: Cache generieren...",
+                    Function(progress, ct)
+
+                        progress?.Report(New ProgressInfo("Initialiseren GDAL...", -1))
+                        ct.ThrowIfCancellationRequested()
+                        CopernicusLc100Processor.InitGdal()
+
+                        Dim opts As New LandCoverCacheBuilder.BuildOptions With {
+                            .SourceName = "COPERNICUS_LC100_v3.0.1",
+                            .EpochYear = 2019,
+                            .ClassTifPath = RawClassTifFile,
+                            .ProbaTifPath = RawProbaTifFile,
+                            .TargetCellSizeDeg = EarthSurfaceCacheMeta.CellSizeDeg,
+                            .EarthSurfaceReference = BaseEarthSurfaceCachePath,
+                            .EarthSurfaceCreateUTC = EarthSurfaceCacheMeta.CreateUtc,
+                            .IncludeConfidence = RawProbaTifFile IsNot Nothing
+                        }
+
+                        progress?.Report(New ProgressInfo("Starte Cache-Build...", 0))
+
+                        Dim buildReport As String =
+                            LandCoverCacheBuilder.BuildAndSave(opts, progress, ct)
+
+                        ct.ThrowIfCancellationRequested()
+
+                        'Optional: Smoke-Check: cache direkt wieder öffnen und Dimensionen prüfen
+                        Dim paths = LandCoverCacheStore.GetCachePaths(opts.SourceName, opts.EpochYear, opts.TargetCellSizeDeg)
+
+                        Dim cache As LandCoverCache = Nothing
+                        Dim kind As CacheOpenErrorKind = CacheOpenErrorKind.None
+                        Dim msg As String = Nothing
+
+                        If Not LandCoverCacheStore.TryOpenCacheFromFiles(paths.metaPath, cache, kind, msg, progress, ct) Then
+                            Throw New InvalidDataException($"Cache wurde gespeichert, kann aber nicht wieder geöffnet werden: {kind} - {msg}")
+                        End If
+
+                        'Minimal: Dimensionscheck
+                        Dim latCount As Integer = CInt(Math.Round(180.0 / opts.TargetCellSizeDeg))
+                        Dim lonCount As Integer = CInt(Math.Round(360.0 / opts.TargetCellSizeDeg))
+                        Dim nExpected As Integer = latCount * lonCount
+
+                        If cache Is Nothing OrElse cache.Meta Is Nothing Then
+                            Throw New InvalidDataException("Cache-Reload: cache/meta ist Nothing.")
+                        End If
+
+                        If cache.Meta.LatCount <> latCount OrElse cache.Meta.LonCount <> lonCount Then
+                            Throw New InvalidDataException("Cache-Reload: Meta-Dimensionen stimmen nicht.")
+                        End If
+
+                        If cache.LandCoverClass Is Nothing OrElse cache.LandCoverClass.Length <> nExpected Then
+                            Throw New InvalidDataException($"Cache-Reload: LandCoverClass Länge falsch. Erwartet {nExpected}.")
+                        End If
+
+                        If cache.Meta.HasConfidence Then
+                            If cache.Confidence Is Nothing OrElse cache.Confidence.Length <> nExpected Then
+                                Throw New InvalidDataException($"Cache-Reload: Confidence Länge falsch. Erwartet {nExpected}.")
+                            End If
+                        End If
+
+                        progress?.Report(New ProgressInfo("Fertig.", 100))
+                        Return buildReport
+                    End Function,
+                    canCancel:=True,
+                    showOverlay:=True)
+
+            LastReport = report
+        Catch ex As OperationCanceledException
+            LastReport = "Abgebrochen."
+        Catch ex As Exception
+            LastReport = "Fehler:" & Environment.NewLine & FlattenException(ex, showStackTrace:=False)
         Finally
             IsBusy = False
             BusyIsIndeterminate = False
@@ -521,16 +612,87 @@ Public Class LandCoverViewModel
 #Region "Command Handler - Browse/Clear"
 
     Private Sub BrowseBaseEarthSurfaceCache()
-        ' TODO: Dialog + BaseEarthSurfaceCachePath setzen
-        LastReport = "TODO: BrowseBaseEarthSurfaceCache"
+
+        'Open-File-Dialog anzeigen
+        Dim dlg As New OpenFileDialog With {
+            .Title = "EarthSurface Cache auswählen",
+            .Filter = "EarthSurface Cache Meta (*.meta.json)|*.meta.json",
+            .InitialDirectory = EarthSurfacePaths.CacheDirectory,
+            .Multiselect = False,
+            .CheckFileExists = True
+        }
+
+        If dlg.ShowDialog() Then
+
+            Dim metaPath As String
+
+            If File.Exists(dlg.FileName) Then
+                metaPath = dlg.FileName
+            Else
+                MessageBox.Show("Datei nicht gefunden.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+                Return
+            End If
+
+            BaseEarthSurfaceCachePath = metaPath
+
+            'Meta einlesen
+            Dim metaJson As String = File.ReadAllText(metaPath, Encoding.UTF8)
+            Dim meta As EarthSurfaceCacheMeta
+            If Not String.IsNullOrWhiteSpace(metaJson) Then
+                meta = JsonSerializer.Deserialize(Of EarthSurfaceCacheMeta)(metaJson, ConfigStore.JsonOptions)
+            Else
+                MessageBox.Show("Die EarthSurface-Cache Meta-Datei konnte nicht geöffnet werden.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+                Return
+            End If
+
+
+            'Zielauflösung setzen
+            If meta.CacheType = CacheType.EarthSurface Then
+
+                If meta.CellSizeDeg >= 0 AndAlso meta.LatCount >= 0 AndAlso meta.LonCount >= 0 Then
+                    EarthSurfaceCacheMeta = meta
+                    OnPropertyChanged(NameOf(TargetCellSizeText))
+
+                    OnPropertyChanged(NameOf(TargetResolutionText))
+                    OnPropertyChanged(NameOf(CanGenerateCache))
+                Else
+                    MessageBox.Show("Der ausgewählte EarthSurface-Cache hat keine gültigen Rasterdimensionen.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+                End If
+            Else
+                MessageBox.Show("Die ausgewählte Datei ist kein EarthSurface-Cache.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+            End If
+        End If
     End Sub
 
     Private Sub ClearBaseEarthSurfaceCache()
+
         BaseEarthSurfaceCachePath = Nothing
+        EarthSurfaceCacheMeta = Nothing
+
+        OnPropertyChanged(NameOf(TargetCellSizeText))
+        OnPropertyChanged(NameOf(TargetResolutionText))
+
+        LastReport = "EarthSurface-Cache entfernt."
     End Sub
 
     Private Sub BrowseClassTif()
-        LastReport = "TODO: BrowseClassTif"
+        Dim dlg As New OpenFileDialog With {
+            .Filter = "GeoTIFF (*.tif;*.tiff)|*.tif;*.tiff",
+            .Title = "Copernicus Class-map GeoTIFF auswählen",
+            .InitialDirectory = EarthSurfacePaths.RawDirectory,
+            .Multiselect = False,
+            .CheckFileExists = True
+        }
+
+        If dlg.ShowDialog() = True Then
+            If File.Exists(dlg.FileName) Then
+                RawClassTifFile = dlg.FileName
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            Else
+                MessageBox.Show("Datei nicht gefunden", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+            End If
+
+        End If
     End Sub
 
     Private Sub ClearClassTifFile()
@@ -538,7 +700,23 @@ Public Class LandCoverViewModel
     End Sub
 
     Private Sub BrowseProbaTif()
-        LastReport = "TODO: BrowseProbaTif"
+        Dim dlg As New OpenFileDialog With {
+            .Filter = "GeoTIFF (*.tif;*.tiff)|*.tif;*.tiff",
+            .Title = "Copernicus Proba-map GeoTIFF auswählen",
+            .InitialDirectory = EarthSurfacePaths.RawDirectory,
+            .Multiselect = False,
+            .CheckFileExists = True
+        }
+
+        If dlg.ShowDialog() = True Then
+            If File.Exists(dlg.FileName) Then
+                RawProbaTifFile = dlg.FileName
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            Else
+                MessageBox.Show("Datei nicht gefunden", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+            End If
+
+        End If
     End Sub
 
     Private Sub ClearProbaTifFile()
