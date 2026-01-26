@@ -1,6 +1,5 @@
 ﻿
 Imports System.IO
-Imports System.Security.AccessControl
 
 ''' <summary>
 ''' Erstellt pro GEBCO-Tile eine Request-Map für bilineares Resampling

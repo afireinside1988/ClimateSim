@@ -151,7 +151,7 @@ Public Class CopernicusLc100Processor
 
                     'DEBUG
                     Dim tmp As New StringBuilder()
-                    AppendGdalMetadata(tmp, "Proba-TIF Metadata:", dsProba, bandProba)
+                    AppendGdalMetadata(tmp, "=== Proba-TIF Metadata ===", dsProba, bandProba)
                     probaMetaDataDump = tmp.ToString()
 
                     confSum = New ULong(nCells - 1) {}
@@ -213,7 +213,7 @@ Public Class CopernicusLc100Processor
                     'Progress-Throttling
                     If (y Mod ProgressThrottleRowInterval) = 0 Then
                         Dim pct As Integer = CInt((y / Math.Max(1.0, height - 1)) * 98)   '95% für Import, Rest finalize
-                        progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(opts.ClassTifPath)}{Environment.NewLine}{Environment.NewLine}Row {y:N0}/{height:N0}", pct))
+                        progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(opts.ClassTifPath)}{Environment.NewLine}{Environment.NewLine}Zeilen verarbeitet: {y:N0}/{height:N0}", pct))
                     End If
                 Next
 
@@ -292,7 +292,7 @@ Public Class CopernicusLc100Processor
             swTotal.Stop()
 
             Dim sb As New StringBuilder()
-            sb.AppendLine("Copernicus LC100 Import Report")
+            sb.AppendLine("=== Copernicus LC100 Cache Generation Report ===")
             sb.AppendLine($"Source: {Path.GetFileName(opts.ClassTifPath)}")
             sb.AppendLine($"Target: {latCount}x{lonCount} @ {opts.TargetCellSizeDeg}°")
             sb.AppendLine($"Confidence: {includeConf}")
@@ -300,22 +300,22 @@ Public Class CopernicusLc100Processor
             sb.AppendLine($"Missing (Class): {classMissing}")
             If includeConf Then sb.AppendLine($"Missing (Proba): {probaMissing}")
             sb.AppendLine()
-            AppendGdalMetadata(sb, "Class-TIF Metadata:", dsClass, bandClass)
+            AppendGdalMetadata(sb, "=== Class-TIF Metadata ===", dsClass, bandClass)
             sb.AppendLine()
             If includeConf AndAlso probaMetaDataDump IsNot Nothing Then
                 sb.Append(probaMetaDataDump)
             End If
             sb.AppendLine()
-            sb.AppendLine("Class histogramm (LC11 Code -> Cell Count):")
+            sb.AppendLine("=== Class histogramm (LC11 Code -> Cell Count) ===")
             For Each kvp In stats.OrderBy(Function(k) k.Key)
                 sb.AppendLine($"  {kvp.Key}: {kvp.Value:N0}")
             Next
             sb.AppendLine()
-            sb.AppendLine("NoData-Diagnose")
+            sb.AppendLine("=== NoData-Diagnose ===")
             sb.AppendLine($"  EmptyCells (kein Mapping-Treffer): {emptyCells:N0}")
             sb.AppendLine($"  NoData-dominant (NoData mit Treffern): {nodataDominant:N0}")
             sb.AppendLine()
-            sb.AppendLine("Timing:")
+            sb.AppendLine("=== Timing ===")
             If swImport IsNot Nothing Then
                 sb.AppendLine($"  Import: (Read + Mapping): {swImport.Elapsed.TotalSeconds:0.00}s")
             End If
@@ -323,7 +323,7 @@ Public Class CopernicusLc100Processor
                 sb.AppendLine($"  Finalize (ArgMax + Confidence): {swFinalize.Elapsed.TotalSeconds:0.00}s")
             End If
             sb.AppendLine($"  Gesamt: {swTotal.Elapsed.TotalSeconds:0.00}s")
-            sb.AppendLine("Source coverage (aus GeoTransform):")
+            sb.AppendLine("=== Source coverage (aus GeoTransform) ===")
             sb.AppendLine($"  Lon: {srcLonMin:0.00} .. {srcLonMax:0.00}")
             sb.AppendLine($"  Lat: {srcLatMax:0.00} .. {srcLatMin:0.00}")
             sb.AppendLine($"  PixelSize: dLon={gt(1)} dLat={gt(5)}")

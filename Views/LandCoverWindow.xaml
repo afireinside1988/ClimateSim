@@ -305,6 +305,18 @@
                             <TextBox Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged}"
                                      Margin="0,4,0,10"/>
 
+                            <TextBlock Text="Jahr" Opacity="0.8"/>
+                            <TextBox Margin="0,4,0,10" Width="70"
+                                     HorizontalAlignment="Left">
+                                <i:Interaction.Behaviors>
+                                    <local:NumericTimeTextBehavior Mode="Year"
+                                                                   Value="{Binding EpochYear, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                   AllowEmpty="False"
+                                                                   PadOnLostFocus="True"
+                                                                   SelectAllOnFocus="True" />
+                                </i:Interaction.Behaviors>
+                            </TextBox>
+
                             <!-- NEU: EarthSurfaceCache-Basis -->
                             <TextBlock Text="EarthSurface-Cache (Basis)" Opacity="0.8"/>
                             <Grid Margin="0,4,0,10">

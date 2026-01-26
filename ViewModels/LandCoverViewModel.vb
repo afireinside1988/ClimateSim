@@ -12,7 +12,8 @@ Public Class LandCoverViewModel
 
     Public Sub New()
 
-        SourceName = "COPERNICUS_2019"
+        SourceName = "COPERNICUS_LC100"
+        EpochYear = DateTime.UtcNow.Year
 
         ' Defaults wie im EarthSurfaceWindow (Grid an, Overlays aus)
         _showGridLayer = True
@@ -124,6 +125,16 @@ Public Class LandCoverViewModel
         End Set
     End Property
 
+    Private _epochYear As Integer
+    Public Property EpochYear As Integer
+        Get
+            Return _epochYear
+        End Get
+        Set(value As Integer)
+            SetProperty(_epochYear, value)
+        End Set
+    End Property
+
     Private _baseEarthSurfaceCachePath As String
     Public Property BaseEarthSurfaceCachePath As String
         Get
@@ -230,6 +241,7 @@ Public Class LandCoverViewModel
             Return ""
         End Get
     End Property
+
     Public ReadOnly Property TargetResolutionText As String
         Get
             If EarthSurfaceCacheMeta IsNot Nothing Then Return EarthSurfaceCacheMeta.LonCount.ToString() & " x " & EarthSurfaceCacheMeta.LatCount.ToString()
@@ -534,8 +546,8 @@ Public Class LandCoverViewModel
                         CopernicusLc100Processor.InitGdal()
 
                         Dim opts As New LandCoverCacheBuilder.BuildOptions With {
-                            .SourceName = "COPERNICUS_LC100_v3.0.1",
-                            .EpochYear = 2019,
+                            .SourceName = SourceName,
+                            .EpochYear = EpochYear,
                             .ClassTifPath = RawClassTifFile,
                             .ProbaTifPath = RawProbaTifFile,
                             .TargetCellSizeDeg = EarthSurfaceCacheMeta.CellSizeDeg,

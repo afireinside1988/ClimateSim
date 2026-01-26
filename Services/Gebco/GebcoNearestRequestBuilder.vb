@@ -1,9 +1,5 @@
 ﻿Public NotInheritable Class GebcoNearestRequestBuilder
 
-    Private Sub New()
-
-    End Sub
-
     'GEBCO 15arc
     Private Const SrcCellDeg As Double = 15.0 / 3600.0      '0.00416666666...
     Private Shared ReadOnly SrcLat0 As Double = -90.0 + SrcCellDeg / 2.0
@@ -142,7 +138,7 @@
                 srcX = Clamp(srcX, 0, SrcLonCount - 1)
 
                 Dim tileIndex As Integer = FindTileIndex(tiles, latCenter, lonCenter)
-                If tileIndex < 0 Then Throw New InvalidOperationException($"No tile for latCenter={latCenter}, lonCenter={lonCenter}")
+                If tileIndex < 0 Then Throw New InvalidOperationException($"Kein Tile für latCenter={latCenter}, lonCenter={lonCenter} gefunden.")
 
                 Dim tile As GebcoTileInfo = tiles(tileIndex)
 

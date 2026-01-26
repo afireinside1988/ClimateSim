@@ -289,7 +289,8 @@ Public Class NumericTimeTextBehavior
 
         Select Case Mode
             Case NumericTimeMode.Year
-                tb.Text = t.PadLeft(4, "0"c)
+                'Kein Padding mehr, sieht unschön aus
+                'tb.Text = t.PadLeft(4, "0"c)
             Case NumericTimeMode.Hour, NumericTimeMode.MinuteSecond
                 tb.Text = t.PadLeft(2, "0"c)
         End Select
@@ -362,8 +363,7 @@ Public Class NumericTimeTextBehavior
         Dim formatted As String
         Select Case Mode
             Case NumericTimeMode.Year
-                'Year kann bis 4 Ziffern, bei Value-Set formatieren wir als 4-stellig
-                formatted = v.Value.ToString("0000")
+                formatted = v.Value.ToString()
 
             Case NumericTimeMode.Hour, NumericTimeMode.MinuteSecond
                 formatted = v.Value.ToString("00")

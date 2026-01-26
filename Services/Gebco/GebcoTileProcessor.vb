@@ -82,7 +82,7 @@ Public NotInheritable Class GebcoTileProcessor
 
                                 Dim v As Integer
                                 If Not tok.TryReadInt(v) Then
-                                    Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei row={row}, col={col}")
+                                    Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei Zeile={row}, Spalte={col}")
                                 End If
 
                                 If count > 0 Then
@@ -106,7 +106,7 @@ Public NotInheritable Class GebcoTileProcessor
                             'Progress-Throttling und Report
                             If (row Mod ProgressThrottleRowInterval) = 0 Then
                                 Dim pct As Integer = CInt((row / Math.Max(1.0, nRows - 1)) * 100.0)
-                                progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Row {row:N0}/{nRows:N0}", pct))
+                                progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Zeilen verarbeitet: {row:N0}/{nRows:N0}", pct))
                             End If
 
                         Next
@@ -238,7 +238,7 @@ Public NotInheritable Class GebcoTileProcessor
                                 For col As Integer = 0 To nCols - 1
 
                                     Dim v As Integer
-                                    If Not tok.TryReadInt(v) Then Throw New EndOfStreamException($"{progressPrefix}: Unerwartetes Dateiende in {tile.EntryName} bei row={row}, col={col}.")
+                                    If Not tok.TryReadInt(v) Then Throw New EndOfStreamException($"{progressPrefix}: Unerwartetes Dateiende in {tile.EntryName} bei Zeile={row}, Spalte={col}.")
 
                                     If needCount > 0 Then
 
@@ -321,7 +321,7 @@ Public NotInheritable Class GebcoTileProcessor
                                 'Progress
                                 If (row Mod ProgressThrottleRowInterval) = 0 Then
                                     Dim pct As Integer = CInt((row / Math.Max(1.0, nRows - 1)) * 100.0)
-                                    progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Row {row:N0}/{nRows:N0}", pct))
+                                    progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Zeilen verarbeitet: {row:N0}/{nRows:N0}", pct))
                                 End If
                             Next
 
@@ -411,7 +411,7 @@ Public NotInheritable Class GebcoTileProcessor
 
                                 Dim b As Byte
                                 If Not tok.TryReadByte(b) Then
-                                    Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei row={row}, col={col}")
+                                    Throw New EndOfStreamException($"{progressPrefix}: EOF in {tile.EntryName} bei Zeile={row}, Spalte={col}")
                                 End If
 
                                 If count > 0 Then
@@ -431,12 +431,12 @@ Public NotInheritable Class GebcoTileProcessor
                             'Progress-Throttling und reporten
                             If (row Mod ProgressThrottleRowInterval) = 0 Then
                                 Dim pct As Integer = CInt((row / Math.Max(1.0, nRows - 1.0)) * 100.0)
-                                progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Row {row:N0}/{nRows:N0}", pct))
+                                progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Zeilen verarbeitet: {row:N0}/{nRows:N0}", pct))
 
                             End If
                         Next
 
-                        progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Done", 100))
+                        progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(tile.EntryName)}{Environment.NewLine}{Environment.NewLine}Fertig.", 100))
                     End Using
                 End Using
             End Using
