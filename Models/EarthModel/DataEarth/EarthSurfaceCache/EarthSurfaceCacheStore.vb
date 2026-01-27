@@ -9,11 +9,12 @@ Public Enum CacheOpenErrorKind
     MetaJsonInvalid = 2
     BinaryInvalid = 3
     IncompatibleSchema = 4
+    WrongCacheType = 5
 End Enum
 
 Public Class EarthSurfaceCacheStore
 
-    Public Shared ReadOnly Property CacheDir As String = EarthSurfacePaths.CacheDirectory
+    Public Shared ReadOnly Property CacheDir As String = DataEarthPaths.CacheDirectory
 
     ''' <summary>
     ''' Erzeugt den standardisierten Cache-Dateinamen (ohne Extension)
@@ -85,6 +86,12 @@ Public Class EarthSurfaceCacheStore
         End If
 
         '2) Schema/Kompatibilität prüfen
+        If meta.CacheType <> CacheType.EarthSurface Then
+            errorKind = CacheOpenErrorKind.WrongCacheType
+            errorMessage = $"Meta-Datei ist keine EarthSurface-Meta: {meta.CacheType} (erwartet: {CacheType.EarthSurface})."
+            Return False
+        End If
+
         If meta.CacheVersion <> EarthSurfaceCacheFormat.CurrentVersion Then
             errorKind = CacheOpenErrorKind.IncompatibleSchema
             errorMessage = $"Inkompatible Cache-Version: {meta.CacheVersion} (erwartet: {EarthSurfaceCacheFormat.CurrentVersion})."
@@ -170,13 +177,6 @@ Public Class EarthSurfaceCacheStore
             Return False
         End If
 
-        Dim binPath As String = Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), "escf")
-        If Not File.Exists(binPath) Then
-            errorKind = CacheOpenErrorKind.NotFound
-            errorMessage = "Cache-Datei fehlt."
-            Return False
-        End If
-
         '1) Meta lesen
         Dim meta As EarthSurfaceCacheMeta
 
@@ -202,13 +202,28 @@ Public Class EarthSurfaceCacheStore
         End If
 
         '2) Version prüfen
+        If meta.CacheType <> CacheType.EarthSurface Then
+            errorKind = CacheOpenErrorKind.WrongCacheType
+            errorMessage = $"Meta-Datei ist keine EarthSurface-Meta: {meta.CacheType} (erwartet: {CacheType.EarthSurface})."
+            Return False
+        End If
+
         If meta.CacheVersion <> EarthSurfaceCacheFormat.CurrentVersion Then
             errorKind = CacheOpenErrorKind.IncompatibleSchema
             errorMessage = $"Inkompatible Cache-Version: {meta.CacheVersion} (erwartet: {EarthSurfaceCacheFormat.CurrentVersion})."
             Return False
         End If
 
+
+
         '3) Binär lesen + Cross-Checks
+        Dim binPath As String = Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), "escf")
+        If Not File.Exists(binPath) Then
+            errorKind = CacheOpenErrorKind.NotFound
+            errorMessage = "Cache-Datei fehlt."
+            Return False
+        End If
+
         Try
 
             Dim r = EarthSurfaceCacheFormat.ReadCache(binPath, progress, ct)

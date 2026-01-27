@@ -6,7 +6,7 @@ Imports System.Xml
 
 Public Class LandCoverCacheStore
 
-    Public Shared ReadOnly Property CacheDir As String = EarthSurfacePaths.CacheDirectory
+    Public Shared ReadOnly Property CacheDir As String = DataEarthPaths.CacheDirectory
 
     ''' <summary>
     ''' Erzeugt den standardisierten Cache-Dateinamen (ohne Extension)
@@ -43,13 +43,6 @@ Public Class LandCoverCacheStore
             Return False
         End If
 
-        Dim binPath As String = Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), "lccf")
-        If Not File.Exists(binPath) Then
-            errorKind = CacheOpenErrorKind.NotFound
-            errorMessage = "Cache-Datei fehlt."
-            Return False
-        End If
-
         '1) Meta lesen
         Dim meta As LandCoverCacheMeta
 
@@ -72,6 +65,12 @@ Public Class LandCoverCacheStore
         End If
 
         '2) Version & Rasterdimensionen prüfen
+        If meta.CacheType <> CacheType.LandCover Then
+            errorKind = CacheOpenErrorKind.WrongCacheType
+            errorMessage = $"Meta-Datei ist keine LandCover-Meta: {meta.CacheType} (erwartet: {CacheType.LandCover})."
+            Return False
+        End If
+
         If meta.CacheVersion <> LandCoverCacheFormat.CurrentVersion Then
             errorKind = CacheOpenErrorKind.IncompatibleSchema
             errorMessage = $"Inkompatible Cache-Version: {meta.CacheVersion} (erwartet: {LandCoverCacheFormat.CurrentVersion})."
@@ -92,6 +91,13 @@ Public Class LandCoverCacheStore
         End If
 
         '3) Binär lesen & Cross-Checks
+        Dim binPath As String = Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), "lccf")
+        If Not File.Exists(binPath) Then
+            errorKind = CacheOpenErrorKind.NotFound
+            errorMessage = "Cache-Datei fehlt."
+            Return False
+        End If
+
         Try
             Dim r = LandCoverCacheFormat.ReadCache(binPath, progress, ct)
 

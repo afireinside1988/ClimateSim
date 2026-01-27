@@ -1,5 +1,4 @@
-﻿Imports System.Windows.Input
-Imports System.Windows.Media
+﻿
 Imports System.IO
 Imports Microsoft.Win32
 Imports System.Text.Json
@@ -55,10 +54,10 @@ Public Class LandCoverViewModel
         _ClearProbaTifFileCommand = New RelayCommand(Of Object)(Sub(o) ClearProbaTifFile(), Function(o) RawProbaTifFile IsNot Nothing)
 
         _BrowseBedMachineGreenlandCommand = New RelayCommand(Of Object)(Sub(o) BrowseBedMachineGreenland(), Function(o) Not IsBusy)
-        _ClearBedMachineGreenlandFileCommand = New RelayCommand(Of Object)(Sub(o) ClearBedMachineGreenlandFile(), Function(o) HasBedMachineGreenland AndAlso Not IsBusy)
+        _ClearBedMachineGreenlandFileCommand = New RelayCommand(Of Object)(Sub(o) ClearBedMachineGreenlandFile(), Function(o) Not String.IsNullOrWhiteSpace(RawBedMachineGreenlandFile))
 
         _BrowseBedMachineAntarcticaCommand = New RelayCommand(Of Object)(Sub(o) BrowseBedMachineAntarctica(), Function(o) Not IsBusy)
-        _ClearBedMachineAntarcticaFileCommand = New RelayCommand(Of Object)(Sub(o) ClearBedMachineAntarcticaFile(), Function(o) HasBedMachineAntarctica AndAlso Not IsBusy)
+        _ClearBedMachineAntarcticaFileCommand = New RelayCommand(Of Object)(Sub(o) ClearBedMachineAntarcticaFile(), Function(o) Not String.IsNullOrWhiteSpace(RawBedMachineAntarcticaFile))
 
         ' Commands (Pan/Zoom/Mouse; exakt passend zum Behavior)
         _BeginPanCommand = New RelayCommand(Of PanRequest)(AddressOf BeginPan, Function(r) Not IsBusy)
@@ -184,16 +183,8 @@ Public Class LandCoverViewModel
             Return _rawBedMachineGreenlandFile
         End Get
         Set(value As String)
-            If SetProperty(_rawBedMachineGreenlandFile, value) Then
-                OnPropertyChanged(NameOf(HasBedMachineGreenland))
-            End If
+            SetProperty(_rawBedMachineGreenlandFile, value)
         End Set
-    End Property
-
-    Public ReadOnly Property HasBedMachineGreenland As Boolean
-        Get
-            Return Not String.IsNullOrWhiteSpace(_rawBedMachineGreenlandFile)
-        End Get
     End Property
 
     Private _rawBedMachineAntarcticaFile As String
@@ -202,16 +193,8 @@ Public Class LandCoverViewModel
             Return _rawBedMachineAntarcticaFile
         End Get
         Set(value As String)
-            If SetProperty(_rawBedMachineAntarcticaFile, value) Then
-                OnPropertyChanged(NameOf(HasBedMachineAntarctica))
-            End If
+            SetProperty(_rawBedMachineAntarcticaFile, value)
         End Set
-    End Property
-
-    Public ReadOnly Property HasBedMachineAntarctica As Boolean
-        Get
-            Return Not String.IsNullOrWhiteSpace(_rawBedMachineAntarcticaFile)
-        End Get
     End Property
 
     Private _lastReport As String
@@ -226,7 +209,6 @@ Public Class LandCoverViewModel
 
     Public ReadOnly Property CanGenerateCache As Boolean
         Get
-            ' minimaler Satz gemäß deiner Vorgabe: Dimensionen kommen aus BaseEarthSurfaceCache
             If EarthSurfaceCacheMeta Is Nothing Then
                 Return False
             Else
@@ -295,13 +277,13 @@ Public Class LandCoverViewModel
         End Set
     End Property
 
-    Private _landCoverCacheMeta As LandCoverCacheMeta
-    Public Property LandCoverCacheMeta As LandCoverCacheMeta
+    Private _loadedLandCoverCache As LandCoverCache
+    Public Property LoadedLandCoverCache As LandCoverCache
         Get
-            Return _landCoverCacheMeta
+            Return _loadedLandCoverCache
         End Get
-        Set(value As LandCoverCacheMeta)
-            SetProperty(_landCoverCacheMeta, value)
+        Set(value As LandCoverCache)
+            SetProperty(_loadedLandCoverCache, value)
         End Set
     End Property
 
@@ -513,17 +495,79 @@ Public Class LandCoverViewModel
 
 #Region "Command Handler - Menu/Actions"
 
-    Private Async Function LoadCacheAsync() As Task
-        ' TODO: FileDialog + Cache load + Render
-        BusyTitle = "Cache laden..."
-        BusyMessage = ""
-        BusyIsIndeterminate = True
-        IsBusy = True
+    Private NotInheritable Class CacheOpenResult
+        Public Property Ok As Boolean
+        Public Property Cache As LandCoverCache
+        Public Property ErrorKind As CacheOpenErrorKind
+        Public Property ErrorMessage As String
+    End Class
+
+    Private Async Function LoadCacheAsync() As Task(Of String)
+
+        Dim dlg As New OpenFileDialog With {
+            .Title = "Landcover-Cache laden",
+            .Filter = "LandCover Meta-Datei (*.meta.json)|*.meta.json",
+            .InitialDirectory = DataEarthPaths.CacheDirectory,
+            .CheckFileExists = True,
+            .Multiselect = False
+        }
+
+        If dlg.ShowDialog() <> True Then Return "Datei nicht gefunden."
+
+        Dim metaPath As String = dlg.FileName
+
         Try
-            LastReport = "TODO: LoadCacheAsync"
-        Finally
-            IsBusy = False
-            BusyIsIndeterminate = False
+
+            Dim result As CacheOpenResult = Await BusyRunner.RunAsync(Of CacheOpenResult)(
+                Me,
+                "EarthSurface: Cache laden",
+                Function(progress, ct)
+
+                    Dim cache As LandCoverCache = Nothing
+                    Dim ek As CacheOpenErrorKind
+                    Dim em As String = Nothing
+
+                    Dim ok As Boolean = LandCoverCacheStore.TryOpenCacheFromFiles(metaPath, cache, ek, em, progress, ct)
+
+                    Return New CacheOpenResult With {
+                        .Ok = ok AndAlso cache IsNot Nothing,
+                        .Cache = cache,
+                        .ErrorKind = ek,
+                        .ErrorMessage = em
+                    }
+
+                End Function,
+                canCancel:=True,
+                showOverlay:=True)
+
+            If Not result.Ok Then
+                Dim msg = $"Cache konnte nicht gelesen werden: {result.ErrorKind} - {result.ErrorMessage}"
+                LastReport = $"Fehler beim Laden: {msg}"
+                Return $"Fehler: {msg}"
+            End If
+
+            Dim openedCache As LandCoverCache = result.Cache
+
+            'Meta -> VM spiegeln
+            'ApplyLoadedMetaToViewModel(openedCache.Meta)
+
+            'Cache merken
+            'SetLoadedCachePathsFromMetaPath(metaPath)
+            LoadedLandCoverCache = openedCache
+
+            LastReport = $"Cache geladen: {Path.GetFileName(Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), Nothing))}"
+
+            'Nach dem Laden: Preview neu rendern
+            'Await RenderPreviewFromCacheAsync(showOverlay:=True)
+
+            Return "Cache geladen."
+
+        Catch ex As OperationCanceledException
+            LastReport = "Abgebrochen."
+            Return "Abgebrochen"
+        Catch ex As Exception
+            LastReport = $"Fehler: {ex.Message}"
+            Return $"Fehler: {ex.Message}"
         End Try
     End Function
 
@@ -566,11 +610,10 @@ Public Class LandCoverViewModel
                         'Optional: Smoke-Check: cache direkt wieder öffnen und Dimensionen prüfen
                         Dim paths = LandCoverCacheStore.GetCachePaths(opts.SourceName, opts.EpochYear, opts.TargetCellSizeDeg)
 
-                        Dim cache As LandCoverCache = Nothing
                         Dim kind As CacheOpenErrorKind = CacheOpenErrorKind.None
                         Dim msg As String = Nothing
 
-                        If Not LandCoverCacheStore.TryOpenCacheFromFiles(paths.metaPath, cache, kind, msg, progress, ct) Then
+                        If Not LandCoverCacheStore.TryOpenCacheFromFiles(paths.metaPath, LoadedLandCoverCache, kind, msg, progress, ct) Then
                             Throw New InvalidDataException($"Cache wurde gespeichert, kann aber nicht wieder geöffnet werden: {kind} - {msg}")
                         End If
 
@@ -579,20 +622,20 @@ Public Class LandCoverViewModel
                         Dim lonCount As Integer = CInt(Math.Round(360.0 / opts.TargetCellSizeDeg))
                         Dim nExpected As Integer = latCount * lonCount
 
-                        If cache Is Nothing OrElse cache.Meta Is Nothing Then
+                        If LoadedLandCoverCache Is Nothing OrElse LoadedLandCoverCache.Meta Is Nothing Then
                             Throw New InvalidDataException("Cache-Reload: cache/meta ist Nothing.")
                         End If
 
-                        If cache.Meta.LatCount <> latCount OrElse cache.Meta.LonCount <> lonCount Then
+                        If LoadedLandCoverCache.Meta.LatCount <> latCount OrElse LoadedLandCoverCache.Meta.LonCount <> lonCount Then
                             Throw New InvalidDataException("Cache-Reload: Meta-Dimensionen stimmen nicht.")
                         End If
 
-                        If cache.LandCoverClass Is Nothing OrElse cache.LandCoverClass.Length <> nExpected Then
+                        If LoadedLandCoverCache.LandCoverClass Is Nothing OrElse LoadedLandCoverCache.LandCoverClass.Length <> nExpected Then
                             Throw New InvalidDataException($"Cache-Reload: LandCoverClass Länge falsch. Erwartet {nExpected}.")
                         End If
 
-                        If cache.Meta.HasConfidence Then
-                            If cache.Confidence Is Nothing OrElse cache.Confidence.Length <> nExpected Then
+                        If LoadedLandCoverCache.Meta.HasConfidence Then
+                            If LoadedLandCoverCache.Confidence Is Nothing OrElse LoadedLandCoverCache.Confidence.Length <> nExpected Then
                                 Throw New InvalidDataException($"Cache-Reload: Confidence Länge falsch. Erwartet {nExpected}.")
                             End If
                         End If
@@ -629,7 +672,7 @@ Public Class LandCoverViewModel
         Dim dlg As New OpenFileDialog With {
             .Title = "EarthSurface Cache auswählen",
             .Filter = "EarthSurface Cache Meta (*.meta.json)|*.meta.json",
-            .InitialDirectory = EarthSurfacePaths.CacheDirectory,
+            .InitialDirectory = DataEarthPaths.CacheDirectory,
             .Multiselect = False,
             .CheckFileExists = True
         }
@@ -691,7 +734,7 @@ Public Class LandCoverViewModel
         Dim dlg As New OpenFileDialog With {
             .Filter = "GeoTIFF (*.tif;*.tiff)|*.tif;*.tiff",
             .Title = "Copernicus Class-map GeoTIFF auswählen",
-            .InitialDirectory = EarthSurfacePaths.RawDirectory,
+            .InitialDirectory = DataEarthPaths.RawDirectory,
             .Multiselect = False,
             .CheckFileExists = True
         }
@@ -715,7 +758,7 @@ Public Class LandCoverViewModel
         Dim dlg As New OpenFileDialog With {
             .Filter = "GeoTIFF (*.tif;*.tiff)|*.tif;*.tiff",
             .Title = "Copernicus Proba-map GeoTIFF auswählen",
-            .InitialDirectory = EarthSurfacePaths.RawDirectory,
+            .InitialDirectory = DataEarthPaths.RawDirectory,
             .Multiselect = False,
             .CheckFileExists = True
         }

@@ -1618,7 +1618,7 @@ Public Class EarthSurfaceViewModel
         Dim dlg As New OpenFileDialog With {
             .Title = "GEBCO Height-Datei auswählen",
             .Filter = "ESRI ASCII Zip (*.zip)|*.zip",
-            .InitialDirectory = EarthSurfacePaths.RawDirectory,
+            .InitialDirectory = DataEarthPaths.RawDirectory,
             .CheckFileExists = True
         }
 
@@ -1632,7 +1632,7 @@ Public Class EarthSurfaceViewModel
         Dim dlg As New OpenFileDialog With {
             .Title = "GEBCO TID-Datei auswählen",
             .Filter = "ESRI ASCII Zip (*.zip)|*.zip",
-            .InitialDirectory = EarthSurfacePaths.RawDirectory,
+            .InitialDirectory = DataEarthPaths.RawDirectory,
             .CheckFileExists = True
         }
 
@@ -1659,12 +1659,20 @@ Public Class EarthSurfaceViewModel
 
 #Region "Cache Laden"
 
+    Private NotInheritable Class CacheOpenResult
+        Public Property Ok As Boolean
+        Public Property Cache As EarthSurfaceCache
+        Public Property ErrorKind As CacheOpenErrorKind
+        Public Property ErrorMessage As String
+
+    End Class
+
     Private Async Function LoadCacheAsync() As Task(Of String)
 
         Dim dlg As New OpenFileDialog With {
             .Title = "EarthSurface-Cache laden",
             .Filter = "EarthSurface Meta-Datei (*.meta.json)|*.meta.json",
-            .InitialDirectory = EarthSurfacePaths.CacheDirectory,
+            .InitialDirectory = DataEarthPaths.CacheDirectory,
             .CheckFileExists = True,
             .Multiselect = False
         }
@@ -1680,7 +1688,7 @@ Public Class EarthSurfaceViewModel
 
         Try
 
-            Dim openedCache As EarthSurfaceCache = Await BusyRunner.RunAsync(Of EarthSurfaceCache)(
+            Dim result As CacheOpenResult = Await BusyRunner.RunAsync(Of CacheOpenResult)(
                 Me,
                 "EarthSurface: Cache laden",
                 Function(progress, ct)
@@ -1690,16 +1698,25 @@ Public Class EarthSurfaceViewModel
                     Dim em As String = Nothing
 
                     Dim ok As Boolean = EarthSurfaceCacheStore.TryOpenCacheFromFiles(metaPath, cache, ek, em, progress, ct)
-                    If Not ok OrElse cache Is Nothing Then
-                        Throw New InvalidDataException($"Cache konnte nicht gelesen werden: {ek} - {em}")
-                    End If
 
-                    Return cache
+                    Return New CacheOpenResult With {
+                        .Ok = ok AndAlso cache IsNot Nothing,
+                        .Cache = cache,
+                        .ErrorKind = ek,
+                        .ErrorMessage = em
+                    }
 
                 End Function,
                 canCancel:=True,
                 showOverlay:=True)
 
+            If Not result.Ok Then
+                Dim msg = $"Cache konnte nicht gelesen werden: {result.ErrorKind} - {result.ErrorMessage}"
+                LastReport = $"Fehler beim Laden: {msg}"
+                Return $"Fehler: {msg}"
+            End If
+
+            Dim openedCache As EarthSurfaceCache = result.Cache
 
             'Meta -> VM spiegeln
             ApplyLoadedMetaToViewModel(openedCache.Meta)
@@ -1718,6 +1735,11 @@ Public Class EarthSurfaceViewModel
         Catch ex As OperationCanceledException
             LastReport = "Abgebrochen."
             Return "Abgebrochen"
+
+        Catch ex As InvalidDataException
+            LastReport = $"Fehler beim Laden: {ex.Message}"
+            Return $"Fehler: {ex.Message}"
+
         Catch ex As Exception
             LastReport = $"Fehler: {ex.Message}"
             Return $"Fehler: {ex.Message}"
