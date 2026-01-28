@@ -879,8 +879,21 @@ Public Class LandCoverViewModel
         StatusZoomText = $"Zoom: {Zoom * 100:0.##}%"
     End Sub
 
-    Private Sub ViewportChanged(req As ViewportChangedRequest)
-        ' TODO: falls ihr bei Viewport-Change irgendwas invalidiert/cached
+    Private Sub ViewportChanged(r As ViewportChangedRequest)
+        If r Is Nothing Then Return
+
+        _lastViewportW = r.ViewPortSize.Width
+        _lastViewportH = r.ViewPortSize.Height
+
+        If LoadedLandCoverCache Is Nothing Then Return
+
+        If _pendingFitToViewport Then
+            FitToViewport(_lastViewportW, _lastViewportH)
+            _pendingFitToViewport = False
+        Else
+            'bei Resize nur clampen/zentrieren
+            ClampPan(_lastViewportW, _lastViewportH)
+        End If
     End Sub
 
     ' --- Mouse / Hover ---
