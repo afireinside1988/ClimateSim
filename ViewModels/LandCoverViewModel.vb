@@ -1,9 +1,10 @@
 ﻿
 Imports System.IO
-Imports Microsoft.Win32
-Imports System.Text.Json
 Imports System.Text
+Imports System.Text.Json
 Imports System.Threading
+Imports System.Windows.Media.Media3D
+Imports Microsoft.Win32
 Imports OSGeo.GDAL
 
 Public Class LandCoverViewModel
@@ -564,7 +565,7 @@ Public Class LandCoverViewModel
             LastReport = $"Cache geladen: {Path.GetFileName(Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), Nothing))}"
 
             'Nach dem Laden: Preview neu rendern
-            Await RenderPreviewFromCacheAsync(showOverlay:=True)
+            Await RenderPreviewFromCacheAsync()
 
             Return "Cache geladen."
 
@@ -586,8 +587,8 @@ Public Class LandCoverViewModel
             ' GDAL init
             Gdal.AllRegister()
 
-            Dim report =
-                Await BusyRunner.RunAsync(Of String)(
+            Dim resultTuple As Tuple(Of LandCoverCache, String) =
+                Await BusyRunner.RunAsync(Of Tuple(Of LandCoverCache, String))(
                     Me,
                     "LandCover: Cache generieren...",
                     Function(progress, ct)
@@ -614,48 +615,27 @@ Public Class LandCoverViewModel
 
                         ct.ThrowIfCancellationRequested()
 
-                        'Optional: Smoke-Check: cache direkt wieder öffnen und Dimensionen prüfen
+                        'Generierten Cache öffnen und an das VM übergeben
                         Dim paths = LandCoverCacheStore.GetCachePaths(opts.SourceName, opts.EpochYear, opts.TargetCellSizeDeg)
-
+                        Dim opened As LandCoverCache = Nothing
                         Dim kind As CacheOpenErrorKind = CacheOpenErrorKind.None
                         Dim msg As String = Nothing
 
-                        If Not LandCoverCacheStore.TryOpenCacheFromFiles(paths.metaPath, LoadedLandCoverCache, kind, msg, progress, ct) Then
+                        If Not LandCoverCacheStore.TryOpenCacheFromFiles(paths.metaPath, opened, kind, msg, progress, ct) Then
                             Throw New InvalidDataException($"Cache wurde gespeichert, kann aber nicht wieder geöffnet werden: {kind} - {msg}")
                         End If
 
-                        'Minimal: Dimensionscheck
-                        Dim latCount As Integer = CInt(Math.Round(180.0 / opts.TargetCellSizeDeg))
-                        Dim lonCount As Integer = CInt(Math.Round(360.0 / opts.TargetCellSizeDeg))
-                        Dim nExpected As Integer = latCount * lonCount
-
-                        If LoadedLandCoverCache Is Nothing OrElse LoadedLandCoverCache.Meta Is Nothing Then
-                            Throw New InvalidDataException("Cache-Reload: cache/meta ist Nothing.")
-                        End If
-
-                        If LoadedLandCoverCache.Meta.LatCount <> latCount OrElse LoadedLandCoverCache.Meta.LonCount <> lonCount Then
-                            Throw New InvalidDataException("Cache-Reload: Meta-Dimensionen stimmen nicht.")
-                        End If
-
-                        If LoadedLandCoverCache.LandCoverClass Is Nothing OrElse LoadedLandCoverCache.LandCoverClass.Length <> nExpected Then
-                            Throw New InvalidDataException($"Cache-Reload: LandCoverClass Länge falsch. Erwartet {nExpected}.")
-                        End If
-
-                        If LoadedLandCoverCache.Meta.HasConfidence Then
-                            If LoadedLandCoverCache.Confidence Is Nothing OrElse LoadedLandCoverCache.Confidence.Length <> nExpected Then
-                                Throw New InvalidDataException($"Cache-Reload: Confidence Länge falsch. Erwartet {nExpected}.")
-                            End If
-                        End If
-
                         progress?.Report(New ProgressInfo("Fertig.", 100))
-                        Return buildReport
+                        Return Tuple.Create(opened, buildReport)
                     End Function,
                     canCancel:=True,
                     showOverlay:=True)
 
-            Await RenderPreviewFromCacheAsync(showOverlay:=True)
+            LoadedLandCoverCache = resultTuple.Item1
 
-            LastReport = report
+            If LoadedLandCoverCache IsNot Nothing Then Await RenderPreviewFromCacheAsync()
+
+            LastReport = resultTuple.Item2
         Catch ex As OperationCanceledException
             LastReport = "Abgebrochen."
         Catch ex As Exception
@@ -821,6 +801,21 @@ Public Class LandCoverViewModel
         Public Lon As Double
     End Structure
 
+    Private _camera As New CameraState With {
+        .CenterLat = 0.0,
+        .CenterLon = 0.0,
+        .SpanLat = 180.0,
+        .SpanLon = 360.0
+    }
+    Public Property Camera As CameraState
+        Get
+            Return _camera
+        End Get
+        Set(value As CameraState)
+            SetProperty(_camera, value)
+        End Set
+    End Property
+
     Private Sub BeginPan(r As PanRequest)
         _isPanning = True
         _panStartMouse = r.MousePos
@@ -897,22 +892,22 @@ Public Class LandCoverViewModel
     End Sub
 
     ' --- Mouse / Hover ---
-    Private Sub MapMouseDown(req As MapMouseDownRequest)
+    Private Sub MapMouseDown(r As MapMouseDownRequest)
         ' Kein Editor im LandCoverWindow -> aktuell no-op.
         ' (Ctrl/Alt wird vom Behavior als "Edit-Click" klassifiziert, kann später z.B. "Pin Observer" werden.)
     End Sub
 
-    Private Sub MapMouseUp(req As MapMouseUpRequest)
+    Private Sub MapMouseUp(r As MapMouseUpRequest)
         ' no-op
     End Sub
 
-    Private Sub MapMouseMove(req As MapMouseMoveRequest)
+    Private Sub MapMouseMove(r As MapMouseMoveRequest)
         ' Hier kommt später die "wichtigste" Logik:
         ' ScreenMousePos -> ContentPixel -> CacheCell -> Klasse/Confidence/IceThickness lesen
 
         ' Screen-space Overlay positionieren
-        HoverOverlayX = req.MousePos.X + 14
-        HoverOverlayY = req.MousePos.Y + 14
+        HoverOverlayX = r.MousePos.X + 14
+        HoverOverlayY = r.MousePos.Y + 14
 
         'TODO: Nur True setzen, wenn ein Layer gerendert ist
         'ShowHoverOverlay = True
@@ -974,7 +969,7 @@ Public Class LandCoverViewModel
         Public Property LandIceThickness As ImageSource
     End Class
 
-    Private Async Function RenderPreviewFromCacheAsync(Optional showOverlay As Boolean = True) As Task
+    Private Async Function RenderPreviewFromCacheAsync() As Task
 
         If LoadedLandCoverCache Is Nothing Then
             LandCoverLayer = Nothing
@@ -1139,6 +1134,80 @@ Public Class LandCoverViewModel
         ClampPan(viewPortW, viewPortH)
 
     End Sub
+
+    Public Shared Function ScreenToGeo(mousePos As Point,
+                                       viewPortSize As Size,
+                                       contentSize As Size,
+                                       camera As CameraState,
+                                       zoom As Double,
+                                       panX As Double,
+                                       panY As Double) As (Lat As Double, Lon As Double)
+
+        If viewPortSize.Width <= 0 OrElse viewPortSize.Height <= 0 Then
+            Return (Double.NaN, Double.NaN)
+        End If
+
+        If contentSize.Width <= 0 OrElse contentSize.Height <= 0 Then
+            Return (Double.NaN, Double.NaN)
+        End If
+        If zoom <= 0 Then Return (Double.NaN, Double.NaN)
+
+        'Mausposition in "Content Space" zurückrechnen (Inverse des RenderTransforms)
+        Dim xContent As Double = (mousePos.X - panX) / zoom
+        Dim yContent As Double = (mousePos.Y - panY) / zoom
+
+        If xContent < 0 OrElse xContent >= contentSize.Width OrElse yContent < 0 OrElse yContent >= contentSize.Height Then
+            Return (Double.NaN, Double.NaN)
+        End If
+
+        'Normierte Koordinaten
+        Dim xNorm As Double = xContent / contentSize.Width
+        Dim yNorm As Double = yContent / contentSize.Height
+
+        'Geo berechnen (inverse Render-Formel)
+        Dim lon As Double = camera.CenterLon + (xNorm - 0.5) * camera.SpanLon
+        Dim lat As Double = camera.CenterLat + (0.5 - yNorm) * camera.SpanLat
+
+        'Clamp/Wrap
+        lat = Clamp(lat, -90.0, 90.0)
+        lon = Wrap180(lon)
+
+        Return (lat, lon)
+
+    End Function
+
+    Private Function TryHitCell(mousePos As Point, viewport As Size, ByRef hit As CellHit) As Boolean
+
+        hit = Nothing
+
+        If LoadedLandCoverCache Is Nothing OrElse LoadedLandCoverCache.Meta Is Nothing Then Return False
+
+        Dim meta As LandCoverCacheMeta = LoadedLandCoverCache.Meta
+        Dim contentSize As New Size(meta.LonCount, meta.LatCount)
+
+        Dim geo = ScreenToGeo(mousePos, viewport, contentSize, Camera, Zoom, PanX, PanY)
+        If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then Return False
+
+        Dim cell As Double = meta.CellSizeDeg
+
+        Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / cell))
+        latIdx = Clamp(latIdx, 0, meta.LatCount - 1)
+
+        Dim lonIdx As Integer = CInt(Math.Floor((geo.Lon + 180.0) / cell))
+        lonIdx = Clamp(lonIdx, 0, meta.LonCount - 1)
+
+        Dim idx As Integer = latIdx * meta.LonCount + lonIdx
+
+        hit = New CellHit With {
+            .LatIdx = latIdx,
+            .LonIdx = lonIdx,
+            .Index = idx,
+            .Lat = geo.Lat,
+            .Lon = geo.Lon
+        }
+
+        Return True
+    End Function
 
 #End Region
 End Class

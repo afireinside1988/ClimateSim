@@ -5,7 +5,7 @@ Public NotInheritable Class LandCoverRenderer
     Public Shared Function RenderLandCoverLayer(cache As LandCoverCache, Optional alpha As Byte = 255, Optional dpi As Double = 96.0) As WriteableBitmap
 
         ArgumentNullException.ThrowIfNull(cache)
-        If cache.Meta Is Nothing Then Throw New ArgumentNullException(NameOf(cache.Meta))
+        ArgumentNullException.ThrowIfNull(cache.Meta)
 
         Dim meta As LandCoverCacheMeta = cache.Meta
         Dim w As Integer = meta.LonCount
@@ -47,7 +47,7 @@ Public NotInheritable Class LandCoverRenderer
     Public Shared Function RenderConfidenceOverlay(cache As LandCoverCache, Optional alpha As Byte = 160, Optional dpi As Double = 96.0) As WriteableBitmap
 
         ArgumentNullException.ThrowIfNull(cache)
-        If cache.Meta Is Nothing Then Throw New ArgumentNullException(NameOf(cache.Meta))
+        ArgumentNullException.ThrowIfNull(cache.Meta)
 
         Dim meta As LandCoverCacheMeta = cache.Meta
         Dim w As Integer = meta.LonCount
