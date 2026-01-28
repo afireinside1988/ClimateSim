@@ -1,5 +1,4 @@
-﻿Imports System.Text.Json.Serialization
-
+﻿
 Public Class LandCoverCacheMeta
 
     'Meta-Schema-Version (unabhängig von Binär-Version)

@@ -3,6 +3,8 @@ Imports System.IO
 Imports Microsoft.Win32
 Imports System.Text.Json
 Imports System.Text
+Imports System.Threading
+Imports OSGeo.GDAL
 
 Public Class LandCoverViewModel
     Inherits ViewModelBase
@@ -325,6 +327,10 @@ Public Class LandCoverViewModel
 
 #Region "Pan/Zoom + Content Size (Bindings aus XAML)"
 
+    Private _lastViewportW As Double
+    Private _lastViewportH As Double
+    Private _pendingFitToViewport As Boolean
+
     Private _zoom As Double
     Public Property Zoom As Double
         Get
@@ -558,7 +564,7 @@ Public Class LandCoverViewModel
             LastReport = $"Cache geladen: {Path.GetFileName(Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), Nothing))}"
 
             'Nach dem Laden: Preview neu rendern
-            'Await RenderPreviewFromCacheAsync(showOverlay:=True)
+            Await RenderPreviewFromCacheAsync(showOverlay:=True)
 
             Return "Cache geladen."
 
@@ -576,8 +582,9 @@ Public Class LandCoverViewModel
         Try
             LastReport = ""
 
-            ' GDAL init (einmalig; hier im SmokeTest ok)
-
+            'TODO: in MainWindow initialisieren
+            ' GDAL init
+            Gdal.AllRegister()
 
             Dim report =
                 Await BusyRunner.RunAsync(Of String)(
@@ -645,6 +652,8 @@ Public Class LandCoverViewModel
                     End Function,
                     canCancel:=True,
                     showOverlay:=True)
+
+            Await RenderPreviewFromCacheAsync(showOverlay:=True)
 
             LastReport = report
         Catch ex As OperationCanceledException
@@ -890,4 +899,184 @@ Public Class LandCoverViewModel
 
 #End Region
 
+#Region "Rendering"
+
+    Private _renderCts As Threading.CancellationTokenSource
+
+    Private NotInheritable Class LandCoverPreviewRenderResult
+        Public Property Width As Integer
+        Public Property Height As Integer
+
+        Public Property LandCover As ImageSource
+        Public Property Confidence As ImageSource
+        Public Property LandIceThickness As ImageSource
+    End Class
+
+    Private Async Function RenderPreviewFromCacheAsync(Optional showOverlay As Boolean = True) As Task
+
+        If LoadedLandCoverCache Is Nothing Then
+            LandCoverLayer = Nothing
+            ConfidenceOverlay = Nothing
+            LandIceThicknessOverlay = Nothing
+            Return
+        End If
+
+        'Falls ein Render noch läuft: abbrechen
+        Try
+            _renderCts?.Cancel()
+        Catch
+        End Try
+
+        _renderCts = New Threading.CancellationTokenSource
+        Dim token As CancellationToken = _renderCts.Token
+
+        Dim cache As LandCoverCache = LoadedLandCoverCache
+
+        Try
+
+            Dim renderResult As LandCoverPreviewRenderResult =
+                Await BusyRunner.RunAsync(Of LandCoverPreviewRenderResult)(
+                    Me,
+                    "LandCover: Preview rendern",
+                    Function(progress, ct)
+
+                        'kombiniere BusyRunner-CT und eigenes
+                        token.ThrowIfCancellationRequested()
+                        ct.ThrowIfCancellationRequested()
+
+                        Dim w As Integer = cache.Meta.LonCount
+                        Dim h As Integer = cache.Meta.LatCount
+
+                        progress?.Report(New ProgressInfo("LandCover-Layer rendern...", 0))
+                        Dim lcBmp As WriteableBitmap = LandCoverRenderer.RenderLandCoverLayer(cache)
+                        lcBmp.Freeze()
+
+                        token.ThrowIfCancellationRequested()
+                        ct.ThrowIfCancellationRequested()
+
+                        Dim conf As ImageSource = Nothing
+                        If cache.Meta.HasConfidence AndAlso cache.Confidence IsNot Nothing Then
+                            progress?.Report(New ProgressInfo("Confidence-Overlay rendern...", 45))
+                            Dim confBmp = LandCoverRenderer.RenderConfidenceOverlay(cache)
+                            confBmp.Freeze()
+
+                            conf = confBmp
+                        End If
+
+                        token.ThrowIfCancellationRequested()
+                        ct.ThrowIfCancellationRequested()
+
+                        Dim ice As ImageSource = Nothing
+                        If cache.Meta.HasLandIceThickness AndAlso cache.LandIceThicknessM IsNot Nothing Then
+                            progress?.Report(New ProgressInfo("LandIceThickness-Overlay rendern...", 75))
+                            'TODO: LandIceThicknessRenderer implementieren
+                        End If
+
+                        progress?.Report(New ProgressInfo("Fertig.", 100))
+
+                        Return New LandCoverPreviewRenderResult With {
+                            .Width = w,
+                            .Height = h,
+                            .LandCover = lcBmp,
+                            .Confidence = conf,
+                            .LandIceThickness = ice
+                        }
+
+                    End Function,
+                    canCancel:=True,
+                    showOverlay:=True)
+
+            'Falls zwischendurch ein anderer Cache geladen wurde Ergebnis verwerfen
+            If Not Object.ReferenceEquals(cache, LoadedLandCoverCache) Then Return
+
+            'UI-Thread: VM befüllen
+            LandCoverLayer = renderResult.LandCover
+            ConfidenceOverlay = renderResult.Confidence
+            LandIceThicknessOverlay = renderResult.LandIceThickness
+
+            ContentWidth = renderResult.Width
+            ContentHeight = renderResult.Height
+
+            'Fit/Viewport
+            If _lastViewportW > 0 AndAlso _lastViewportH > 0 Then
+                FitToViewport(_lastViewportW, _lastViewportH)
+                _pendingFitToViewport = False
+            Else
+                _pendingFitToViewport = True
+                Zoom = 1.0
+                PanX = 0
+                PanY = 0
+            End If
+
+            'GlobePreview-Button aktivieren
+            OnPropertyChanged(NameOf(CanOpenGlobePreview))
+
+        Catch ex As OperationCanceledException
+            'Abbruch ignorieren
+
+        Catch ex As Exception
+            LastReport = $"Fehler beim Rendern: {ex.Message}"
+        End Try
+
+    End Function
+
+
+#End Region
+
+#Region "Helper"
+
+    Private Sub ClampPan(viewportW As Double, viewportH As Double)
+
+        If LoadedLandCoverCache Is Nothing Then Return
+
+        Dim contentW As Double = LoadedLandCoverCache.Meta.LonCount
+        Dim contentH As Double = LoadedLandCoverCache.Meta.LatCount
+
+        Dim scaledW As Double = contentW * Zoom
+        Dim scaledH As Double = contentH * Zoom
+
+        'Wenn Content kleiner als Viewport: zentrieren (statt oben links lassen)
+        If scaledW <= viewportW Then
+            PanX = (viewportW - scaledW) / 2.0
+        Else
+            Dim minX As Double = viewportW - scaledW
+            PanX = Clamp(PanX, minX, 0)
+        End If
+
+        If scaledH <= viewportH Then
+            PanY = (viewportH - scaledH) / 2.0
+        Else
+            Dim minY As Double = viewportH - scaledH
+            PanY = Clamp(PanY, minY, 0)
+        End If
+
+    End Sub
+
+    Private Sub FitToViewport(viewPortW As Double, viewPortH As Double)
+
+        If LoadedLandCoverCache Is Nothing Then Return
+        If viewPortH <= 0 OrElse viewPortW <= 0 Then Return
+
+        Dim contentW As Double = LoadedLandCoverCache.Meta.LonCount
+        Dim contentH As Double = LoadedLandCoverCache.Meta.LatCount
+        If contentW <= 0 OrElse contentH <= 0 Then Return
+
+        Dim fitZoom As Double = Math.Min(viewPortW / contentW, viewPortH / contentH)
+
+        'Optional: nicht größer als 1 hochskalieren
+        fitZoom = Math.Min(fitZoom, 1.0)
+
+        Dim z As Double = Math.Floor(fitZoom * 100) / 100.0
+        Zoom = Clamp(z, 0.05, 20.0)
+
+        'Zentrieren
+        PanX = (viewPortW - contentW * Zoom) / 2.0
+        PanY = (viewPortH - contentH * Zoom) / 2.0
+
+        'Sicherheit
+        ClampPan(viewPortW, viewPortH)
+
+    End Sub
+
+#End Region
 End Class

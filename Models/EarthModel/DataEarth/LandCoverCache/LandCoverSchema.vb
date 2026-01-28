@@ -68,6 +68,24 @@ Public NotInheritable Class LandCoverSchema
         End Select
     End Function
 
+    Public Shared Function GetColor(cls As LandCoverClass) As Color
+        Select Case cls
+            Case LandCoverClass.NoData : Return Color.FromRgb(40, 40, 40)
+            Case LandCoverClass.Forest : Return Color.FromRgb(0, 153, 0)
+            Case LandCoverClass.Shrub : Return Color.FromRgb(255, 187, 34)
+            Case LandCoverClass.GrassHerbaceous : Return Color.FromRgb(255, 255, 76)
+            Case LandCoverClass.Wetland : Return Color.FromRgb(0, 150, 160)
+            Case LandCoverClass.MossLichen : Return Color.FromRgb(250, 230, 160)
+            Case LandCoverClass.BareSparse : Return Color.FromRgb(180, 180, 180)
+            Case LandCoverClass.Cropland : Return Color.FromRgb(240, 150, 255)
+            Case LandCoverClass.Urban : Return Color.FromRgb(250, 0, 0)
+            Case LandCoverClass.SnowIce : Return Color.FromRgb(240, 240, 240)
+            Case LandCoverClass.InlandWater : Return Color.FromRgb(0, 50, 200)
+            Case LandCoverClass.OpenWater : Return Color.FromRgb(0, 0, 120)
+            Case Else : Return Colors.Magenta   'DEBUG-Farbe
+        End Select
+    End Function
+
     Public Shared Function IsWater(cls As LandCoverClass) As Boolean
         Dim g = GetGroup(cls)
         Return g = LandCoverGroup.Water

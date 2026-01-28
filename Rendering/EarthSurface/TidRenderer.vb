@@ -2,10 +2,6 @@
 
 Public NotInheritable Class TidRenderer
 
-    Private Sub New()
-
-    End Sub
-
     Public Shared Function RenderTidLayer(cache As EarthSurfaceCache,
                                           Optional alpha As Byte = 255,
                                           Optional dpi As Double = 96.0) As WriteableBitmap
