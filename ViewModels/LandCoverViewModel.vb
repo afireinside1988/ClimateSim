@@ -808,52 +808,75 @@ Public Class LandCoverViewModel
 #Region "Command Handler - Pan/Zoom/Mouse (Behavior Requests)"
 
     ' --- Panning ---
+    Private _isPanning As Boolean
     Private _panStartMouse As Point
     Private _panStartX As Double
     Private _panStartY As Double
 
-    Private Sub BeginPan(req As PanRequest)
-        _panStartMouse = req.MousePos
+    Private Structure CellHit
+        Public LatIdx As Integer
+        Public LonIdx As Integer
+        Public Index As Integer
+        Public Lat As Double
+        Public Lon As Double
+    End Structure
+
+    Private Sub BeginPan(r As PanRequest)
+        _isPanning = True
+        _panStartMouse = r.MousePos
         _panStartX = PanX
         _panStartY = PanY
+        ShowHoverOverlay = False
     End Sub
 
-    Private Sub Pan(req As PanRequest)
-        Dim dx = req.MousePos.X - _panStartMouse.X
-        Dim dy = req.MousePos.Y - _panStartMouse.Y
+    Private Sub Pan(r As PanRequest)
+        If Not _isPanning Then Return
+
+        Dim dx As Double = r.MousePos.X - _panStartMouse.X
+        Dim dy As Double = r.MousePos.Y - _panStartMouse.Y
 
         PanX = _panStartX + dx
         PanY = _panStartY + dy
+
+        ClampPan(r.ViewPortSize.Width, r.ViewPortSize.Height)
     End Sub
 
     Private Sub EndPan(arg As Object)
-        ' no-op, aber als Hook praktisch
+        _isPanning = False
     End Sub
 
     ' --- Zoom ---
-    Private Sub ZoomMap(req As ZoomRequest)
-        ' Minimaler Zoom wie im EarthSurfaceWindow üblich:
-        ' - Zoom um Mausposition (Screen-Space), PanX/Y korrigieren
-        Dim oldZoom = Zoom
-        Dim factor As Double = If(req.Delta > 0, 1.2, 1 / 1.2)
+    Private Sub ZoomMap(z As ZoomRequest)
+        If LoadedLandCoverCache Is Nothing Then Return
 
-        Dim newZoom = oldZoom * factor
-        newZoom = Math.Max(0.25, Math.Min(64.0, newZoom))
+        Const minZoom As Double = 0.25
+        Const maxZoom As Double = 20.0
+
+        Dim oldZoom As Double = Zoom
+
+        'Dynamischer Zoom-Faktor, damit man sich nicht "totscrollt"
+        Dim zoomFactor As Double = If(z.Delta > 0, 1.1, 1 / 1.1)
+        Dim rawZoom As Double = Clamp(oldZoom * zoomFactor, minZoom, maxZoom)
+
+        'Snap auf "runde" Werte (in Scrollrichtung)
+        Dim newZoom As Double = SnapZoom(rawZoom, z.Delta, minZoom, maxZoom)
 
         If Math.Abs(newZoom - oldZoom) < 0.0000001 Then Return
 
-        ' Mausposition relativ zum Content (vor Transform):
-        ' screen = content*zoom + pan  -> content = (screen - pan) / zoom
-        Dim contentX = (req.MousePos.X - PanX) / oldZoom
-        Dim contentY = (req.MousePos.Y - PanY) / oldZoom
+        'Cursor in Content Space ermitteln (vor Zoom)
+        Dim cx As Double = (z.MousePos.X - PanX) / oldZoom
+        Dim cy As Double = (z.MousePos.Y - PanY) / oldZoom
 
         Zoom = newZoom
 
-        ' Pan so anpassen, dass der content-Punkt unter der Maus bleibt
-        PanX = req.MousePos.X - contentX * newZoom
-        PanY = req.MousePos.Y - contentY * newZoom
+        'Pan so korrigieren, dass (cx,cy) unter Cursor bleibt
+        PanX = z.MousePos.X - cx * newZoom
+        PanY = z.MousePos.Y - cy * newZoom
 
-        StatusZoomText = $"Zoom: {Zoom:0.###}x"
+        ClampPan(z.ViewPortSize.Width, z.ViewPortSize.Height)
+
+        'Anzeige: wenn Zoom=1.0 -> 100%
+        StatusZoomText = $"Zoom: {Zoom * 100:0.##}%"
     End Sub
 
     Private Sub ViewportChanged(req As ViewportChangedRequest)
@@ -897,6 +920,32 @@ Public Class LandCoverViewModel
         HoverOverlayText = ""
     End Sub
 
+
+    Private Shared Function SnapZoom(value As Double, wheelDelta As Integer, minZoom As Double, maxZoom As Double) As Double
+
+        value = Clamp(value, minZoom, maxZoom)
+
+        Dim stepSize As Double = GetZoomStepSize(value)
+
+        If wheelDelta > 0 Then
+            'hoch -> nächster Wert >= value
+            Return Clamp(Math.Ceiling(value / stepSize) * stepSize, minZoom, maxZoom)
+        ElseIf wheelDelta < 0 Then
+            'runter -> nächster Wert <= value
+            Return Clamp(Math.Floor(value / stepSize) * stepSize, minZoom, maxZoom)
+        Else
+            Return value
+        End If
+    End Function
+
+    Private Shared Function GetZoomStepSize(z As Double) As Double
+        'Schrittweite je nach Zoom-Bereich (fühlt sich "dynamisch" an)
+        If z < 0.75 Then Return 0.05
+        If z < 1.5 Then Return 0.1
+        If z < 3.0 Then Return 0.25
+        If z < 8.0 Then Return 0.5
+        Return 1.0
+    End Function
 #End Region
 
 #Region "Rendering"
