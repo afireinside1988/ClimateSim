@@ -39,6 +39,8 @@ Public Class CopernicusLc100Processor
         Dim latCount As Integer = CInt(Math.Round(180.0 / opts.TargetCellSizeDeg))
         Dim lonCount As Integer = CInt(Math.Round(360.0 / opts.TargetCellSizeDeg))
 
+        Dim cellSizeDeg As Double = opts.TargetCellSizeDeg
+
         Dim swTotal As Stopwatch = Stopwatch.StartNew()
         Dim swImport As Stopwatch = Nothing
         Dim swFinalize As Stopwatch = Nothing
@@ -100,7 +102,7 @@ Public Class CopernicusLc100Processor
             Dim colMap(width - 1) As Integer
             For x As Integer = 0 To width - 1
                 Dim lonCenter As Double = gt(0) + (x + 0.5) * pixelW
-                Dim col As Integer = CInt(Math.Floor((lonCenter - opts.LonMinCenter) / opts.TargetCellSizeDeg))
+                Dim col As Integer = CInt(Math.Floor((lonCenter + 180.0) / cellSizeDeg))
                 If col < 0 OrElse col >= lonCount Then col = -1
                 colMap(x) = col
             Next
@@ -108,7 +110,7 @@ Public Class CopernicusLc100Processor
             Dim rowMap(height - 1) As Integer
             For y As Integer = 0 To height - 1
                 Dim latCenter As Double = gt(3) + (y + 0.5) * pixelH    'pixelH ist negativ -> lat nimmt ab
-                Dim row As Integer = CInt(Math.Floor((opts.LatMaxCenter - latCenter) / opts.TargetCellSizeDeg))
+                Dim row As Integer = CInt(Math.Floor((90.0 - latCenter) / cellSizeDeg))
                 If row < 0 OrElse row >= latCount Then row = -1
                 rowMap(y) = row
             Next

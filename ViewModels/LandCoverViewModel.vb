@@ -1,5 +1,6 @@
 ﻿
 Imports System.IO
+Imports System.Runtime.Intrinsics
 Imports System.Text
 Imports System.Text.Json
 Imports System.Threading
@@ -73,7 +74,7 @@ Public Class LandCoverViewModel
         _MapMouseUpCommand = New RelayCommand(Of MapMouseUpRequest)(AddressOf MapMouseUp, Function(r) Not IsBusy)
         _MapMouseMoveCommand = New RelayCommand(Of MapMouseMoveRequest)(AddressOf MapMouseMove, Function(r) Not IsBusy)
 
-        _MapMouseLeaveCommand = New RelayCommand(Of Object)(AddressOf MapMouseLeave, Function(o) True)
+        _MapMouseLeaveCommand = New RelayCommand(Of Object)(Sub(o) MapMouseLeave(), Function(o) True)
 
         ' Report
         _lastReport = ""
@@ -498,6 +499,61 @@ Public Class LandCoverViewModel
         End Get
     End Property
 
+    Private Sub UpdateStatusUi(hit As CellHit)
+
+        Dim idx As Integer = hit.Index
+
+        StatusLatText = $"Lat: {hit.Lat:0.##}°"
+        StatusLonText = $"Lon: {hit.Lon:0.##}°"
+
+        Dim clsV As Byte = Nothing
+        Dim confV As Byte = Nothing
+        Dim iceV As Double = Nothing
+
+        If LoadedLandCoverCache.LandCoverClass IsNot Nothing AndAlso idx >= 0 Then
+
+            If idx < LoadedLandCoverCache.LandCoverClass.Length Then
+                clsV = LoadedLandCoverCache.LandCoverClass(idx)
+            End If
+
+            If LoadedLandCoverCache.Meta.HasConfidence Then
+                If idx < LoadedLandCoverCache.Confidence.Length Then
+                    confV = LoadedLandCoverCache.Confidence(idx)
+                End If
+            End If
+
+            If LoadedLandCoverCache.Meta.HasLandIceThickness Then
+                If idx < LoadedLandCoverCache.LandIceThicknessM.Length Then
+                    Dim iceVV As Double = LoadedLandCoverCache.LandIceThicknessM(idx)
+                    If Not Double.IsNaN(iceVV) OrElse Not Double.IsInfinity(iceVV) Then
+                        iceV = iceVV
+                    End If
+                End If
+            End If
+        End If
+
+
+        'If HasEditSession AndAlso IsEditMode AndAlso _editSession IsNot Nothing Then
+        '    Dim hV As Single = _editSession.GetEffectiveHeight(idx)
+        '    If Not Single.IsNaN(hV) OrElse Not Single.IsInfinity(hV) Then
+        '        h = CDbl(hV)
+        '    End If
+        'ElseIf LoadedCache?.HeightM IsNot Nothing AndAlso idx >= 0 AndAlso idx < LoadedCache.HeightM.Length Then
+        '    Dim hV As Single = LoadedCache.HeightM(idx)
+        '    If Not Single.IsNaN(hV) OrElse Not Single.IsInfinity(hV) Then
+        '        h = CDbl(hV)
+        '    End If
+        'End If
+
+        'Dim surfaceText As String
+        'If HasEditSession AndAlso IsEditMode Then
+        '    surfaceText = SurfaceTextFromEditor(_editSession, idx)
+        'Else
+        '    surfaceText = SurfaceTextFromCache(LoadedCache, idx)
+        'End If
+
+        'SetStatusBar(hit.Lat, hit.Lon, h, surfaceText, Zoom)
+    End Sub
 #End Region
 
 #Region "Command Handler - Menu/Actions"
@@ -905,12 +961,27 @@ Public Class LandCoverViewModel
         ' Hier kommt später die "wichtigste" Logik:
         ' ScreenMousePos -> ContentPixel -> CacheCell -> Klasse/Confidence/IceThickness lesen
 
+        If LoadedLandCoverCache Is Nothing Then
+            MapMouseLeave()
+            Return
+        End If
+
+        If r Is Nothing Then Return
+
+        RememberViewportSize(r.ViewPortSize)
+
+        Dim hit As CellHit
+        If Not TryHitCell(r.MousePos, r.ViewPortSize, hit) Then
+            MapMouseLeave()
+            Return
+        End If
+
         ' Screen-space Overlay positionieren
         HoverOverlayX = r.MousePos.X + 14
         HoverOverlayY = r.MousePos.Y + 14
 
         'TODO: Nur True setzen, wenn ein Layer gerendert ist
-        'ShowHoverOverlay = True
+        If LandCoverLayer IsNot Nothing Then ShowHoverOverlay = True
 
         ' Platzhaltertext
         HoverOverlayText = "LC: (TODO)" & Environment.NewLine &
@@ -918,12 +989,10 @@ Public Class LandCoverViewModel
                           "Ice: (TODO)"
 
         ' Statusbar (optional synchron)
-        StatusLandCoverClassText = "LC: (TODO)"
-        StatusConfidenceText = "Conf: (TODO)"
-        StatusLandIceThicknessText = "Ice: (TODO)"
+        UpdateStatusUi(hit)
     End Sub
 
-    Private Sub MapMouseLeave(arg As Object)
+    Private Sub MapMouseLeave()
         ShowHoverOverlay = False
         HoverOverlayText = ""
     End Sub
@@ -1208,6 +1277,11 @@ Public Class LandCoverViewModel
 
         Return True
     End Function
+
+    Private Sub RememberViewportSize(vp As Size)
+        If vp.Width > 0 Then _lastViewportW = vp.Width
+        If vp.Height > 0 Then _lastViewportH = vp.Height
+    End Sub
 
 #End Region
 End Class

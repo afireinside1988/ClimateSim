@@ -17,9 +17,6 @@ Public NotInheritable Class LandCoverCacheBuilder
         Public Property EarthSurfaceReference As String
         Public Property EarthSurfaceCreateUTC As DateTime
 
-        'Rastervertrag
-        Public Property LonMinCenter As Double = -179.5
-        Public Property LatMaxCenter As Double = 89.5  'N->S
 
         Public Property IncludeConfidence As Boolean
         Public Property NoDataClass As Byte = CByte(LandCoverClass.NoData)
