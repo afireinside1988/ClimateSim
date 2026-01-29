@@ -16,6 +16,11 @@ Public NotInheritable Class LandCoverSchema
         Ice = 3
     End Enum
 
+    Public Enum LandCoverColorMode
+        Thematic            ' Copernicus-Entsprechung, deutliche Farbkennzeichnung der Klassen
+        Realistic           ' natürliche Farbdarstellung
+    End Enum
+
     Public Shared Function GetDisplayName(cls As LandCoverClass) As String
         Select Case cls
             Case LandCoverClass.NoData : Return "Keine Daten"
@@ -68,7 +73,17 @@ Public NotInheritable Class LandCoverSchema
         End Select
     End Function
 
-    Public Shared Function GetColor(cls As LandCoverClass) As Color
+    Public Shared Function GetColor(cls As LandCoverClass,
+                                Optional mode As LandCoverColorMode = LandCoverColorMode.Thematic) As Color
+        Select Case mode
+            Case LandCoverColorMode.Realistic
+                Return GetRealisticColor(cls)
+            Case Else
+                Return GetThematicColor(cls)
+        End Select
+    End Function
+
+    Public Shared Function GetThematicColor(cls As LandCoverClass) As Color
         Select Case cls
             Case LandCoverClass.NoData : Return Color.FromRgb(40, 40, 40)
             Case LandCoverClass.Forest : Return Color.FromRgb(0, 153, 0)
@@ -83,6 +98,24 @@ Public NotInheritable Class LandCoverSchema
             Case LandCoverClass.InlandWater : Return Color.FromRgb(0, 50, 200)
             Case LandCoverClass.OpenWater : Return Color.FromRgb(0, 0, 120)
             Case Else : Return Colors.Magenta   'DEBUG-Farbe
+        End Select
+    End Function
+
+    Private Shared Function GetRealisticColor(cls As LandCoverClass) As Color
+        Select Case cls
+            Case LandCoverClass.NoData : Return Color.FromRgb(30, 30, 30)
+            Case LandCoverClass.Forest : Return Color.FromRgb(34, 85, 34)          'dunkles Waldgrün
+            Case LandCoverClass.Shrub : Return Color.FromRgb(110, 130, 70)        'buschiges Oliv
+            Case LandCoverClass.GrassHerbaceous : Return Color.FromRgb(150, 170, 90)        'Steppe / Wiese
+            Case LandCoverClass.Wetland : Return Color.FromRgb(70, 120, 110)        'sumpfiges Grünblau
+            Case LandCoverClass.MossLichen : Return Color.FromRgb(140, 150, 120)       'arktisch, fahl
+            Case LandCoverClass.BareSparse : Return Color.FromRgb(170, 160, 140)       'Wüste / Fels
+            Case LandCoverClass.Cropland : Return Color.FromRgb(190, 170, 120)       'Acker / Erde
+            Case LandCoverClass.Urban : Return Color.FromRgb(120, 120, 120)       'Beton / Stadt
+            Case LandCoverClass.SnowIce : Return Color.FromRgb(245, 245, 245)       'Schnee / Eis
+            Case LandCoverClass.InlandWater : Return Color.FromRgb(40, 80, 140)         'Seen / Flüsse
+            Case LandCoverClass.OpenWater : Return Color.FromRgb(15, 40, 90)          'Ozean (tief)
+            Case Else : Return Colors.Magenta
         End Select
     End Function
 

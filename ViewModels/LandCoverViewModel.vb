@@ -1074,7 +1074,7 @@ Public Class LandCoverViewModel
                         Dim h As Integer = cache.Meta.LatCount
 
                         progress?.Report(New ProgressInfo("LandCover-Layer rendern...", 0))
-                        Dim lcBmp As WriteableBitmap = LandCoverRenderer.RenderLandCoverLayer(cache)
+                        Dim lcBmp As WriteableBitmap = LandCoverRenderer.RenderLandCoverLayer(cache,,, LandCoverSchema.LandCoverColorMode.Realistic)
                         lcBmp.Freeze()
 
                         token.ThrowIfCancellationRequested()

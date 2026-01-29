@@ -2,7 +2,10 @@
 
 Public NotInheritable Class LandCoverRenderer
 
-    Public Shared Function RenderLandCoverLayer(cache As LandCoverCache, Optional alpha As Byte = 255, Optional dpi As Double = 96.0) As WriteableBitmap
+    Public Shared Function RenderLandCoverLayer(cache As LandCoverCache,
+                                                Optional alpha As Byte = 255,
+                                                Optional dpi As Double = 96.0,
+                                                Optional colorMode As LandCoverSchema.LandCoverColorMode = LandCoverSchema.LandCoverColorMode.Thematic) As WriteableBitmap
 
         ArgumentNullException.ThrowIfNull(cache)
         ArgumentNullException.ThrowIfNull(cache.Meta)
@@ -27,7 +30,7 @@ Public NotInheritable Class LandCoverRenderer
             Dim cls As LandCoverClass =
                 If(i <= 11, CType(i, LandCoverClass), LandCoverClass.NoData)
 
-            Dim c As Color = LandCoverSchema.GetColor(cls)
+            Dim c As Color = LandCoverSchema.GetColor(cls, colorMode)
             lut(i) = aShift Or (CInt(c.R) << 16) Or (CInt(c.G) << 8) Or c.B
         Next
 
