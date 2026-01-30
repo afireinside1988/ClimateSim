@@ -25,8 +25,8 @@ Public Class LandCoverViewModel
 
         ' Defaults Pan/Zoom
         _zoom = 1.0
-        _panX = 0.0
-        _panY = 0.0
+        _panPoint.X = 0.0
+        _panPoint.Y = 0.0
 
         ' Defaults Hover
         _showHoverOverlay = False
@@ -329,8 +329,7 @@ Public Class LandCoverViewModel
 
 #Region "Pan/Zoom + Content Size (Bindings aus XAML)"
 
-    Private _lastViewportW As Double
-    Private _lastViewportH As Double
+    Private _lastViewportSize As Size
     Private _pendingFitToViewport As Boolean
 
     Private _zoom As Double
@@ -345,44 +344,21 @@ Public Class LandCoverViewModel
         End Set
     End Property
 
-    Private _panX As Double
-    Public Property PanX As Double
+    Private _panPoint As Point
+    Public Property PanPoint As Point
         Get
-            Return _panX
+            Return _panPoint
         End Get
-        Set(value As Double)
-            SetProperty(_panX, value)
+        Set(value As Point)
+            SetProperty(_panPoint, value)
         End Set
     End Property
 
-    Private _panY As Double
-    Public Property PanY As Double
+    Private _contentSize As Size
+    Private ReadOnly Property ContentSize As Size
         Get
-            Return _panY
+            Return _contentSize
         End Get
-        Set(value As Double)
-            SetProperty(_panY, value)
-        End Set
-    End Property
-
-    Private _contentWidth As Double
-    Public Property ContentWidth As Double
-        Get
-            Return _contentWidth
-        End Get
-        Set(value As Double)
-            SetProperty(_contentWidth, value)
-        End Set
-    End Property
-
-    Private _contentHeight As Double
-    Public Property ContentHeight As Double
-        Get
-            Return _contentHeight
-        End Get
-        Set(value As Double)
-            SetProperty(_contentHeight, value)
-        End Set
     End Property
 
 #End Region
@@ -499,12 +475,12 @@ Public Class LandCoverViewModel
         End Get
     End Property
 
-    Private Sub UpdateStatusUi(hit As CellHit)
+    Private Sub UpdateStatusUi(hit As EquiRectangularViewportHelper.CellHit)
 
         Dim idx As Integer = hit.Index
 
-        StatusLatText = $"Lat: {hit.Lat:0.##}°"
-        StatusLonText = $"Lon: {hit.Lon:0.##}°"
+        StatusLatText = $"Lat: {hit.Lat:0.00}°"
+        StatusLonText = $"Lon: {hit.Lon:0.00}°"
 
         Dim clsV As Byte = Nothing
         Dim confV As Byte = Nothing
@@ -554,6 +530,7 @@ Public Class LandCoverViewModel
 
         'SetStatusBar(hit.Lat, hit.Lon, h, surfaceText, Zoom)
     End Sub
+
 #End Region
 
 #Region "Command Handler - Menu/Actions"
@@ -846,16 +823,7 @@ Public Class LandCoverViewModel
     ' --- Panning ---
     Private _isPanning As Boolean
     Private _panStartMouse As Point
-    Private _panStartX As Double
-    Private _panStartY As Double
-
-    Private Structure CellHit
-        Public LatIdx As Integer
-        Public LonIdx As Integer
-        Public Index As Integer
-        Public Lat As Double
-        Public Lon As Double
-    End Structure
+    Private _panStartPoint As Point
 
     Private _camera As New CameraState With {
         .CenterLat = 0.0,
@@ -875,21 +843,25 @@ Public Class LandCoverViewModel
     Private Sub BeginPan(r As PanRequest)
         _isPanning = True
         _panStartMouse = r.MousePos
-        _panStartX = PanX
-        _panStartY = PanY
+        _panStartPoint = _panPoint
         ShowHoverOverlay = False
     End Sub
 
     Private Sub Pan(r As PanRequest)
+
         If Not _isPanning Then Return
+
+        If LoadedLandCoverCache Is Nothing OrElse LoadedLandCoverCache.Meta Is Nothing Then Return
 
         Dim dx As Double = r.MousePos.X - _panStartMouse.X
         Dim dy As Double = r.MousePos.Y - _panStartMouse.Y
 
-        PanX = _panStartX + dx
-        PanY = _panStartY + dy
+        Dim p As New Point(_panStartPoint.X + dx, _panStartPoint.Y + dy)
 
-        ClampPan(r.ViewPortSize.Width, r.ViewPortSize.Height)
+        EquiRectangularViewportHelper.ClampPan(r.ViewPortSize, ContentSize, Zoom, p)
+
+        PanPoint = p
+
     End Sub
 
     Private Sub EndPan(arg As Object)
@@ -898,7 +870,9 @@ Public Class LandCoverViewModel
 
     ' --- Zoom ---
     Private Sub ZoomMap(z As ZoomRequest)
-        If LoadedLandCoverCache Is Nothing Then Return
+
+        If LoadedLandCoverCache Is Nothing OrElse LoadedLandCoverCache.Meta Is Nothing Then Return
+
 
         Const minZoom As Double = 0.25
         Const maxZoom As Double = 20.0
@@ -910,21 +884,21 @@ Public Class LandCoverViewModel
         Dim rawZoom As Double = Clamp(oldZoom * zoomFactor, minZoom, maxZoom)
 
         'Snap auf "runde" Werte (in Scrollrichtung)
-        Dim newZoom As Double = SnapZoom(rawZoom, z.Delta, minZoom, maxZoom)
+        Dim newZoom As Double = EquiRectangularViewportHelper.SnapZoom(rawZoom, z.Delta, minZoom, maxZoom)
 
         If Math.Abs(newZoom - oldZoom) < 0.0000001 Then Return
 
         'Cursor in Content Space ermitteln (vor Zoom)
-        Dim cx As Double = (z.MousePos.X - PanX) / oldZoom
-        Dim cy As Double = (z.MousePos.Y - PanY) / oldZoom
+        Dim cx As Double = (z.MousePos.X - _panPoint.X) / oldZoom
+        Dim cy As Double = (z.MousePos.Y - _panPoint.Y) / oldZoom
 
         Zoom = newZoom
 
         'Pan so korrigieren, dass (cx,cy) unter Cursor bleibt
-        PanX = z.MousePos.X - cx * newZoom
-        PanY = z.MousePos.Y - cy * newZoom
+        Dim p As New Point(z.MousePos.X - cx * newZoom, z.MousePos.Y - cy * newZoom)
 
-        ClampPan(z.ViewPortSize.Width, z.ViewPortSize.Height)
+        EquiRectangularViewportHelper.ClampPan(z.ViewPortSize, ContentSize, Zoom, p)
+        PanPoint = p
 
         'Anzeige: wenn Zoom=1.0 -> 100%
         StatusZoomText = $"Zoom: {Zoom * 100:0.##}%"
@@ -933,17 +907,16 @@ Public Class LandCoverViewModel
     Private Sub ViewportChanged(r As ViewportChangedRequest)
         If r Is Nothing Then Return
 
-        _lastViewportW = r.ViewPortSize.Width
-        _lastViewportH = r.ViewPortSize.Height
+        _lastViewportSize = r.ViewPortSize
 
-        If LoadedLandCoverCache Is Nothing Then Return
+        If LoadedLandCoverCache Is Nothing OrElse LoadedLandCoverCache.Meta Is Nothing Then Return
 
         If _pendingFitToViewport Then
-            FitToViewport(_lastViewportW, _lastViewportH)
+            EquiRectangularViewportHelper.FitToViewport(_lastViewportSize, ContentSize, Zoom, PanPoint)
             _pendingFitToViewport = False
         Else
             'bei Resize nur clampen/zentrieren
-            ClampPan(_lastViewportW, _lastViewportH)
+            EquiRectangularViewportHelper.ClampPan(_lastViewportSize, ContentSize, Zoom, PanPoint)
         End If
     End Sub
 
@@ -961,17 +934,18 @@ Public Class LandCoverViewModel
         ' Hier kommt später die "wichtigste" Logik:
         ' ScreenMousePos -> ContentPixel -> CacheCell -> Klasse/Confidence/IceThickness lesen
 
-        If LoadedLandCoverCache Is Nothing Then
+        If LoadedLandCoverCache Is Nothing OrElse LoadedLandCoverCache.Meta Is Nothing Then
             MapMouseLeave()
             Return
         End If
 
         If r Is Nothing Then Return
 
-        RememberViewportSize(r.ViewPortSize)
+        EquiRectangularViewportHelper.RememberViewportSize(r.ViewPortSize, _lastViewportSize)
 
-        Dim hit As CellHit
-        If Not TryHitCell(r.MousePos, r.ViewPortSize, hit) Then
+
+        Dim hit As EquiRectangularViewportHelper.CellHit
+        If Not TryHitCell(r.MousePos, r.ViewPortSize, ContentSize, LoadedLandCoverCache.Meta.CellSizeDeg, Camera, Zoom, _panPoint, hit) Then
             MapMouseLeave()
             Return
         End If
@@ -998,31 +972,6 @@ Public Class LandCoverViewModel
     End Sub
 
 
-    Private Shared Function SnapZoom(value As Double, wheelDelta As Integer, minZoom As Double, maxZoom As Double) As Double
-
-        value = Clamp(value, minZoom, maxZoom)
-
-        Dim stepSize As Double = GetZoomStepSize(value)
-
-        If wheelDelta > 0 Then
-            'hoch -> nächster Wert >= value
-            Return Clamp(Math.Ceiling(value / stepSize) * stepSize, minZoom, maxZoom)
-        ElseIf wheelDelta < 0 Then
-            'runter -> nächster Wert <= value
-            Return Clamp(Math.Floor(value / stepSize) * stepSize, minZoom, maxZoom)
-        Else
-            Return value
-        End If
-    End Function
-
-    Private Shared Function GetZoomStepSize(z As Double) As Double
-        'Schrittweite je nach Zoom-Bereich (fühlt sich "dynamisch" an)
-        If z < 0.75 Then Return 0.05
-        If z < 1.5 Then Return 0.1
-        If z < 3.0 Then Return 0.25
-        If z < 8.0 Then Return 0.5
-        Return 1.0
-    End Function
 #End Region
 
 #Region "Rendering"
@@ -1057,6 +1006,7 @@ Public Class LandCoverViewModel
         Dim token As CancellationToken = _renderCts.Token
 
         Dim cache As LandCoverCache = LoadedLandCoverCache
+        Dim meta As LandCoverCacheMeta = cache.Meta
 
         Try
 
@@ -1070,8 +1020,8 @@ Public Class LandCoverViewModel
                         token.ThrowIfCancellationRequested()
                         ct.ThrowIfCancellationRequested()
 
-                        Dim w As Integer = cache.Meta.LonCount
-                        Dim h As Integer = cache.Meta.LatCount
+                        Dim w As Integer = meta.LonCount
+                        Dim h As Integer = meta.LatCount
 
                         progress?.Report(New ProgressInfo("LandCover-Layer rendern...", 0))
                         Dim lcBmp As WriteableBitmap = LandCoverRenderer.RenderLandCoverLayer(cache,,, LandCoverSchema.LandCoverColorMode.Realistic)
@@ -1120,18 +1070,18 @@ Public Class LandCoverViewModel
             ConfidenceOverlay = renderResult.Confidence
             LandIceThicknessOverlay = renderResult.LandIceThickness
 
-            ContentWidth = renderResult.Width
-            ContentHeight = renderResult.Height
+            _contentSize.Width = renderResult.Width
+            _contentSize.Height = renderResult.Height
 
             'Fit/Viewport
-            If _lastViewportW > 0 AndAlso _lastViewportH > 0 Then
-                FitToViewport(_lastViewportW, _lastViewportH)
+            If _lastViewportSize.Width > 0 AndAlso _lastViewportSize.Height > 0 Then
+                EquiRectangularViewportHelper.FitToViewport(_lastViewportSize, ContentSize, Zoom, PanPoint)
                 _pendingFitToViewport = False
             Else
                 _pendingFitToViewport = True
                 Zoom = 1.0
-                PanX = 0
-                PanY = 0
+
+                PanPoint = New Point(0, 0)
             End If
 
             'GlobePreview-Button aktivieren
@@ -1151,137 +1101,6 @@ Public Class LandCoverViewModel
 
 #Region "Helper"
 
-    Private Sub ClampPan(viewportW As Double, viewportH As Double)
-
-        If LoadedLandCoverCache Is Nothing Then Return
-
-        Dim contentW As Double = LoadedLandCoverCache.Meta.LonCount
-        Dim contentH As Double = LoadedLandCoverCache.Meta.LatCount
-
-        Dim scaledW As Double = contentW * Zoom
-        Dim scaledH As Double = contentH * Zoom
-
-        'Wenn Content kleiner als Viewport: zentrieren (statt oben links lassen)
-        If scaledW <= viewportW Then
-            PanX = (viewportW - scaledW) / 2.0
-        Else
-            Dim minX As Double = viewportW - scaledW
-            PanX = Clamp(PanX, minX, 0)
-        End If
-
-        If scaledH <= viewportH Then
-            PanY = (viewportH - scaledH) / 2.0
-        Else
-            Dim minY As Double = viewportH - scaledH
-            PanY = Clamp(PanY, minY, 0)
-        End If
-
-    End Sub
-
-    Private Sub FitToViewport(viewPortW As Double, viewPortH As Double)
-
-        If LoadedLandCoverCache Is Nothing Then Return
-        If viewPortH <= 0 OrElse viewPortW <= 0 Then Return
-
-        Dim contentW As Double = LoadedLandCoverCache.Meta.LonCount
-        Dim contentH As Double = LoadedLandCoverCache.Meta.LatCount
-        If contentW <= 0 OrElse contentH <= 0 Then Return
-
-        Dim fitZoom As Double = Math.Min(viewPortW / contentW, viewPortH / contentH)
-
-        'Optional: nicht größer als 1 hochskalieren
-        fitZoom = Math.Min(fitZoom, 1.0)
-
-        Dim z As Double = Math.Floor(fitZoom * 100) / 100.0
-        Zoom = Clamp(z, 0.05, 20.0)
-
-        'Zentrieren
-        PanX = (viewPortW - contentW * Zoom) / 2.0
-        PanY = (viewPortH - contentH * Zoom) / 2.0
-
-        'Sicherheit
-        ClampPan(viewPortW, viewPortH)
-
-    End Sub
-
-    Public Shared Function ScreenToGeo(mousePos As Point,
-                                       viewPortSize As Size,
-                                       contentSize As Size,
-                                       camera As CameraState,
-                                       zoom As Double,
-                                       panX As Double,
-                                       panY As Double) As (Lat As Double, Lon As Double)
-
-        If viewPortSize.Width <= 0 OrElse viewPortSize.Height <= 0 Then
-            Return (Double.NaN, Double.NaN)
-        End If
-
-        If contentSize.Width <= 0 OrElse contentSize.Height <= 0 Then
-            Return (Double.NaN, Double.NaN)
-        End If
-        If zoom <= 0 Then Return (Double.NaN, Double.NaN)
-
-        'Mausposition in "Content Space" zurückrechnen (Inverse des RenderTransforms)
-        Dim xContent As Double = (mousePos.X - panX) / zoom
-        Dim yContent As Double = (mousePos.Y - panY) / zoom
-
-        If xContent < 0 OrElse xContent >= contentSize.Width OrElse yContent < 0 OrElse yContent >= contentSize.Height Then
-            Return (Double.NaN, Double.NaN)
-        End If
-
-        'Normierte Koordinaten
-        Dim xNorm As Double = xContent / contentSize.Width
-        Dim yNorm As Double = yContent / contentSize.Height
-
-        'Geo berechnen (inverse Render-Formel)
-        Dim lon As Double = camera.CenterLon + (xNorm - 0.5) * camera.SpanLon
-        Dim lat As Double = camera.CenterLat + (0.5 - yNorm) * camera.SpanLat
-
-        'Clamp/Wrap
-        lat = Clamp(lat, -90.0, 90.0)
-        lon = Wrap180(lon)
-
-        Return (lat, lon)
-
-    End Function
-
-    Private Function TryHitCell(mousePos As Point, viewport As Size, ByRef hit As CellHit) As Boolean
-
-        hit = Nothing
-
-        If LoadedLandCoverCache Is Nothing OrElse LoadedLandCoverCache.Meta Is Nothing Then Return False
-
-        Dim meta As LandCoverCacheMeta = LoadedLandCoverCache.Meta
-        Dim contentSize As New Size(meta.LonCount, meta.LatCount)
-
-        Dim geo = ScreenToGeo(mousePos, viewport, contentSize, Camera, Zoom, PanX, PanY)
-        If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then Return False
-
-        Dim cell As Double = meta.CellSizeDeg
-
-        Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / cell))
-        latIdx = Clamp(latIdx, 0, meta.LatCount - 1)
-
-        Dim lonIdx As Integer = CInt(Math.Floor((geo.Lon + 180.0) / cell))
-        lonIdx = Clamp(lonIdx, 0, meta.LonCount - 1)
-
-        Dim idx As Integer = latIdx * meta.LonCount + lonIdx
-
-        hit = New CellHit With {
-            .LatIdx = latIdx,
-            .LonIdx = lonIdx,
-            .Index = idx,
-            .Lat = geo.Lat,
-            .Lon = geo.Lon
-        }
-
-        Return True
-    End Function
-
-    Private Sub RememberViewportSize(vp As Size)
-        If vp.Width > 0 Then _lastViewportW = vp.Width
-        If vp.Height > 0 Then _lastViewportH = vp.Height
-    End Sub
 
 #End Region
 End Class

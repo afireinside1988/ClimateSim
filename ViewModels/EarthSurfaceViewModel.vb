@@ -151,14 +151,6 @@ Public Class EarthSurfaceViewModel
         End Get
     End Property
 
-    Private Structure CellHit
-        Public LatIdx As Integer
-        Public LonIdx As Integer
-        Public Index As Integer
-        Public Lat As Double
-        Public Lon As Double
-    End Structure
-
 #End Region
 
 #Region "LandMask"
@@ -272,54 +264,31 @@ Public Class EarthSurfaceViewModel
 
     Private _isPanning As Boolean
     Private _panStartMouse As Point
-    Private _panStartX As Double
-    Private _panStartY As Double
+    Private _panStartPoint As Point
 
-    Private _lastViewportW As Double = 0
-    Private _lastViewportH As Double = 0
+    Private _panPoint As Point
+    Public Property PanPoint As Point
+        Get
+            Return _panPoint
+        End Get
+        Set(value As Point)
+            SetProperty(_panPoint, value)
+        End Set
+    End Property
+
+    Private _lastViewportSize As Size
+
     Private _pendingFitToViewport As Boolean = False
 
     Private _renderCts As Threading.CancellationTokenSource
 
-    Private _contentWidth As Double
-    Public Property ContentWidth As Double
+    Private _contentSize As Size
+    Private ReadOnly Property ContentSize As Size
         Get
-            Return _contentWidth
+            Return _contentSize
         End Get
-        Set(value As Double)
-            SetProperty(_contentWidth, value)
-        End Set
     End Property
 
-    Private _contentHeight As Double
-    Public Property ContentHeight As Double
-        Get
-            Return _contentHeight
-        End Get
-        Set(value As Double)
-            SetProperty(_contentHeight, value)
-        End Set
-    End Property
-
-    Private _panX As Double = 0.0
-    Public Property PanX As Double
-        Get
-            Return _panX
-        End Get
-        Set(value As Double)
-            SetProperty(_panX, value)
-        End Set
-    End Property
-
-    Private _panY As Double = 0.0
-    Public Property PanY As Double
-        Get
-            Return _panY
-        End Get
-        Set(value As Double)
-            SetProperty(_panY, value)
-        End Set
-    End Property
 
     Private _surfaceLayer As ImageSource
     Public Property SurfaceLayer As ImageSource
@@ -1802,7 +1771,7 @@ Public Class EarthSurfaceViewModel
 
     Private Async Function RenderPreviewFromCacheAsync(Optional showOverlay As Boolean = True) As Task
 
-        If LoadedCache Is Nothing Then
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then
             SurfaceLayer = Nothing
             TopoLayer = Nothing
             ReliefLayer = Nothing
@@ -1821,7 +1790,9 @@ Public Class EarthSurfaceViewModel
         _renderCts = New Threading.CancellationTokenSource()
         Dim token = _renderCts.Token
 
-        Dim cache = LoadedCache
+        Dim cache As EarthSurfaceCache = LoadedCache
+        Dim meta As EarthSurfaceCacheMeta = cache.Meta
+
         Try
 
             Dim rr As PreviewRenderResult =
@@ -1832,14 +1803,14 @@ Public Class EarthSurfaceViewModel
 
                     'DEBUG
                     Dim timings As New List(Of RenderTiming)()
-                    Dim wH As String = $"{cache.Meta.LonCount}x{cache.Meta.LatCount}"
+                    Dim wH As String = $"{meta.LonCount}x{meta.LatCount}"
 
                     'kombiniere erst ct von BusyRunner + eigenes
                     token.ThrowIfCancellationRequested()
                     ct.ThrowIfCancellationRequested()
 
-                    Dim width As Integer = cache.Meta.LonCount
-                    Dim height As Integer = cache.Meta.LatCount
+                    Dim width As Integer = meta.LonCount
+                    Dim height As Integer = meta.LatCount
 
 
                     progress?.Report(New ProgressInfo("Topografie-Layer rendern...", 0))
@@ -1903,7 +1874,7 @@ Public Class EarthSurfaceViewModel
 
                     progress?.Report(New ProgressInfo("TID-Layer rendern...", 95))
                     Dim tid As ImageSource = Nothing
-                    If cache.Meta.HasTid Then
+                    If meta.HasTid Then
                         'Dim tidBmp = TidRenderer.RenderTidLayer(cache, alpha:=255)
                         'tidBmp.Freeze()
                         'DEBUG:
@@ -1945,20 +1916,19 @@ Public Class EarthSurfaceViewModel
             ShoreLineLayer = rr.ShoreLines
             TidLayer = rr.Tid
 
-            ContentWidth = rr.Width
-            ContentHeight = rr.Height
+            _contentSize.Width = rr.Width
+            _contentSize.Height = rr.Height
 
             Debug.WriteLine(rr.TimingReport)
 
             'Fit/Viewport
-            If _lastViewportW > 0 AndAlso _lastViewportH > 0 Then
-                FitToViewport(_lastViewportW, _lastViewportH)
+            If _lastViewportSize.Width > 0 AndAlso _lastViewportSize.Height > 0 Then
+                EquiRectangularViewportHelper.FitToViewport(_lastViewportSize, ContentSize, Zoom, PanPoint)
                 _pendingFitToViewport = False
             Else
                 _pendingFitToViewport = True
                 Zoom = 1.0
-                PanX = 0
-                PanY = 0
+                PanPoint = New Point(0, 0)
             End If
 
             'GlobePreview-Button aktivieren
@@ -1974,7 +1944,7 @@ Public Class EarthSurfaceViewModel
 
     Private Sub OnMapMouseMove(param As Object)
 
-        If LoadedCache Is Nothing Then
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then
             OnMapMouseLeave()
             Return
         End If
@@ -1982,10 +1952,11 @@ Public Class EarthSurfaceViewModel
         Dim r As MapMouseMoveRequest = TryCast(param, MapMouseMoveRequest)
         If r Is Nothing Then Return
 
-        RememberViewportSize(r.ViewPortSize)
+        EquiRectangularViewportHelper.RememberViewportSize(r.ViewPortSize, _lastViewportSize)
 
-        Dim hit As CellHit
-        If Not TryHitCell(r.MousePos, r.ViewPortSize, hit) Then
+        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
+        Dim hit As EquiRectangularViewportHelper.CellHit
+        If Not EquiRectangularViewportHelper.TryHitCell(r.MousePos, r.ViewPortSize, ContentSize, meta.CellSizeDeg, Camera, Zoom, _panPoint, hit) Then
             OnMapMouseLeave()
             Return
         End If
@@ -2049,9 +2020,11 @@ Public Class EarthSurfaceViewModel
             Return
         End If
 
+        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
+
         'Zelle bestimmen: gleiche Screen-Geo-Logik wie im Hover
-        Dim hit As CellHit
-        If Not TryHitCell(r.MousePos, r.ViewPortSize, hit) Then Return
+        Dim hit As EquiRectangularViewportHelper.CellHit
+        If Not EquiRectangularViewportHelper.TryHitCell(r.MousePos, r.ViewPortSize, ContentSize, meta.CellSizeDeg, Camera, Zoom, _panPoint, hit) Then Return
 
         Select Case SelectedEditChannel
             Case EditChannel.LandMask
@@ -2076,17 +2049,16 @@ Public Class EarthSurfaceViewModel
 
         If r Is Nothing Then Return
 
-        _lastViewportW = r.ViewPortSize.Width
-        _lastViewportH = r.ViewPortSize.Height
+        _lastViewportSize = r.ViewPortSize
 
-        If LoadedCache Is Nothing Then Return
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return
 
         If _pendingFitToViewport Then
-            FitToViewport(_lastViewportW, _lastViewportH)
+            EquiRectangularViewportHelper.FitToViewport(_lastViewportSize, ContentSize, Zoom, _panPoint)
             _pendingFitToViewport = False
         Else
             'bei Resize nur clampen/zentrieren
-            ClampPan(_lastViewportW, _lastViewportH)
+            EquiRectangularViewportHelper.ClampPan(_lastViewportSize, ContentSize, Zoom, _panPoint)
         End If
 
     End Sub
@@ -2095,8 +2067,7 @@ Public Class EarthSurfaceViewModel
 
         _isPanning = True
         _panStartMouse = r.MousePos
-        _panStartX = PanX
-        _panStartY = PanY
+        _panStartPoint = _panPoint
         ShowHoverOverlay = False
 
     End Sub
@@ -2105,13 +2076,16 @@ Public Class EarthSurfaceViewModel
 
         If Not _isPanning Then Return
 
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return
+
         Dim dx As Double = r.MousePos.X - _panStartMouse.X
         Dim dy As Double = r.MousePos.Y - _panStartMouse.Y
 
-        PanX = _panStartX + dx
-        PanY = _panStartY + dy
+        Dim p As New Point(_panStartPoint.X + dx, _panStartPoint.Y + dy)
 
-        ClampPan(r.ViewPortSize.Width, r.ViewPortSize.Height)
+        EquiRectangularViewportHelper.ClampPan(r.ViewPortSize, ContentSize, Zoom, p)
+
+        PanPoint = p
 
     End Sub
 
@@ -2123,7 +2097,8 @@ Public Class EarthSurfaceViewModel
 
     Public Sub ZoomAt(z As ZoomRequest)
 
-        If LoadedCache Is Nothing Then Return
+        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return
+
 
         Const minZoom As Double = 0.25
         Const maxZoom As Double = 20.0
@@ -2140,16 +2115,15 @@ Public Class EarthSurfaceViewModel
         If Math.Abs(newZoom - oldZoom) < 0.0000001 Then Return
 
         'Cursor in Content Space ermitteln (vor Zoom)
-        Dim cx As Double = (z.MousePos.X - PanX) / oldZoom
-        Dim cy As Double = (z.MousePos.Y - PanY) / oldZoom
+        Dim cx As Double = (z.MousePos.X - _panPoint.X) / oldZoom
+        Dim cy As Double = (z.MousePos.Y - _panPoint.Y) / oldZoom
 
         Zoom = newZoom
 
-        'Pan so korrigieren, dass (cx,cy) unter Cursor bleibt
-        PanX = z.MousePos.X - cx * newZoom
-        PanY = z.MousePos.Y - cy * newZoom
+        Dim p As New Point(z.MousePos.X - cx * newZoom, z.MousePos.Y - cy * newZoom)
 
-        ClampPan(z.ViewPortSize.Width, z.ViewPortSize.Height)
+        EquiRectangularViewportHelper.ClampPan(z.ViewPortSize, ContentSize, Zoom, p)
+        PanPoint = p
 
         'Anzeige: wenn Zoom=1.0 -> 100%
         StatusZoomText = $"Zoom: {Zoom * 100:0.##}%"
@@ -2268,17 +2242,17 @@ Public Class EarthSurfaceViewModel
 
     Private Shared Function BuildGenerateReport(cache As EarthSurfaceCache) As String
 
-        Dim m = cache.Meta
-        Dim latCount As Integer = m.LatCount
-        Dim lonCount As Integer = m.LonCount
+        Dim meta = cache.Meta
+        Dim latCount As Integer = meta.LatCount
+        Dim lonCount As Integer = meta.LonCount
 
-        Dim hasTid As Boolean = (m.HasTid AndAlso cache.Tid IsNot Nothing AndAlso cache.Tid.Length = latCount * lonCount)
-        Dim hasLm As Boolean = (m.HasLandMask AndAlso cache.LandMask IsNot Nothing AndAlso cache.LandMask.Length = latCount * lonCount)
+        Dim hasTid As Boolean = (meta.HasTid AndAlso cache.Tid IsNot Nothing AndAlso cache.Tid.Length = latCount * lonCount)
+        Dim hasLm As Boolean = (meta.HasLandMask AndAlso cache.LandMask IsNot Nothing AndAlso cache.LandMask.Length = latCount * lonCount)
 
         Dim sb As New StringBuilder()
         sb.AppendLine("=== Cache Stichproben ===")
-        sb.AppendLine($"Raster: {latCount} x {lonCount}  cell={m.CellSizeDeg}°")
-        sb.AppendLine($"HasTid={m.HasTid}, HasLandMask={m.HasLandMask}")
+        sb.AppendLine($"Raster: {latCount} x {lonCount}  cell={meta.CellSizeDeg}°")
+        sb.AppendLine($"HasTid={meta.HasTid}, HasLandMask={meta.HasLandMask}")
         sb.AppendLine()
 
         If hasTid Then
@@ -2315,179 +2289,12 @@ Public Class EarthSurfaceViewModel
             sb.AppendLine()
         End If
 
-        '3 Samples: (0,0), Mitte, (lat-1,lon-1)
-        Dim samples = New(name As String, lat As Integer, lon As Integer)() {
-            ("NW (0,0)", 0, 0),
-            ("Center", latCount \ 2, lonCount \ 2),
-            ("SE (last,last)", latCount - 1, lonCount - 1)
-        }
-
-        For Each s In samples
-            Dim idx As Integer = s.lat * lonCount + s.lon
-
-            Dim h As Single = cache.HeightM(idx)
-            Dim hStr As String = If(Single.IsNaN(h), "NaN(Void)", h.ToString("0.##", Globalization.CultureInfo.InvariantCulture))
-
-            Dim tidStr As String = "(n/a)"
-            If hasTid Then
-                tidStr = CInt(cache.Tid(idx)).ToString(CultureInfo.InvariantCulture)
-            End If
-
-            Dim lmStr As String = "(n/a)"
-            If hasLm Then
-                lmStr = cache.LandMask(idx).ToString()
-            End If
-
-            Dim latDeg As Double = LatCenterDeg(s.lat, m.CellSizeDeg)
-            Dim lonDeg As Double = LonCenterDeg(s.lon, m.CellSizeDeg)
-
-            sb.AppendLine($"{s.name}: latIdx={s.lat}, lonIdx={s.lon}  =>  lat={latDeg:0.###}°, lon={lonDeg:0.###}°")
-            sb.AppendLine($"  Height={hStr}m")
-            sb.AppendLine($"  TID={tidStr}")
-            sb.AppendLine($"  LandMask={lmStr} (0=ocean, 1 =land)")
-        Next
-
         Return sb.ToString()
     End Function
 
 #End Region
 
 #Region "Helper"
-
-    Private Shared Function LatCenterDeg(latIndex As Integer, cellSizeDeg As Double) As Double
-        'latIndex 0 = Nord (oben)
-        Return 90.0 - (latIndex + 0.5) * cellSizeDeg
-    End Function
-
-    Private Shared Function LonCenterDeg(lonIndex As Integer, cellSizeDeg As Double) As Double
-        'lonIndex 0 = West (links)
-        Return -180 + (lonIndex + 0.5) * cellSizeDeg
-    End Function
-
-    Public Shared Function ScreenToGeo(mousePos As Point,
-                                       viewPortSize As Size,
-                                       contentSize As Size,
-                                       camera As CameraState,
-                                       zoom As Double,
-                                       panX As Double,
-                                       panY As Double) As (Lat As Double, Lon As Double)
-
-        If viewPortSize.Width <= 0 OrElse viewPortSize.Height <= 0 Then
-            Return (Double.NaN, Double.NaN)
-        End If
-
-        If contentSize.Width <= 0 OrElse contentSize.Height <= 0 Then
-            Return (Double.NaN, Double.NaN)
-        End If
-        If zoom <= 0 Then Return (Double.NaN, Double.NaN)
-
-        'Mausposition in "Content Space" zurückrechnen (Inverse des RenderTransforms)
-        Dim xContent As Double = (mousePos.X - panX) / zoom
-        Dim yContent As Double = (mousePos.Y - panY) / zoom
-
-        If xContent < 0 OrElse xContent >= contentSize.Width OrElse yContent < 0 OrElse yContent >= contentSize.Height Then
-            Return (Double.NaN, Double.NaN)
-        End If
-
-        'Normierte Koordinaten
-        Dim xNorm As Double = xContent / contentSize.Width
-        Dim yNorm As Double = yContent / contentSize.Height
-
-        'Geo berechnen (inverse Render-Formel)
-        Dim lon As Double = camera.CenterLon + (xNorm - 0.5) * camera.SpanLon
-        Dim lat As Double = camera.CenterLat + (0.5 - yNorm) * camera.SpanLat
-
-        'Clamp/Wrap
-        lat = Clamp(lat, -90.0, 90.0)
-        lon = Wrap180(lon)
-
-        Return (lat, lon)
-
-    End Function
-
-    Private Sub ClampPan(viewportW As Double, viewportH As Double)
-
-        If LoadedCache Is Nothing Then Return
-
-        Dim contentW As Double = LoadedCache.Meta.LonCount
-        Dim contentH As Double = LoadedCache.Meta.LatCount
-
-        Dim scaledW As Double = contentW * Zoom
-        Dim scaledH As Double = contentH * Zoom
-
-        'Wenn Content kleiner als Viewport: zentrieren (statt oben links lassen)
-        If scaledW <= viewportW Then
-            PanX = (viewportW - scaledW) / 2.0
-        Else
-            Dim minX As Double = viewportW - scaledW
-            PanX = Clamp(PanX, minX, 0)
-        End If
-
-        If scaledH <= viewportH Then
-            PanY = (viewportH - scaledH) / 2.0
-        Else
-            Dim minY As Double = viewportH - scaledH
-            PanY = Clamp(PanY, minY, 0)
-        End If
-
-    End Sub
-
-    Private Shared Function SnapZoom(value As Double, wheelDelta As Integer, minZoom As Double, maxZoom As Double) As Double
-
-        value = Clamp(value, minZoom, maxZoom)
-
-        Dim stepSize As Double = GetZoomStepSize(value)
-
-        If wheelDelta > 0 Then
-            'hoch -> nächster Wert >= value
-            Return Clamp(Math.Ceiling(value / stepSize) * stepSize, minZoom, maxZoom)
-        ElseIf wheelDelta < 0 Then
-            'runter -> nächster Wert <= value
-            Return Clamp(Math.Floor(value / stepSize) * stepSize, minZoom, maxZoom)
-        Else
-            Return value
-        End If
-    End Function
-
-    Private Shared Function GetZoomStepSize(z As Double) As Double
-        'Schrittweite je nach Zoom-Bereich (fühlt sich "dynamisch" an)
-        If z < 0.75 Then Return 0.05
-        If z < 1.5 Then Return 0.1
-        If z < 3.0 Then Return 0.25
-        If z < 8.0 Then Return 0.5
-        Return 1.0
-    End Function
-
-    Private Sub FitToViewport(viewPortW As Double, viewPortH As Double)
-
-        If LoadedCache Is Nothing Then Return
-        If viewPortH <= 0 OrElse viewPortW <= 0 Then Return
-
-        Dim contentW As Double = LoadedCache.Meta.LonCount
-        Dim contentH As Double = LoadedCache.Meta.LatCount
-        If contentW <= 0 OrElse contentH <= 0 Then Return
-
-        Dim fitZoom As Double = Math.Min(viewPortW / contentW, viewPortH / contentH)
-
-        'Optional: nicht größer als 1 hochskalieren
-        fitZoom = Math.Min(fitZoom, 1.0)
-
-        Dim z As Double = Math.Floor(fitZoom * 100) / 100.0
-        Zoom = Clamp(z, 0.05, 20.0)
-
-        'Zentrieren
-        PanX = (viewPortW - contentW * Zoom) / 2.0
-        PanY = (viewPortH - contentH * Zoom) / 2.0
-
-        'Sicherheit
-        ClampPan(viewPortW, viewPortH)
-
-    End Sub
-
-    Private Sub RememberViewportSize(vp As Size)
-        If vp.Width > 0 Then _lastViewportW = vp.Width
-        If vp.Height > 0 Then _lastViewportH = vp.Height
-    End Sub
 
     Private Sub ClearStatusBar()
         StatusLatText = "Lat: -"
@@ -2748,39 +2555,6 @@ Public Class EarthSurfaceViewModel
 
     End Function
 
-    Private Function TryHitCell(mousePos As Point, viewport As Size, ByRef hit As CellHit) As Boolean
-
-        hit = Nothing
-
-        If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return False
-
-        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
-        Dim contentSize As New Size(meta.LonCount, meta.LatCount)
-
-        Dim geo = ScreenToGeo(mousePos, viewport, contentSize, Camera, Zoom, PanX, PanY)
-        If Double.IsNaN(geo.Lat) OrElse Double.IsNaN(geo.Lon) Then Return False
-
-        Dim cell As Double = meta.CellSizeDeg
-
-        Dim latIdx As Integer = CInt(Math.Floor((90.0 - geo.Lat) / cell))
-        latIdx = Clamp(latIdx, 0, meta.LatCount - 1)
-
-        Dim lonIdx As Integer = CInt(Math.Floor((geo.Lon + 180.0) / cell))
-        lonIdx = Clamp(lonIdx, 0, meta.LonCount - 1)
-
-        Dim idx As Integer = latIdx * meta.LonCount + lonIdx
-
-        hit = New CellHit With {
-            .LatIdx = latIdx,
-            .LonIdx = lonIdx,
-            .Index = idx,
-            .Lat = geo.Lat,
-            .Lon = geo.Lon
-        }
-
-        Return True
-    End Function
-
     Private Sub UpdateHoverCellUi(hit As CellHit)
 
         If HoverLatIdx <> hit.LatIdx Then HoverLatIdx = hit.LatIdx
@@ -2890,6 +2664,8 @@ Public Class EarthSurfaceViewModel
         If Not IsEditMode OrElse SelectedEditChannel <> EditChannel.Height Then Return
         If LoadedCache Is Nothing OrElse LoadedCache.Meta Is Nothing Then Return
 
+        Dim meta As EarthSurfaceCacheMeta = LoadedCache.Meta
+
         'Spikes sicherstellen
         If _heightSpikeIndices Is Nothing OrElse _heightSpikeIndices.Length = 0 Then
             Dim ok As Boolean = Await EnsureHeightSpikeAsync(forceRebuild:=True)
@@ -2903,32 +2679,33 @@ Public Class EarthSurfaceViewModel
 
         Dim idx As Integer = _heightSpikeIndices(_heightSpikeCursor)
 
-        Dim w As Integer = LoadedCache.Meta.LonCount
-        Dim h As Integer = LoadedCache.Meta.LatCount
+        Dim contentW As Integer = meta.LonCount
+        Dim contentH As Integer = meta.LatCount
 
-        Dim x As Integer = idx Mod w
-        Dim y As Integer = idx \ w
+        Dim x As Integer = idx Mod contentH
+        Dim y As Integer = idx \ contentW
 
         'Max-Zoom: 2000% = 20.0
         Zoom = 20.0
         StatusZoomText = $"Zoom: {Zoom * 100:0}%"
 
         'Viewport muss bekannt sein
-        If _lastViewportW <= 0 OrElse _lastViewportH <= 0 Then
+        If _lastViewportSize.Width <= 0 OrElse _lastViewportSize.Height <= 0 Then
             'Fallback: ohne echte Viewport-Daten nur grob zentrieren
-            PanX = -((x + 0.5) * Zoom)
-            PanY = -((y + 0.5) * Zoom)
+            _panPoint.X = -((x + 0.5) * Zoom)
+            _panPoint.Y = -((y + 0.5) * Zoom)
             Return
         End If
 
         'Zentrieren auf Zellmitte
-        PanX = (_lastViewportW / 2.0) - ((x + 0.5) * Zoom)
-        PanY = (_lastViewportH / 2.0) - ((y + 0.5) * Zoom)
+        _panPoint.X = (_lastViewportSize.Width / 2.0) - ((x + 0.5) * Zoom)
+        _panPoint.Y = (_lastViewportSize.Height / 2.0) - ((y + 0.5) * Zoom)
 
-        ClampPan(_lastViewportW, _lastViewportH)
+        EquiRectangularViewportHelper.ClampPan(_lastViewportSize, ContentSize, Zoom, _panPoint)
 
         LastReport = $"Spike {_heightSpikeCursor + 1:N0}/{_heightSpikeIndices.Length:N0} @ idx={idx} (x={x}, y={y})"
     End Function
+
 #End Region
 
 End Class

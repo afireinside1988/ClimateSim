@@ -1,6 +1,4 @@
-﻿Imports System.ComponentModel.Design
-Imports Accessibility
-
+﻿
 Public Class ClimateGrid
     Public ReadOnly Property Width As Integer
     Public ReadOnly Property Height As Integer

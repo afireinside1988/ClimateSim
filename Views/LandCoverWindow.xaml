@@ -177,8 +177,8 @@
                                     <TransformGroup>
                                         <ScaleTransform ScaleX="{Binding Zoom}"
                                                         ScaleY="{Binding Zoom}"/>
-                                        <TranslateTransform X="{Binding PanX}"
-                                                            Y="{Binding PanY}"/>
+                                        <TranslateTransform X="{Binding PanPoint.X}"
+                                                            Y="{Binding PanPoint.Y}"/>
                                     </TransformGroup>
                                 </Canvas.RenderTransform>
 
