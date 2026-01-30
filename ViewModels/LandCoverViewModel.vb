@@ -25,14 +25,12 @@ Public Class LandCoverViewModel
 
         ' Defaults Pan/Zoom
         _zoom = 1.0
-        _panPoint.X = 0.0
-        _panPoint.Y = 0.0
+        PanPoint = New Point(0, 0)
 
         ' Defaults Hover
         _showHoverOverlay = False
         _hoverOverlayText = ""
-        _hoverOverlayX = 0
-        _hoverOverlayY = 0
+        HoverOverlayPoint = New Point(0, 0)
 
         ' Defaults Statusbar
         StatusLatText = "Lat: --.--"
@@ -355,10 +353,23 @@ Public Class LandCoverViewModel
     End Property
 
     Private _contentSize As Size
-    Private ReadOnly Property ContentSize As Size
+    Public Property ContentSize As Size
         Get
             Return _contentSize
         End Get
+        Set(value As Size)
+            SetProperty(_contentSize, value)
+        End Set
+    End Property
+
+    Private _contentCellSizeDeg As Double
+    Public Property ContentCellSizeDeg As Double
+        Get
+            Return _contentCellSizeDeg
+        End Get
+        Set(value As Double)
+            SetProperty(_contentCellSizeDeg, value)
+        End Set
     End Property
 
 #End Region
@@ -375,23 +386,13 @@ Public Class LandCoverViewModel
         End Set
     End Property
 
-    Private _hoverOverlayX As Double
-    Public Property HoverOverlayX As Double
+    Private _hoverOverlayPoint As Point
+    Public Property HoverOverlayPoint As Point
         Get
-            Return _hoverOverlayX
+            Return _hoverOverlayPoint
         End Get
-        Set(value As Double)
-            SetProperty(_hoverOverlayX, value)
-        End Set
-    End Property
-
-    Private _hoverOverlayY As Double
-    Public Property HoverOverlayY As Double
-        Get
-            Return _hoverOverlayY
-        End Get
-        Set(value As Double)
-            SetProperty(_hoverOverlayY, value)
+        Set(value As Point)
+            SetProperty(_hoverOverlayPoint, value)
         End Set
     End Property
 
@@ -945,14 +946,14 @@ Public Class LandCoverViewModel
 
 
         Dim hit As EquiRectangularViewportHelper.CellHit
-        If Not TryHitCell(r.MousePos, r.ViewPortSize, ContentSize, LoadedLandCoverCache.Meta.CellSizeDeg, Camera, Zoom, _panPoint, hit) Then
+        If Not TryHitCell(r.MousePos, r.ViewPortSize, ContentSize, LoadedLandCoverCache.Meta.CellSizeDeg, Camera, Zoom, PanPoint, hit) Then
             MapMouseLeave()
             Return
         End If
 
         ' Screen-space Overlay positionieren
-        HoverOverlayX = r.MousePos.X + 14
-        HoverOverlayY = r.MousePos.Y + 14
+        HoverOverlayPoint = New Point(r.MousePos.X + 14,
+                                      r.MousePos.Y + 14)
 
         'TODO: Nur True setzen, wenn ein Layer gerendert ist
         If LandCoverLayer IsNot Nothing Then ShowHoverOverlay = True
@@ -1070,8 +1071,8 @@ Public Class LandCoverViewModel
             ConfidenceOverlay = renderResult.Confidence
             LandIceThicknessOverlay = renderResult.LandIceThickness
 
-            _contentSize.Width = renderResult.Width
-            _contentSize.Height = renderResult.Height
+            ContentSize = New Size(renderResult.Width, renderResult.Height)
+            ContentCellSizeDeg = LoadedLandCoverCache.Meta.CellSizeDeg
 
             'Fit/Viewport
             If _lastViewportSize.Width > 0 AndAlso _lastViewportSize.Height > 0 Then

@@ -45,18 +45,30 @@ Public Class GeoGridOverlay2D
     Public Shared ReadOnly PanYProperty As DependencyProperty =
         DependencyProperty.Register(NameOf(PanY), GetType(Double), GetType(GeoGridOverlay2D),
             New FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender))
-
-    Public Property CacheMeta As EarthSurfaceCacheMeta
+    
+    Public Property ContentSize As Size
         Get
-            Return CType(GetValue(CacheMetaProperty), EarthSurfaceCacheMeta)
+            Return CType(GetValue(ContentSizeProperty), Size)
         End Get
-        Set(value As EarthSurfaceCacheMeta)
-            SetValue(CacheMetaProperty, value)
+        Set(value As Size)
+            SetValue(ContentSizeProperty, value)
         End Set
     End Property
-    Public Shared ReadOnly CacheMetaProperty As DependencyProperty =
-        DependencyProperty.Register(NameOf(CacheMeta), GetType(EarthSurfaceCacheMeta), GetType(GeoGridOverlay2D),
-            New FrameworkPropertyMetadata(Nothing, FrameworkPropertyMetadataOptions.AffectsRender))
+    Public Shared ReadOnly ContentSizeProperty As DependencyProperty =
+        DependencyProperty.Register(NameOf(ContentSize), GetType(Size), GetType(GeoGridOverlay2D),
+            New FrameworkPropertyMetadata(Size.Empty, FrameworkPropertyMetadataOptions.AffectsRender))
+
+    Public Property ContentCellSizeDeg As Double
+        Get
+            Return CDbl(GetValue(ContentCellSizeDegProperty))
+        End Get
+        Set(value As Double)
+            SetValue(ContentCellSizeDegProperty, value)
+        End Set
+    End Property
+    Public Shared ReadOnly ContentCellSizeDegProperty As DependencyProperty =
+        DependencyProperty.Register(NameOf(ContentCellSizeDeg), GetType(Double), GetType(GeoGridOverlay2D),
+            New FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender))
 
     '---------
     'Rendering
@@ -65,8 +77,8 @@ Public Class GeoGridOverlay2D
     Protected Overrides Sub OnRender(dc As DrawingContext)
         MyBase.OnRender(dc)
 
-        Dim meta = CacheMeta
-        If meta Is Nothing Then Return
+        If ContentSize.Width <= 0 OrElse ContentSize.Height <= 0 Then Return
+        If ContentCellSizeDeg <= 0 Then Return
         If Zoom <= 0 Then Return
 
         Dim vpW As Double = ActualWidth
@@ -76,9 +88,9 @@ Public Class GeoGridOverlay2D
         'Grid-Config nach festgelegten Zoom-Bändern
         Dim cfg = GetGridConfig(Zoom)
 
-        Dim cellDeg As Double = meta.CellSizeDeg
-        Dim lonCount As Integer = meta.LonCount
-        Dim latCount As Integer = meta.LatCount
+        Dim cellDeg As Double = ContentCellSizeDeg
+        Dim lonCount As Integer = CInt(Math.Floor(ContentSize.Width))
+        Dim latCount As Integer = CInt(Math.Floor(ContentSize.Height))
 
         'Schrittweiten in Zellkanten (Integer, damit exakt auf Zellkanten)
         Dim majorStepCells As Integer = DegToCells(cfg.MajorDeg, cellDeg)
@@ -95,8 +107,8 @@ Public Class GeoGridOverlay2D
         'Content-Grenzen in Screen-Space
         Dim contentLeft As Double = PanX
         Dim contentTop As Double = PanY
-        Dim contentRight As Double = PanX + CacheMeta.LonCount * Zoom
-        Dim contentBottom As Double = PanY + CacheMeta.LatCount * Zoom
+        Dim contentRight As Double = PanX + lonCount * Zoom
+        Dim contentBottom As Double = PanY + latCount * Zoom
 
 
         'Clamp an Content

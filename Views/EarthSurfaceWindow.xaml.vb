@@ -17,15 +17,20 @@ Public Class EarthSurfaceWindow
 
         'Viewport (Overlay) muss eine Größe haben
         If MapHost Is Nothing OrElse MapHost.ActualWidth <= 0 OrElse MapHost.ActualHeight <= 0 Then
-            vm.TidLegendX += e.HorizontalChange
-            vm.TidLegendY += e.VerticalChange
+
+            Dim p As New Point(vm.TidLegendPoint.X + e.HorizontalChange,
+                               vm.TidLegendPoint.Y + e.VerticalChange)
+
+            vm.TidLegendPoint = p
             Return
         End If
 
         'Legende muss gemessen sein
         If TidLegendBorder Is Nothing Then
-            vm.TidLegendX += e.HorizontalChange
-            vm.TidLegendY += e.VerticalChange
+            Dim p As New Point(vm.TidLegendPoint.X + e.HorizontalChange,
+                               vm.TidLegendPoint.Y + e.VerticalChange)
+
+            vm.TidLegendPoint = p
             Return
         End If
 
@@ -43,8 +48,8 @@ Public Class EarthSurfaceWindow
         Dim vpH As Double = MapHost.ActualHeight
 
         'Neue Position
-        Dim nx As Double = vm.TidLegendX + e.HorizontalChange
-        Dim ny As Double = vm.TidLegendY + e.VerticalChange
+        Dim nx As Double = vm.TidLegendPoint.X + e.HorizontalChange
+        Dim ny As Double = vm.TidLegendPoint.Y + e.VerticalChange
 
         'Clamp
         ' - Normalfall: Legende komplett im Viewport halten
@@ -57,8 +62,7 @@ Public Class EarthSurfaceWindow
         nx = Clamp(nx, minX, maxX)
         ny = Clamp(ny, minY, maxY)
 
-        vm.TidLegendX = nx
-        vm.TidLegendY = ny
+        vm.TidLegendPoint = New Point(nx, ny)
     End Sub
 
 End Class

@@ -315,8 +315,8 @@
                                            Height="1"
                                            IsHitTestVisible="False"
                                            Visibility="{Binding IsHoverCellVisible, Converter={StaticResource BoolToVis}}"
-                                           Canvas.Left="{Binding HoverCellX}"
-                                           Canvas.Top="{Binding HoverCellY}"
+                                           Canvas.Left="{Binding HoverCellPoint.X}"
+                                           Canvas.Top="{Binding HoverCellPoint.Y}"
                                            SnapsToDevicePixels="True"
                                            Fill="#40FF0000"
                                            Stroke="#A0FF0000"
@@ -332,7 +332,7 @@
                                     SnapsToDevicePixels="True"
                                     UseLayoutRounding="True">
 
-                                <!-- Gird-Layer (screen-space, wird pro Viewport gerendert) -->
+                                <!-- Grid-Layer (screen-space, wird pro Viewport gerendert) -->
                                 <local:GeoGridOverlay2D
                                     Canvas.Left="0"
                                     Canvas.Top="0"
@@ -342,14 +342,15 @@
                                     Visibility="{Binding ShowGridLayer,Converter={StaticResource BoolToVis}}"
                                     RenderOptions.EdgeMode="Aliased"
                                     Zoom="{Binding Zoom}"
-                                    PanX="{Binding PanX}"
-                                    PanY="{Binding PanY}"
-                                    CacheMeta="{Binding CacheMeta}" />
+                                    PanX="{Binding PanPoint.X}"
+                                    PanY="{Binding PanPoint.Y}"
+                                    ContentSize="{Binding ContentSize}"
+                                    ContentCellSizeDeg="{Binding ContentCellSizeDeg}"/>
 
                                 <!-- Floating-Label am Mauszeiger -->
                                 <Border Visibility="{Binding ShowHoverOverlay, Converter={StaticResource BoolToVis}}"
-                                        Canvas.Left="{Binding HoverOverlayX}"
-                                        Canvas.Top="{Binding HoverOverlayY}"
+                                        Canvas.Left="{Binding HoverOverlayPoint.X}"
+                                        Canvas.Top="{Binding HoverOverlayPoint.Y}"
                                         Background="#E0101010"
                                         BorderBrush="#FFDDDDDD"
                                         BorderThickness="1"
@@ -366,8 +367,8 @@
                                 <!-- Legend-Popup (verschiebbar) -->
                                 <Border x:Name="TidLegendBorder"
                                         Visibility="{Binding IsTidLegendOpen, Converter={StaticResource BoolToVis}}"
-                                        Canvas.Left="{Binding TidLegendX}"
-                                        Canvas.Top="{Binding TidLegendY}"
+                                        Canvas.Left="{Binding TidLegendPoint.X}"
+                                        Canvas.Top="{Binding TidLegendPoint.Y}"
                                         Background="#F0181818"
                                         BorderBrush="#66FFFFFF"
                                         BorderThickness="1"

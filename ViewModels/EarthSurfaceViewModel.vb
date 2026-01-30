@@ -283,12 +283,24 @@ Public Class EarthSurfaceViewModel
     Private _renderCts As Threading.CancellationTokenSource
 
     Private _contentSize As Size
-    Private ReadOnly Property ContentSize As Size
+    Public Property ContentSize As Size
         Get
             Return _contentSize
         End Get
+        Set(value As Size)
+            SetProperty(_contentSize, value)
+        End Set
     End Property
 
+    Private _contentCellSizeDeg As Double
+    Public Property ContentCellSizeDeg As Double
+        Get
+            Return _contentCellSizeDeg
+        End Get
+        Set(value As Double)
+            SetProperty(_contentCellSizeDeg, value)
+        End Set
+    End Property
 
     Private _surfaceLayer As ImageSource
     Public Property SurfaceLayer As ImageSource
@@ -484,23 +496,13 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
-    Private _hoverCellX As Double
-    Public Property HoverCellX As Double
+    Private _hoverCellPoint As Point
+    Public Property HoverCellPoint As Point
         Get
-            Return _hoverCellX
+            Return _hoverCellPoint
         End Get
-        Set(value As Double)
-            SetProperty(_hoverCellX, value)
-        End Set
-    End Property
-
-    Private _hoverCellY As Double
-    Public Property HoverCellY As Double
-        Get
-            Return _hoverCellY
-        End Get
-        Set(value As Double)
-            SetProperty(_hoverCellY, value)
+        Set(value As Point)
+            SetProperty(_hoverCellPoint, value)
         End Set
     End Property
 
@@ -544,23 +546,13 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
-    Private _hoverOverlayX As Double
-    Public Property HoverOverlayX As Double
+    Private _hoverOverlayPoint As Point
+    Public Property HoverOverlayPoint As Point
         Get
-            Return _hoverOverlayX
+            Return _hoverOverlayPoint
         End Get
-        Set(value As Double)
-            SetProperty(_hoverOverlayX, value)
-        End Set
-    End Property
-
-    Private _hoverOverlayY As Double
-    Public Property HoverOverlayY As Double
-        Get
-            Return _hoverOverlayY
-        End Get
-        Set(value As Double)
-            SetProperty(_hoverOverlayY, value)
+        Set(value As Point)
+            SetProperty(_hoverOverlayPoint, value)
         End Set
     End Property
 
@@ -1358,23 +1350,13 @@ Public Class EarthSurfaceViewModel
         End Set
     End Property
 
-    Private _tidLegendX As Double = 16
-    Public Property TidLegendX As Double
+    Private _tidLegendPoint As Point
+    Public Property TidLegendPoint As Point
         Get
-            Return _tidLegendX
+            Return _tidLegendPoint
         End Get
-        Set(value As Double)
-            SetProperty(_tidLegendX, value)
-        End Set
-    End Property
-
-    Private _tidLegendY As Double = 16
-    Public Property TidLegendY As Double
-        Get
-            Return _tidLegendY
-        End Get
-        Set(value As Double)
-            SetProperty(_tidLegendY, value)
+        Set(value As Point)
+            SetProperty(_tidLegendPoint, value)
         End Set
     End Property
 
@@ -1464,6 +1446,8 @@ Public Class EarthSurfaceViewModel
 #End Region
 
     Public Sub New()
+
+        TidLegendPoint = New Point(16, 16)
 
         BrowseHeightCommand = New RelayCommand(Of Object)(Sub(o) BrowseHeight())
         BrowseTidCommand = New RelayCommand(Of Object)(Sub(o) BrowseTid())
@@ -1916,8 +1900,8 @@ Public Class EarthSurfaceViewModel
             ShoreLineLayer = rr.ShoreLines
             TidLayer = rr.Tid
 
-            _contentSize.Width = rr.Width
-            _contentSize.Height = rr.Height
+            ContentSize = New Size(rr.Width, rr.Height)
+            ContentCellSizeDeg = LoadedCache.Meta.CellSizeDeg
 
             Debug.WriteLine(rr.TimingReport)
 
@@ -2562,8 +2546,8 @@ Public Class EarthSurfaceViewModel
         If HoverLinearIdx <> hit.Index Then HoverLinearIdx = hit.Index
 
         If ShowLandMaskLayer OrElse IsEditMode Then
-            HoverCellX = hit.LonIdx
-            HoverCellY = hit.LatIdx
+            HoverCellPoint = New Point(hit.LonIdx,
+                                       hit.LatIdx)
             IsHoverCellVisible = True
         Else
             IsHoverCellVisible = False
@@ -2605,8 +2589,8 @@ Public Class EarthSurfaceViewModel
             Dim code As Integer = TidHelpers.TidByteToCode(t)
 
             HoverOverlayText = TidLegend.TidText(code)
-            HoverOverlayX = mousePos.X + 14
-            HoverOverlayY = mousePos.Y + 14
+            HoverOverlayPoint = New Point(mousePos.X + 14,
+                                          mousePos.Y + 14)
             ShowHoverOverlay = True
         Else
             ShowHoverOverlay = False

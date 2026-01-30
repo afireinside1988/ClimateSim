@@ -212,14 +212,15 @@
                                     Visibility="{Binding ShowGridLayer, Converter={StaticResource BoolToVis}}"
                                     RenderOptions.EdgeMode="Aliased"
                                     Zoom="{Binding Zoom}"
-                                    PanX="{Binding PanX}"
-                                    PanY="{Binding PanY}"
-                                    CacheMeta="{Binding CacheMeta}" />
+                                    PanX="{Binding PanPoint.X}"
+                                    PanY="{Binding PanPoint.Y}"
+                                    ContentSize="{Binding ContentSize}"
+                                    ContentCellSizeDeg="{Binding ContentCellSizeDeg}"/>
 
                                 <!-- Floating-Label am Mauszeiger -->
                                 <Border Visibility="{Binding ShowHoverOverlay, Converter={StaticResource BoolToVis}}"
-                                        Canvas.Left="{Binding HoverOverlayX}"
-                                        Canvas.Top="{Binding HoverOverlayY}"
+                                        Canvas.Left="{Binding HoverOverlayPoint.X}"
+                                        Canvas.Top="{Binding HoverOverlayPoint.Y}"
                                         Background="#E0101010"
                                         BorderBrush="#FFDDDDDD"
                                         BorderThickness="1"
