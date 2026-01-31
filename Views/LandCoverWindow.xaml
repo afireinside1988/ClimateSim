@@ -212,8 +212,7 @@
                                     Visibility="{Binding ShowGridLayer, Converter={StaticResource BoolToVis}}"
                                     RenderOptions.EdgeMode="Aliased"
                                     Zoom="{Binding Zoom}"
-                                    PanX="{Binding PanPoint.X}"
-                                    PanY="{Binding PanPoint.Y}"
+                                    PanPoint="{Binding PanPoint}"
                                     ContentSize="{Binding ContentSize}"
                                     ContentCellSizeDeg="{Binding ContentCellSizeDeg}"/>
 

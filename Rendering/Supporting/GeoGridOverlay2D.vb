@@ -22,30 +22,18 @@ Public Class GeoGridOverlay2D
         DependencyProperty.Register(NameOf(Zoom), GetType(Double), GetType(GeoGridOverlay2D),
             New FrameworkPropertyMetadata(1.0, FrameworkPropertyMetadataOptions.AffectsRender))
 
-    Public Property PanX As Double
+    Public Property PanPoint As Point
         Get
-            Return CDbl(GetValue(PanXProperty))
+            Return CType(GetValue(PanPointProperty), Point)
         End Get
-        Set(value As Double)
-            SetValue(PanXProperty, value)
+        Set(value As Point)
+            SetValue(PanPointProperty, value)
         End Set
     End Property
-    Public Shared ReadOnly PanXProperty As DependencyProperty =
-        DependencyProperty.Register(NameOf(PanX), GetType(Double), GetType(GeoGridOverlay2D),
-            New FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender))
+    Public Shared ReadOnly PanPointProperty As DependencyProperty =
+        DependencyProperty.Register(NameOf(PanPoint), GetType(Point), GetType(GeoGridOverlay2D),
+            New FrameworkPropertyMetadata(New Point(0, 0), FrameworkPropertyMetadataOptions.AffectsRender))
 
-    Public Property PanY As Double
-        Get
-            Return CDbl(GetValue(PanYProperty))
-        End Get
-        Set(value As Double)
-            SetValue(PanYProperty, value)
-        End Set
-    End Property
-    Public Shared ReadOnly PanYProperty As DependencyProperty =
-        DependencyProperty.Register(NameOf(PanY), GetType(Double), GetType(GeoGridOverlay2D),
-            New FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender))
-    
     Public Property ContentSize As Size
         Get
             Return CType(GetValue(ContentSizeProperty), Size)
@@ -80,6 +68,9 @@ Public Class GeoGridOverlay2D
         If ContentSize.Width <= 0 OrElse ContentSize.Height <= 0 Then Return
         If ContentCellSizeDeg <= 0 Then Return
         If Zoom <= 0 Then Return
+
+        Dim panX As Double = PanPoint.X
+        Dim panY As Double = PanPoint.Y
 
         Dim vpW As Double = ActualWidth
         Dim vpH As Double = ActualHeight
@@ -152,6 +143,9 @@ Public Class GeoGridOverlay2D
                               contentLeft As Double, contentRight As Double)
 
         If stepCells <= 0 Then Return
+
+        Dim panX As Double = PanPoint.X
+        Dim panY As Double = PanPoint.Y
 
 
         'Vertikale Linien: x = k * step
