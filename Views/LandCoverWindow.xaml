@@ -155,8 +155,8 @@
 
                             <!-- CONTENT: zoom/pan-transformiert -->
                             <Canvas x:Name="MapContent"
-                                    Width="{Binding ContentWidth}"
-                                    Height="{Binding ContentHeight}"
+                                    Width="{Binding ContentSize.Width}"
+                                    Height="{Binding ContentSize.Height}"
                                     HorizontalAlignment="Left"
                                     VerticalAlignment="Top"
                                     SnapsToDevicePixels="True"
@@ -220,6 +220,7 @@
                                 <Border Visibility="{Binding ShowHoverOverlay, Converter={StaticResource BoolToVis}}"
                                         Canvas.Left="{Binding HoverOverlayPoint.X}"
                                         Canvas.Top="{Binding HoverOverlayPoint.Y}"
+                                        MinWidth="200"
                                         Background="#E0101010"
                                         BorderBrush="#FFDDDDDD"
                                         BorderThickness="1"
@@ -318,7 +319,7 @@
                             </TextBox>
 
                             <!-- NEU: EarthSurfaceCache-Basis -->
-                            <TextBlock Text="EarthSurface-Cache (Basis)" Opacity="0.8"/>
+                            <TextBlock Text="Basis-Cache (Erdoberfläche)" Opacity="0.8" FontWeight="SemiBold"/>
                             <Grid Margin="0,4,0,10">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -341,56 +342,57 @@
                             </Grid>
 
                             <!-- Copernicus: Class TIF -->
-                            <TextBlock Text="Copernicus LC100 Class-TIF" Opacity="0.8"/>
-                            <Grid Margin="0,4,0,10">
+                            <TextBlock Text="Landbedeckung" Opacity="0.8" FontWeight="SemiBold" Margin="0,5,0,3"/>
+                            <TextBlock Text="Copernicus LC100 Class" Opacity="0.8"/>
+                            <Grid Margin="0,4,0,5">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBox Grid.Column="0"
-                                         Text="{Binding RawClassTifFile, UpdateSourceTrigger=PropertyChanged}"
+                                         Text="{Binding RawCopernicusClassFile, UpdateSourceTrigger=PropertyChanged}"
                                          VerticalContentAlignment="Center"
                                          Margin="0,0,8,0"
                                          IsReadOnly="True"
                                          ToolTip="Entfernen mit [Entf] oder [Backspace]">
                                     <i:Interaction.Behaviors>
-                                        <local:ClearOnDeleteBehavior Command="{Binding ClearClassTifFileCommand}"/>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearCopernicusClassFileCommand}"/>
                                     </i:Interaction.Behaviors>
                                 </TextBox>
                                 <Button Grid.Column="1"
                                         Content="..."
                                         Width="34"
-                                        Command="{Binding BrowseClassTifCommand}"/>
+                                        Command="{Binding BrowseCopernicusClassCommand}"/>
                             </Grid>
 
                             <!-- Copernicus: Proba TIF -->
-                            <TextBlock Text="Copernicus LC100 Proba-TIF" Opacity="0.8"/>
-                            <Grid Margin="0,4,0,14">
+                            <TextBlock Text="Copernicus LC100 Proba" Opacity="0.8"/>
+                            <Grid Margin="0,4,0,10">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBox Grid.Column="0"
-                                         Text="{Binding RawProbaTifFile, UpdateSourceTrigger=PropertyChanged}"
+                                         Text="{Binding RawCopernicusProbaFile, UpdateSourceTrigger=PropertyChanged}"
                                          VerticalContentAlignment="Center"
                                          Margin="0,0,8,0"
                                          IsReadOnly="True"
                                          ToolTip="Entfernen mit [Entf] oder [Backspace]">
                                     <i:Interaction.Behaviors>
-                                        <local:ClearOnDeleteBehavior Command="{Binding ClearProbaTifFileCommand}"/>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearCopernicusProbaFileCommand}"/>
                                     </i:Interaction.Behaviors>
                                 </TextBox>
                                 <Button Grid.Column="1"
                                         Content="..."
                                         Width="34"
-                                        Command="{Binding BrowseProbaTifCommand}"/>
+                                        Command="{Binding BrowseCopernicusProbaCommand}"/>
                             </Grid>
 
-                            <!-- BedMachine (später implementiert) -->
-                            <TextBlock Text="BedMachine (optional, später)" Opacity="0.8" Margin="0,0,0,6"/>
+                            <!-- BedMachine -->
+                            <TextBlock Text="Polare Eisschilde" Opacity="0.8" FontWeight="SemiBold" Margin="0,5,0,3"/>
 
                             <TextBlock Text="BedMachine Greenland" Opacity="0.8"/>
-                            <Grid Margin="0,4,0,10">
+                            <Grid Margin="0,4,0,5">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
@@ -412,7 +414,7 @@
                             </Grid>
 
                             <TextBlock Text="BedMachine Antarctica" Opacity="0.8"/>
-                            <Grid Margin="0,4,0,0">
+                            <Grid Margin="0,4,0,10">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
@@ -431,6 +433,75 @@
                                         Content="..."
                                         Width="34"
                                         Command="{Binding BrowseBedMachineAntarcticaCommand}"/>
+                            </Grid>
+
+                            <!-- Gletscher -->
+                            <TextBlock Text="Gletscher" Opacity="0.8" FontWeight="SemiBold" Margin="0,5,0,3"/>
+
+                            <TextBlock Text="RGI Global-Glacier-Produkt" Opacity="0.8"/>
+                            <Grid Margin="0,4,0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                     Text="{Binding RawRgiGlobalFile, UpdateSourceTrigger=PropertyChanged}"
+                                     VerticalContentAlignment="Center"
+                                     Margin="0,0,8,0"
+                                     IsReadOnly="True"
+                                     ToolTip="Entfernen mit [Entf] oder [Backspace]">
+                                    <i:Interaction.Behaviors>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearRgiGlobalFileCommand}"/>
+                                    </i:Interaction.Behaviors>
+                                </TextBox>
+                                <Button Grid.Column="1"
+                                    Content="..."
+                                    Width="34"
+                                    Command="{Binding BrowseRgiGlobalCommand}"/>
+                            </Grid>
+
+                            <TextBlock Text="RGI Regionen-Produkt" Opacity="0.8"/>
+                            <Grid Margin="0,4,0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                    Text="{Binding RawRgiRegionsFile, UpdateSourceTrigger=PropertyChanged}"
+                                    VerticalContentAlignment="Center"
+                                    Margin="0,0,8,0"
+                                    IsReadOnly="True"
+                                    ToolTip="Entfernen mit [Entf] oder [Backspace]">
+                                    <i:Interaction.Behaviors>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearRgiRegionsFileCommand}"/>
+                                    </i:Interaction.Behaviors>
+                                </TextBox>
+                                <Button Grid.Column="1"
+                                    Content="..."
+                                    Width="34"
+                                    Command="{Binding BrowseRgiRegionsCommand}"/>
+                            </Grid>
+
+                            <TextBlock Text="GlaThiDa" Opacity="0.8"/>
+                            <Grid Margin="0,4,0,0" IsEnabled="{Binding HasRgiGlobalFile}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                    Text="{Binding RawGlaThiDaFile, UpdateSourceTrigger=PropertyChanged}"
+                                    VerticalContentAlignment="Center"
+                                    Margin="0,0,8,0"
+                                    IsReadOnly="True"
+                                    ToolTip="Entfernen mit [Entf] oder [Backspace]">
+                                    <i:Interaction.Behaviors>
+                                        <local:ClearOnDeleteBehavior Command="{Binding ClearGlaThiDaFileCommand}"/>
+                                    </i:Interaction.Behaviors>
+                                </TextBox>
+                                <Button Grid.Column="1"
+                                    Content="..."
+                                    Width="34"
+                                    Command="{Binding BrowseGlaThiDaCommand}"/>
                             </Grid>
                         </StackPanel>
                     </GroupBox>

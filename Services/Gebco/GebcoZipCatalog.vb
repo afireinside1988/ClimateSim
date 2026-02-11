@@ -1,6 +1,5 @@
 ﻿Imports System.IO
 Imports System.IO.Compression
-Imports System.Linq
 
 Public NotInheritable Class GebcoZipCatalog
 

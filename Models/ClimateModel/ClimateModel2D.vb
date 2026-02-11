@@ -109,7 +109,8 @@ Public Class ClimateModel2D
                 Dim Te As Double = _grid.GetCell(lat, lonE).TemperatureK
 
                 Dim laplacian As Double = Tn + Ts + Tw + Te - 4.0 * T
-                Dim diffTerm As Double = DiffusionCoefficient * laplacian
+                'Dim diffTerm As Double = DiffusionCoefficient * laplacian
+                Dim diffTerm As Double = 0.0
 
                 ' 3) Gesamtänderung
                 Dim localC As Double = cell.HeatCapacityFactor
@@ -171,19 +172,19 @@ Public Class ClimateModel2D
         '4) "zonale" EBM-Temperatur aus qNorm
         Dim Tzonal As Double = BaseTemperatureK + InsolationAmplitudeK * (qNorm - 1.0)
 
-        '2) Höhenkorrektur: nur für positive Höhen (Land), Meer bleibt bei 0m
+        '5) Höhenkorrektur: nur für positive Höhen (Land), Meer bleibt bei 0m
         Dim effectiveHeight As Double = Math.Max(0.0, cell.HeightM)
         Dim deltaT_height As Double = ClimateConstants.ElevationLapseRateKPerM * effectiveHeight
 
         Dim Teq_noAlbedo As Double = Tzonal - deltaT_height
 
-        '3) Albedo-Effekt
+        '6) Albedo-Effekt
         Dim alphaCell As Double = cell.Albedo
         Dim alphaRef As Double = AlbedoReference
 
         Dim deltaT_albedo As Double = AlbedoSensitivityKPerUnit * (alphaRef - alphaCell)
 
-        '4) Gesamte Gleichgewichtstemperatur
+        '7) Gesamte Gleichgewichtstemperatur
         Dim Teq As Double = Teq_noAlbedo + deltaT_albedo + BaseTemperatureOffsetK
 
         Return Teq

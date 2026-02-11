@@ -1,0 +1,23 @@
+﻿Public Enum RGIRegion
+    Global_Region = 0
+    Alaska = 1
+    Western_Canada_USA = 2
+    Arctic_Canada_North = 3
+    Arctic_Canada_South = 4
+    Greenland_Periphery = 5
+    Iceland = 6
+    Svalbard_Jan_Mayen = 7
+    Scandinavia = 8
+    Russian_Arctic = 9
+    North_Asia = 10
+    Central_Europe = 11
+    Caucasus_Middle_East = 12
+    Central_Asia = 13
+    South_Asia_West = 14
+    South_Asia_East = 15
+    Low_Latitudes = 16
+    Southern_Andes = 17
+    New_Zealand = 18
+    Subantarctic_Antarctic_Islands = 19
+    Antarctic_Mainland = 20
+End Enum

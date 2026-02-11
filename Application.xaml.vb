@@ -12,4 +12,9 @@ Class Application
         FrameworkElement.LanguageProperty.OverrideMetadata(GetType(FrameworkElement), New FrameworkPropertyMetadata(XmlLanguage.GetLanguage(Globalization.CultureInfo.CurrentUICulture.IetfLanguageTag)))
     End Sub
 
+    Protected Overrides Sub OnStartup(e As StartupEventArgs)
+        MyBase.OnStartup(e)
+        GdalHelpers.InitGdal()
+    End Sub
+
 End Class

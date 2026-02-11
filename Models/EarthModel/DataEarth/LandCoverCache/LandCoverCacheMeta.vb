@@ -36,8 +36,10 @@ Public Class LandCoverCacheMeta
     Public Property HasLandIceThickness As Boolean = False
 
     'Importer-Infos
-    Public Property RawClassFile As String
-    Public Property RawProbaFile As String
+    Public Property RawCopernicusLC100ClassFile As String
+    Public Property RawCopernicusLC100ProbaFile As String
+    Public Property RawBedMachineGreenlandFile As String
+    Public Property RawBedMachineAntarcticaFile As String
     Public Property ImportNotes As String
 
     'Zeitstempel

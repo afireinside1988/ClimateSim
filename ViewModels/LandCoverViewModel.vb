@@ -1,12 +1,11 @@
 ﻿
 Imports System.IO
-Imports System.Runtime.Intrinsics
 Imports System.Text
 Imports System.Text.Json
 Imports System.Threading
-Imports System.Windows.Media.Media3D
 Imports Microsoft.Win32
 Imports OSGeo.GDAL
+Imports MaxRev.Gdal
 
 Public Class LandCoverViewModel
     Inherits ViewModelBase
@@ -18,8 +17,8 @@ Public Class LandCoverViewModel
         SourceName = "COPERNICUS_LC100"
         EpochYear = DateTime.UtcNow.Year
 
-        ' Defaults wie im EarthSurfaceWindow (Grid an, Overlays aus)
-        _showGridLayer = True
+        ' Defaults Layer
+        _showGridLayer = False
         _showConfidenceOverlay = False
         _showLandIceThicknessOverlay = False
 
@@ -33,49 +32,55 @@ Public Class LandCoverViewModel
         HoverOverlayPoint = New Point(0, 0)
 
         ' Defaults Statusbar
-        StatusLatText = "Lat: --.--"
-        StatusLonText = "Lon: --.--"
-        StatusLandCoverClassText = "LC: -"
-        StatusConfidenceText = "Conf: -"
-        StatusLandIceThicknessText = "Ice: -"
-        StatusZoomText = $"Zoom: {Zoom:0.###}x"
+        ClearStatusBar()
 
         ' Commands (Menu/Actions)
-        _LoadCacheCommand = New AsyncRelayCommand(Of Object)(Function(o) LoadCacheAsync(), Function(o) Not IsBusy)
-        _GenerateCacheCommand = New AsyncRelayCommand(Of Object)(Function(o) GenerateCacheAsync(), Function(o) CanGenerateCache AndAlso Not IsBusy)
-        _OpenGlobePreviewCommand = New RelayCommand(Of Object)(Sub(o) OpenGlobePreview(), Function(o) CanOpenGlobePreview AndAlso Not IsBusy)
+        LoadCacheCommand = New AsyncRelayCommand(Of Object)(Function(o) LoadCacheAsync(), Function(o) Not IsBusy)
+        GenerateCacheCommand = New AsyncRelayCommand(Of Object)(Function(o) GenerateCacheAsync(), Function(o) CanGenerateCache AndAlso Not IsBusy)
+        OpenGlobePreviewCommand = New RelayCommand(Of Object)(Sub(o) OpenGlobePreview(), Function(o) CanOpenGlobePreview AndAlso Not IsBusy)
 
         ' Commands (Browse/Clear)
-        _BrowseBaseEarthSurfaceCacheCommand = New RelayCommand(Of Object)(Sub(o) BrowseBaseEarthSurfaceCache(), Function(o) Not IsBusy)
-        _ClearBaseEarthSurfaceCacheCommand = New RelayCommand(Of Object)(Sub(o) ClearBaseEarthSurfaceCache(), Function(o) Not String.IsNullOrWhiteSpace(BaseEarthSurfaceCachePath))
+        BrowseBaseEarthSurfaceCacheCommand = New RelayCommand(Of Object)(Sub(o) BrowseBaseEarthSurfaceCache(), Function(o) Not IsBusy)
+        ClearBaseEarthSurfaceCacheCommand = New RelayCommand(Of Object)(Sub(o) ClearBaseEarthSurfaceCache(), Function(o) Not String.IsNullOrWhiteSpace(BaseEarthSurfaceCachePath))
 
-        _BrowseClassTifCommand = New RelayCommand(Of Object)(Sub(o) BrowseClassTif(), Function(o) Not IsBusy)
-        _ClearClassTifFileCommand = New RelayCommand(Of Object)(Sub(o) ClearClassTifFile(), Function(o) RawClassTifFile IsNot Nothing)
+        BrowseCopernicusClassCommand = New RelayCommand(Of Object)(Sub(o) BrowseCopernicusClass(), Function(o) Not IsBusy)
+        ClearCopernicusClassFileCommand = New RelayCommand(Of Object)(Sub(o) ClearCopernicusClassFile(), Function(o) RawCopernicusClassFile IsNot Nothing)
 
-        _BrowseProbaTifCommand = New RelayCommand(Of Object)(Sub(o) BrowseProbaTif(), Function(o) Not IsBusy)
-        _ClearProbaTifFileCommand = New RelayCommand(Of Object)(Sub(o) ClearProbaTifFile(), Function(o) RawProbaTifFile IsNot Nothing)
+        BrowseCopernicusProbaCommand = New RelayCommand(Of Object)(Sub(o) BrowseCopernicusProba(), Function(o) Not IsBusy)
+        ClearCopernicusProbaFileCommand = New RelayCommand(Of Object)(Sub(o) ClearCopernicusProbaFile(), Function(o) RawCopernicusProbaFile IsNot Nothing)
 
-        _BrowseBedMachineGreenlandCommand = New RelayCommand(Of Object)(Sub(o) BrowseBedMachineGreenland(), Function(o) Not IsBusy)
-        _ClearBedMachineGreenlandFileCommand = New RelayCommand(Of Object)(Sub(o) ClearBedMachineGreenlandFile(), Function(o) Not String.IsNullOrWhiteSpace(RawBedMachineGreenlandFile))
+        BrowseBedMachineGreenlandCommand = New RelayCommand(Of Object)(Sub(o) BrowseBedMachineGreenland(), Function(o) Not IsBusy)
+        ClearBedMachineGreenlandFileCommand = New RelayCommand(Of Object)(Sub(o) ClearBedMachineGreenlandFile(), Function(o) Not String.IsNullOrWhiteSpace(RawBedMachineGreenlandFile))
 
-        _BrowseBedMachineAntarcticaCommand = New RelayCommand(Of Object)(Sub(o) BrowseBedMachineAntarctica(), Function(o) Not IsBusy)
-        _ClearBedMachineAntarcticaFileCommand = New RelayCommand(Of Object)(Sub(o) ClearBedMachineAntarcticaFile(), Function(o) Not String.IsNullOrWhiteSpace(RawBedMachineAntarcticaFile))
+        BrowseBedMachineAntarcticaCommand = New RelayCommand(Of Object)(Sub(o) BrowseBedMachineAntarctica(), Function(o) Not IsBusy)
+        ClearBedMachineAntarcticaFileCommand = New RelayCommand(Of Object)(Sub(o) ClearBedMachineAntarcticaFile(), Function(o) Not String.IsNullOrWhiteSpace(RawBedMachineAntarcticaFile))
+
+        BrowseRgiGlobalCommand = New RelayCommand(Of Object)(Sub(o) BrowseRgiGlobal(), Function(o) Not IsBusy)
+        ClearRgiGlobalFileCommand = New RelayCommand(Of Object)(Sub(o) ClearRgiGlobalFile(), Function(o) Not String.IsNullOrWhiteSpace(RawRgiGlobalFile))
+
+        BrowseRgiRegionsCommand = New RelayCommand(Of Object)(Sub(o) BrowseRgiRegions(), Function(o) Not IsBusy)
+        ClearRgiRegionsFileCommand = New RelayCommand(Of Object)(Sub(o) ClearRgiRegionsFile(), Function(o) Not String.IsNullOrWhiteSpace(RawRgiRegionsFile))
+
+        BrowseGlaThiDaCommand = New RelayCommand(Of Object)(Sub(o) BrowseGlaThiDa(), Function(o) Not IsBusy)
+        ClearGlaThiDaFileCommand = New RelayCommand(Of Object)(Sub(o) ClearGlaThiDaFile(), Function(o) Not String.IsNullOrWhiteSpace(RawGlaThiDaFile))
+
+
 
         ' Commands (Pan/Zoom/Mouse; exakt passend zum Behavior)
-        _BeginPanCommand = New RelayCommand(Of PanRequest)(AddressOf BeginPan, Function(r) Not IsBusy)
-        _PanCommand = New RelayCommand(Of PanRequest)(AddressOf Pan, Function(r) Not IsBusy)
-        _EndPanCommand = New RelayCommand(Of Object)(AddressOf EndPan, Function(o) Not IsBusy)
-        _ZoomCommand = New RelayCommand(Of ZoomRequest)(AddressOf ZoomMap, Function(r) Not IsBusy)
-        _ViewportChangedCommand = New RelayCommand(Of ViewportChangedRequest)(AddressOf ViewportChanged, Function(r) Not IsBusy)
+        BeginPanCommand = New RelayCommand(Of PanRequest)(AddressOf BeginPan, Function(r) Not IsBusy)
+        PanCommand = New RelayCommand(Of PanRequest)(AddressOf Pan, Function(r) Not IsBusy)
+        EndPanCommand = New RelayCommand(Of Object)(AddressOf EndPan, Function(o) Not IsBusy)
+        ZoomCommand = New RelayCommand(Of ZoomRequest)(AddressOf ZoomMap, Function(r) Not IsBusy)
+        ViewportChangedCommand = New RelayCommand(Of ViewportChangedRequest)(AddressOf ViewportChanged, Function(r) Not IsBusy)
 
-        _MapMouseDownCommand = New RelayCommand(Of MapMouseDownRequest)(AddressOf MapMouseDown, Function(r) Not IsBusy)
-        _MapMouseUpCommand = New RelayCommand(Of MapMouseUpRequest)(AddressOf MapMouseUp, Function(r) Not IsBusy)
-        _MapMouseMoveCommand = New RelayCommand(Of MapMouseMoveRequest)(AddressOf MapMouseMove, Function(r) Not IsBusy)
+        MapMouseDownCommand = New RelayCommand(Of MapMouseDownRequest)(AddressOf MapMouseDown, Function(r) Not IsBusy)
+        MapMouseUpCommand = New RelayCommand(Of MapMouseUpRequest)(AddressOf MapMouseUp, Function(r) Not IsBusy)
+        MapMouseMoveCommand = New RelayCommand(Of MapMouseMoveRequest)(AddressOf MapMouseMove, Function(r) Not IsBusy)
 
-        _MapMouseLeaveCommand = New RelayCommand(Of Object)(Sub(o) MapMouseLeave(), Function(o) True)
+        MapMouseLeaveCommand = New RelayCommand(Of Object)(Sub(o) MapMouseLeave(), Function(o) True)
 
         ' Report
-        _lastReport = ""
+        LastReport = ""
     End Sub
 
 #End Region
@@ -89,15 +94,24 @@ Public Class LandCoverViewModel
 
     Public ReadOnly Property BrowseBaseEarthSurfaceCacheCommand As ICommand
     Public ReadOnly Property ClearBaseEarthSurfaceCacheCommand As ICommand
-    Public ReadOnly Property BrowseClassTifCommand As ICommand
-    Public ReadOnly Property ClearClassTifFileCommand As ICommand
-    Public ReadOnly Property BrowseProbaTifCommand As ICommand
-    Public ReadOnly Property ClearProbaTifFileCommand As ICommand
+    Public ReadOnly Property BrowseCopernicusClassCommand As ICommand
+    Public ReadOnly Property ClearCopernicusClassFileCommand As ICommand
+    Public ReadOnly Property BrowseCopernicusProbaCommand As ICommand
+    Public ReadOnly Property ClearCopernicusProbaFileCommand As ICommand
 
     Public ReadOnly Property BrowseBedMachineGreenlandCommand As ICommand
     Public ReadOnly Property ClearBedMachineGreenlandFileCommand As ICommand
     Public ReadOnly Property BrowseBedMachineAntarcticaCommand As ICommand
     Public ReadOnly Property ClearBedMachineAntarcticaFileCommand As ICommand
+
+    Public ReadOnly Property BrowseRgiGlobalCommand As ICommand
+    Public ReadOnly Property ClearRgiGlobalFileCommand As ICommand
+    Public ReadOnly Property BrowseRgiRegionsCommand As ICommand
+    Public ReadOnly Property ClearRgiRegionsFileCommand As ICommand
+
+    Public ReadOnly Property BrowseGlaThiDaCommand As ICommand
+    Public ReadOnly Property ClearGlaThiDaFileCommand As ICommand
+
 
     ' Map / PanZoom
     Public ReadOnly Property BeginPanCommand As ICommand
@@ -155,25 +169,25 @@ Public Class LandCoverViewModel
         End Get
     End Property
 
-    Private _rawClassTifFile As String
-    Public Property RawClassTifFile As String
+    Private _rawCopernicusClassFile As String
+    Public Property RawCopernicusClassFile As String
         Get
-            Return _rawClassTifFile
+            Return _rawCopernicusClassFile
         End Get
         Set(value As String)
-            If SetProperty(_rawClassTifFile, value) Then
+            If SetProperty(_rawCopernicusClassFile, value) Then
                 OnPropertyChanged(NameOf(CanGenerateCache))
             End If
         End Set
     End Property
 
-    Private _rawProbaTifFile As String
-    Public Property RawProbaTifFile As String
+    Private _rawCopernicusProbaFile As String
+    Public Property RawCopernicusProbaFile As String
         Get
-            Return _rawProbaTifFile
+            Return _rawCopernicusProbaFile
         End Get
         Set(value As String)
-            If SetProperty(_rawProbaTifFile, value) Then
+            If SetProperty(_rawCopernicusProbaFile, value) Then
                 OnPropertyChanged(NameOf(CanGenerateCache))
             End If
         End Set
@@ -185,7 +199,9 @@ Public Class LandCoverViewModel
             Return _rawBedMachineGreenlandFile
         End Get
         Set(value As String)
-            SetProperty(_rawBedMachineGreenlandFile, value)
+            If SetProperty(_rawBedMachineGreenlandFile, value) Then
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            End If
         End Set
     End Property
 
@@ -195,7 +211,52 @@ Public Class LandCoverViewModel
             Return _rawBedMachineAntarcticaFile
         End Get
         Set(value As String)
-            SetProperty(_rawBedMachineAntarcticaFile, value)
+            If SetProperty(_rawBedMachineAntarcticaFile, value) Then
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            End If
+        End Set
+    End Property
+
+    Private _rawRgiGlobalFile As String
+    Public Property RawRgiGlobalFile As String
+        Get
+            Return _rawRgiGlobalFile
+        End Get
+        Set(value As String)
+            If SetProperty(_rawRgiGlobalFile, value) Then
+                OnPropertyChanged(NameOf(HasRgiGlobalFile))
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            End If
+        End Set
+    End Property
+
+    Public ReadOnly Property HasRgiGlobalFile As Boolean
+        Get
+            Return RawRgiGlobalFile IsNot Nothing
+        End Get
+    End Property
+
+    Private _rawRgiRegionsFile As String
+    Public Property RawRgiRegionsFile As String
+        Get
+            Return _rawRgiRegionsFile
+        End Get
+        Set(value As String)
+            If SetProperty(_rawRgiRegionsFile, value) Then
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            End If
+        End Set
+    End Property
+
+    Private _rawGlaThiDaDaFile As String
+    Public Property RawGlaThiDaFile As String
+        Get
+            Return _rawGlaThiDaDaFile
+        End Get
+        Set(value As String)
+            If SetProperty(_rawGlaThiDaDaFile, value) Then
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            End If
         End Set
     End Property
 
@@ -214,7 +275,7 @@ Public Class LandCoverViewModel
             If EarthSurfaceCacheMeta Is Nothing Then
                 Return False
             Else
-                Return EarthSurfaceCacheMeta.CellSizeDeg > 0 AndAlso RawClassTifFile IsNot Nothing
+                Return EarthSurfaceCacheMeta.CellSizeDeg > 0 AndAlso RawCopernicusClassFile IsNot Nothing
             End If
         End Get
     End Property
@@ -325,7 +386,7 @@ Public Class LandCoverViewModel
 
 #End Region
 
-#Region "Pan/Zoom + Content Size (Bindings aus XAML)"
+#Region "Pan/Zoom + Content Size"
 
     Private _lastViewportSize As Size
     Private _pendingFitToViewport As Boolean
@@ -406,6 +467,58 @@ Public Class LandCoverViewModel
         End Set
     End Property
 
+    Private Sub UpdateHoverOverlay(hit As EquiRectangularViewportHelper.CellHit)
+
+        Dim idx As Integer = hit.Index
+
+        If hit.Index = Nothing Then Return
+
+        Dim clsV As Byte
+        Dim confV As Byte
+        Dim iceV As Single
+
+        Dim sb As New StringBuilder()
+
+        If LoadedLandCoverCache.LandCoverClass IsNot Nothing AndAlso idx >= 0 Then
+
+            If idx < LoadedLandCoverCache.LandCoverClass.Length Then
+                clsV = LoadedLandCoverCache.LandCoverClass(idx)
+
+                Dim landclass As LandCoverClass = CType(clsV, LandCoverClass)
+                If landclass <> Nothing Then
+                    sb.AppendLine($"LC: {LandCoverSchema.GetDisplayName(landclass)}")
+                Else
+                    sb.AppendLine("LC: -")
+                End If
+            End If
+
+            If LoadedLandCoverCache.Meta.HasConfidence Then
+                If idx < LoadedLandCoverCache.Confidence.Length Then
+                    confV = LoadedLandCoverCache.Confidence(idx)
+                    If confV <> Nothing AndAlso Not confV = 255 Then
+                        sb.AppendLine($"Conf: {confV:N0}%")
+                    Else
+                        sb.AppendLine("Conf: -")
+                    End If
+                End If
+            End If
+
+            If LoadedLandCoverCache.Meta.HasLandIceThickness Then
+                If idx < LoadedLandCoverCache.LandIceThicknessM.Length Then
+                    iceV = LoadedLandCoverCache.LandIceThicknessM(idx)
+                    If Not Single.IsNaN(iceV) AndAlso Not Single.IsInfinity(iceV) Then
+                        sb.AppendLine($"Ice: {iceV:0.00}m")
+                    ElseIf Single.IsNaN(iceV) Then
+                        sb.AppendLine("Ice: -")
+                    End If
+                End If
+            End If
+        End If
+
+        HoverOverlayText = sb.ToString().TrimEnd()
+
+    End Sub
+
 #End Region
 
 #Region "Statusbar"
@@ -476,60 +589,62 @@ Public Class LandCoverViewModel
         End Get
     End Property
 
-    Private Sub UpdateStatusUi(hit As EquiRectangularViewportHelper.CellHit)
+    Private Sub UpdateStatusBar(hit As EquiRectangularViewportHelper.CellHit)
 
         Dim idx As Integer = hit.Index
 
         StatusLatText = $"Lat: {hit.Lat:0.00}°"
         StatusLonText = $"Lon: {hit.Lon:0.00}°"
 
-        Dim clsV As Byte = Nothing
-        Dim confV As Byte = Nothing
-        Dim iceV As Double = Nothing
+        Dim clsV As Byte
+        Dim confV As Byte
+        Dim iceV As Single
 
         If LoadedLandCoverCache.LandCoverClass IsNot Nothing AndAlso idx >= 0 Then
 
             If idx < LoadedLandCoverCache.LandCoverClass.Length Then
                 clsV = LoadedLandCoverCache.LandCoverClass(idx)
+
+                Dim landclass As LandCoverClass = CType(clsV, LandCoverClass)
+                If landclass <> Nothing Then
+                    StatusLandCoverClassText = $"LC: {LandCoverSchema.GetDisplayName(landclass)}"
+                Else
+                    StatusLandCoverClassText = "LC: -"
+                End If
             End If
 
             If LoadedLandCoverCache.Meta.HasConfidence Then
                 If idx < LoadedLandCoverCache.Confidence.Length Then
                     confV = LoadedLandCoverCache.Confidence(idx)
+                    If confV <> Nothing AndAlso Not confV = 255 Then
+                        StatusConfidenceText = $"Conf: {confV:N0}%"
+                    Else
+                        StatusConfidenceText = "Conf: -"
+                    End If
                 End If
             End If
 
             If LoadedLandCoverCache.Meta.HasLandIceThickness Then
                 If idx < LoadedLandCoverCache.LandIceThicknessM.Length Then
-                    Dim iceVV As Double = LoadedLandCoverCache.LandIceThicknessM(idx)
-                    If Not Double.IsNaN(iceVV) OrElse Not Double.IsInfinity(iceVV) Then
-                        iceV = iceVV
+                    iceV = LoadedLandCoverCache.LandIceThicknessM(idx)
+                    If Not Single.IsNaN(iceV) AndAlso Not Single.IsInfinity(iceV) Then
+                        StatusLandIceThicknessText = $"Ice: {iceV:0.00}m"
+                    ElseIf Single.IsNaN(iceV) Then
+                        StatusLandIceThicknessText = "Ice: -"
                     End If
                 End If
             End If
         End If
 
+    End Sub
 
-        'If HasEditSession AndAlso IsEditMode AndAlso _editSession IsNot Nothing Then
-        '    Dim hV As Single = _editSession.GetEffectiveHeight(idx)
-        '    If Not Single.IsNaN(hV) OrElse Not Single.IsInfinity(hV) Then
-        '        h = CDbl(hV)
-        '    End If
-        'ElseIf LoadedCache?.HeightM IsNot Nothing AndAlso idx >= 0 AndAlso idx < LoadedCache.HeightM.Length Then
-        '    Dim hV As Single = LoadedCache.HeightM(idx)
-        '    If Not Single.IsNaN(hV) OrElse Not Single.IsInfinity(hV) Then
-        '        h = CDbl(hV)
-        '    End If
-        'End If
-
-        'Dim surfaceText As String
-        'If HasEditSession AndAlso IsEditMode Then
-        '    surfaceText = SurfaceTextFromEditor(_editSession, idx)
-        'Else
-        '    surfaceText = SurfaceTextFromCache(LoadedCache, idx)
-        'End If
-
-        'SetStatusBar(hit.Lat, hit.Lon, h, surfaceText, Zoom)
+    Private Sub ClearStatusBar()
+        StatusLatText = "Lat: --.--"
+        StatusLonText = "Lon: --.--"
+        StatusLandCoverClassText = "LC: -"
+        StatusConfidenceText = "Conf: -"
+        StatusLandIceThicknessText = "Ice: -"
+        StatusZoomText = $"Zoom: {Zoom:0.###}x"
     End Sub
 
 #End Region
@@ -591,12 +706,32 @@ Public Class LandCoverViewModel
 
             'Meta -> VM spiegeln
             'ApplyLoadedMetaToViewModel(openedCache.Meta)
+            SourceName = openedCache.Meta.Source
+            EpochYear = openedCache.Meta.EpochYear
+            BaseEarthSurfaceCachePath = openedCache.Meta.EarthSurfaceRef
+            RawCopernicusClassFile = openedCache.Meta.RawCopernicusLC100ClassFile
+            RawCopernicusProbaFile = openedCache.Meta.RawCopernicusLC100ProbaFile
+
 
             'Cache merken
             'SetLoadedCachePathsFromMetaPath(metaPath)
             LoadedLandCoverCache = openedCache
 
             LastReport = $"Cache geladen: {Path.GetFileName(Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), Nothing))}"
+
+            'Referenz-EarthSurfaceCache prüfen und Meta laden
+            Dim EarthSurfaceEk As CacheOpenErrorKind
+            Dim EarthSurfaceEm As String = Nothing
+            Dim HasEarthSurfaceReference As Boolean = EarthSurfaceCacheStore.TryOpenMetaFromFile(openedCache.Meta.EarthSurfaceRef, EarthSurfaceCacheMeta, EarthSurfaceEk, EarthSurfaceEm, True)
+
+            If Not HasEarthSurfaceReference Then
+                'Wenn Referenz-Cache nicht geladen werden konnte: Fehlermeldung anzeigen
+                LastReport = LastReport & Environment.NewLine & $"Referenz-EarthSurface-Cache konnte nicht geladen werden: {EarthSurfaceEk} - {EarthSurfaceEm}"
+            Else
+                'Sonst Target-Texte aktualisieren
+                OnPropertyChanged(NameOf(TargetResolutionText))
+                OnPropertyChanged(NameOf(TargetCellSizeText))
+            End If
 
             'Nach dem Laden: Preview neu rendern
             Await RenderPreviewFromCacheAsync()
@@ -629,17 +764,17 @@ Public Class LandCoverViewModel
 
                         progress?.Report(New ProgressInfo("Initialiseren GDAL...", -1))
                         ct.ThrowIfCancellationRequested()
-                        CopernicusLc100Processor.InitGdal()
 
                         Dim opts As New LandCoverCacheBuilder.BuildOptions With {
                             .SourceName = SourceName,
                             .EpochYear = EpochYear,
-                            .ClassTifPath = RawClassTifFile,
-                            .ProbaTifPath = RawProbaTifFile,
+                            .RawCopernicusLc100ClassTifPath = RawCopernicusClassFile,
+                            .RawCopernicusLc100ProbaTifPath = RawCopernicusProbaFile,
+                            .RawBedMachineGreenlandNcPath = If(RawBedMachineGreenlandFile, Nothing),
+                            .RawBedMachineAntarcticaNcPath = If(RawBedMachineAntarcticaFile, Nothing),
                             .TargetCellSizeDeg = EarthSurfaceCacheMeta.CellSizeDeg,
                             .EarthSurfaceReference = BaseEarthSurfaceCachePath,
-                            .EarthSurfaceCreateUTC = EarthSurfaceCacheMeta.CreateUtc,
-                            .IncludeConfidence = RawProbaTifFile IsNot Nothing
+                            .EarthSurfaceCreateUTC = EarthSurfaceCacheMeta.CreateUtc
                         }
 
                         progress?.Report(New ProgressInfo("Starte Cache-Build...", 0))
@@ -753,7 +888,7 @@ Public Class LandCoverViewModel
         LastReport = "EarthSurface-Cache entfernt."
     End Sub
 
-    Private Sub BrowseClassTif()
+    Private Sub BrowseCopernicusClass()
         Dim dlg As New OpenFileDialog With {
             .Filter = "GeoTIFF (*.tif;*.tiff)|*.tif;*.tiff",
             .Title = "Copernicus Class-map GeoTIFF auswählen",
@@ -762,9 +897,9 @@ Public Class LandCoverViewModel
             .CheckFileExists = True
         }
 
-        If dlg.ShowDialog() = True Then
+        If dlg.ShowDialog() Then
             If File.Exists(dlg.FileName) Then
-                RawClassTifFile = dlg.FileName
+                RawCopernicusClassFile = dlg.FileName
                 OnPropertyChanged(NameOf(CanGenerateCache))
             Else
                 MessageBox.Show("Datei nicht gefunden", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
@@ -773,11 +908,11 @@ Public Class LandCoverViewModel
         End If
     End Sub
 
-    Private Sub ClearClassTifFile()
-        RawClassTifFile = Nothing
+    Private Sub ClearCopernicusClassFile()
+        RawCopernicusClassFile = Nothing
     End Sub
 
-    Private Sub BrowseProbaTif()
+    Private Sub BrowseCopernicusProba()
         Dim dlg As New OpenFileDialog With {
             .Filter = "GeoTIFF (*.tif;*.tiff)|*.tif;*.tiff",
             .Title = "Copernicus Proba-map GeoTIFF auswählen",
@@ -788,7 +923,7 @@ Public Class LandCoverViewModel
 
         If dlg.ShowDialog() = True Then
             If File.Exists(dlg.FileName) Then
-                RawProbaTifFile = dlg.FileName
+                RawCopernicusProbaFile = dlg.FileName
                 OnPropertyChanged(NameOf(CanGenerateCache))
             Else
                 MessageBox.Show("Datei nicht gefunden", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
@@ -797,12 +932,29 @@ Public Class LandCoverViewModel
         End If
     End Sub
 
-    Private Sub ClearProbaTifFile()
-        RawProbaTifFile = Nothing
+    Private Sub ClearCopernicusProbaFile()
+        RawCopernicusProbaFile = Nothing
     End Sub
 
     Private Sub BrowseBedMachineGreenland()
-        LastReport = "TODO: BrowseBedMachineGreenland"
+
+        Dim dlg As New OpenFileDialog With {
+            .Title = "BedMachine Greenland auswählen",
+            .Filter = "netCDF (*.nc)|*.nc",
+            .InitialDirectory = DataEarthPaths.RawDirectory,
+            .CheckFileExists = True,
+            .Multiselect = False
+        }
+
+        If dlg.ShowDialog() Then
+            If File.Exists(dlg.FileName) Then
+                RawBedMachineGreenlandFile = dlg.FileName
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            Else
+                MessageBox.Show("Datei nicht gefunden", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+            End If
+        End If
+
     End Sub
 
     Private Sub ClearBedMachineGreenlandFile()
@@ -810,11 +962,118 @@ Public Class LandCoverViewModel
     End Sub
 
     Private Sub BrowseBedMachineAntarctica()
-        LastReport = "TODO: BrowseBedMachineAntarctica"
+
+        Dim dlg As New OpenFileDialog With {
+            .Title = "BedMachine Antarctica auswählen",
+            .Filter = "netCDF (*.nc)|*.nc",
+            .InitialDirectory = DataEarthPaths.RawDirectory,
+            .CheckFileExists = True,
+            .Multiselect = False
+        }
+
+        If dlg.ShowDialog() Then
+            If File.Exists(dlg.FileName) Then
+                RawBedMachineAntarcticaFile = dlg.FileName
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            Else
+                MessageBox.Show("Datei nicht gefunden", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+            End If
+        End If
+
     End Sub
 
     Private Sub ClearBedMachineAntarcticaFile()
         RawBedMachineAntarcticaFile = Nothing
+    End Sub
+
+    Private Sub BrowseRgiGlobal()
+
+        Dim dlg As New OpenFileDialog With {
+            .Title = "RGI Global-Glacier-Produkt auswählen",
+            .Filter = "ZIP (*.zip)|*.zip",
+            .InitialDirectory = DataEarthPaths.RawDirectory,
+            .CheckFileExists = True,
+            .Multiselect = False
+        }
+
+        If dlg.ShowDialog() Then
+            If File.Exists(dlg.FileName) Then
+                RawRgiGlobalFile = dlg.FileName
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            Else
+                MessageBox.Show("Datei nicht gefunden.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+            End If
+        End If
+
+    End Sub
+
+    Private Sub ClearRgiGlobalFile()
+        RawRgiGlobalFile = Nothing
+    End Sub
+
+    Private Async Sub BrowseRgiRegions()
+
+        Dim dlg As New OpenFileDialog With {
+            .Title = "RGI Regionen-Produkt auswählen",
+            .Filter = "ZIP (*.zip)|*.zip",
+            .InitialDirectory = DataEarthPaths.RawDirectory,
+            .CheckFileExists = True,
+            .Multiselect = False
+        }
+
+        If dlg.ShowDialog() Then
+            If File.Exists(dlg.FileName) Then
+                RawRgiRegionsFile = dlg.FileName
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            Else
+                MessageBox.Show("Datei nicht gefunden.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+            End If
+        End If
+
+        Dim opts As New LandCoverCacheBuilder.BuildOptions With {
+         .RawRgiRegionsZipPath = dlg.FileName
+     }
+
+        Dim result As RgiRegionProcessResult = Await BusyRunner.RunAsync(Of RgiRegionProcessResult)(
+                                                                            Me,
+                                                                            "RGI Region",
+                                                                            Function(progress, ct)
+
+                                                                                Return RgiRegionProcessor.Process(opts, progress, ct)
+
+                                                                            End Function)
+
+
+        LastReport = result.Report
+
+    End Sub
+
+    Private Sub ClearRgiRegionsFile()
+        RawRgiRegionsFile = Nothing
+    End Sub
+
+    Private Sub BrowseGlaThiDa()
+
+        Dim dlg As New OpenFileDialog With {
+            .Title = "GlaThiDa auswählen",
+            .Filter = "ZIP (*.zip)|*.zip",
+            .InitialDirectory = DataEarthPaths.RawDirectory,
+            .CheckFileExists = True,
+            .Multiselect = False
+        }
+
+        If dlg.ShowDialog() Then
+            If File.Exists(dlg.FileName) Then
+                RawGlaThiDaFile = dlg.FileName
+                OnPropertyChanged(NameOf(CanGenerateCache))
+            Else
+                MessageBox.Show("Datei nicht gefunden.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
+            End If
+        End If
+    End Sub
+
+    Private Sub ClearGlaThiDaFile()
+        RawGlaThiDaFile = Nothing
     End Sub
 
 #End Region
@@ -956,20 +1215,20 @@ Public Class LandCoverViewModel
                                       r.MousePos.Y + 14)
 
         'TODO: Nur True setzen, wenn ein Layer gerendert ist
-        If LandCoverLayer IsNot Nothing Then ShowHoverOverlay = True
+        If LandCoverLayer IsNot Nothing Then
+            ShowHoverOverlay = True
+        Else
+            ShowHoverOverlay = False
+        End If
 
-        ' Platzhaltertext
-        HoverOverlayText = "LC: (TODO)" & Environment.NewLine &
-                          "Conf: (TODO)" & Environment.NewLine &
-                          "Ice: (TODO)"
-
-        ' Statusbar (optional synchron)
-        UpdateStatusUi(hit)
+        UpdateHoverOverlay(hit)
+        UpdateStatusBar(hit)
     End Sub
 
     Private Sub MapMouseLeave()
         ShowHoverOverlay = False
         HoverOverlayText = ""
+        ClearStatusBar()
     End Sub
 
 
@@ -977,7 +1236,7 @@ Public Class LandCoverViewModel
 
 #Region "Rendering"
 
-    Private _renderCts As Threading.CancellationTokenSource
+    Private _renderCts As CancellationTokenSource
 
     Private NotInheritable Class LandCoverPreviewRenderResult
         Public Property Width As Integer
@@ -1104,4 +1363,5 @@ Public Class LandCoverViewModel
 
 
 #End Region
+
 End Class

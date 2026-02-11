@@ -1,39 +1,21 @@
 ﻿Imports OSGeo.GDAL
-Imports MaxRev.Gdal.Core
-
 Imports System.IO
 Imports System.Text
 Imports System.Threading
-Imports System.ComponentModel.Design
 
 Public Class CopernicusLc100Processor
 
     Private Const ProgressThrottleRowInterval As Integer = 128
-    Private Const GdalMaxCacheMB As String = "256"
-
-    Public Class ProcessResult
-        Public Property Classes As Byte()
-        Public Property Confidence As Byte()
-        Public Property Report As String
-    End Class
-
-    Public Shared Sub InitGdal()
-        'Einmal vor dem Import Initialisieren
-        GdalBase.ConfigureAll()
-        Gdal.SetConfigOption("GDAL_CACHEMAX", GdalMaxCacheMB)
-        Gdal.SetConfigOption("GDAL_DISABLE_READDIR_ON_OPEN", "YES")
-        Gdal.AllRegister()
-    End Sub
 
     Public Shared Function ProcessCopernicusLc100(opts As LandCoverCacheBuilder.BuildOptions,
                                                  progress As IProgress(Of ProgressInfo), ct As CancellationToken,
-                                                 Optional progressPrefix As String = "COPERNICUS (LC100)") As ProcessResult
+                                                 Optional progressPrefix As String = "COPERNICUS (LC100)") As CopernicusLc100ProcessResult
 
-        If String.IsNullOrWhiteSpace(opts.ClassTifPath) OrElse Not File.Exists(opts.ClassTifPath) Then
-            Throw New FileNotFoundException("Class GeoTIFF nicht gefunden.", opts.ClassTifPath)
+        If String.IsNullOrWhiteSpace(opts.RawCopernicusLc100ClassTifPath) OrElse Not File.Exists(opts.RawCopernicusLc100ClassTifPath) Then
+            Throw New FileNotFoundException("Class GeoTIFF nicht gefunden.", opts.RawCopernicusLc100ClassTifPath)
         End If
 
-        Dim includeConf As Boolean = opts.IncludeConfidence AndAlso Not String.IsNullOrWhiteSpace(opts.ProbaTifPath) AndAlso File.Exists(opts.ProbaTifPath)
+        Dim includeConf As Boolean = Not String.IsNullOrWhiteSpace(opts.RawCopernicusLc100ProbaTifPath) AndAlso File.Exists(opts.RawCopernicusLc100ProbaTifPath)
 
         'Zielraster ableiten
         Dim latCount As Integer = CInt(Math.Round(180.0 / opts.TargetCellSizeDeg))
@@ -48,7 +30,7 @@ Public Class CopernicusLc100Processor
         progress?.Report(New ProgressInfo($"{progressPrefix}: Öffne GeoTIFF...", 0))
         ct.ThrowIfCancellationRequested()
 
-        Using dsClass As Dataset = GdalHelpers.OpenDataset(opts.ClassTifPath, "Class-TIF")
+        Using dsClass As Dataset = GdalHelpers.OpenDataset(opts.RawCopernicusLc100ClassTifPath, "Class-TIF")
 
             Dim bandClass As Band = dsClass.GetRasterBand(1)
 
@@ -60,7 +42,7 @@ Public Class CopernicusLc100Processor
                 Throw New InvalidDataException("Class-TIF: Band-Metadata 'short_name' fehlt (Validierung nicht möglich).")
             End If
             If Not shortClass.Contains("Discrete-Classification-map", StringComparison.OrdinalIgnoreCase) Then
-                Throw New InvalidDataException($"Die Datei '{Path.GetFileName(opts.ClassTifPath)}' ist keine Discrete-Classification-map (short_name='{shortClass}').")
+                Throw New InvalidDataException($"Die Datei '{Path.GetFileName(opts.RawCopernicusLc100ClassTifPath)}' ist keine Discrete-Classification-map (short_name='{shortClass}').")
             End If
 
             'Missing-Value ermitteln (API bevorzugt, fallback Metadata, fallback 255)
@@ -131,7 +113,7 @@ Public Class CopernicusLc100Processor
             Try
 
                 If includeConf Then
-                    dsProba = GdalHelpers.OpenDataset(opts.ProbaTifPath, "Proba-TIF")
+                    dsProba = GdalHelpers.OpenDataset(opts.RawCopernicusLc100ProbaTifPath, "Proba-TIF")
                     If dsProba.RasterXSize <> width OrElse dsProba.RasterYSize <> height Then
                         Throw New InvalidDataException("Proba-TIF Dimensionen passen nicht zur Class-TIF.")
                     End If
@@ -145,7 +127,7 @@ Public Class CopernicusLc100Processor
                         Throw New InvalidDataException("Proba-TIF: Band-Metadata 'short_name' fehlt (Validierung nicht möglich).")
                     End If
                     If Not shortProba.Contains("Discrete-Classification-proba", StringComparison.OrdinalIgnoreCase) Then
-                        Throw New InvalidDataException($"Die Datei '{Path.GetFileName(opts.ProbaTifPath)}' ist keine Discrete-Classification-proba (short_name='{shortProba}').")
+                        Throw New InvalidDataException($"Die Datei '{Path.GetFileName(opts.RawCopernicusLc100ProbaTifPath)}' ist keine Discrete-Classification-proba (short_name='{shortProba}').")
                     End If
 
                     'Missing-Value ermitteln (API bevorzugt, fallback Metadata, fallback 255)
@@ -214,8 +196,8 @@ Public Class CopernicusLc100Processor
 
                     'Progress-Throttling
                     If (y Mod ProgressThrottleRowInterval) = 0 Then
-                        Dim pct As Integer = CInt((y / Math.Max(1.0, height - 1)) * 98)   '95% für Import, Rest finalize
-                        progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(opts.ClassTifPath)}{Environment.NewLine}{Environment.NewLine}Zeilen verarbeitet: {y:N0}/{height:N0}", pct))
+                        Dim pct As Integer = CInt((y / Math.Max(1.0, height - 1)) * 98)   '98% für Import, Rest finalize
+                        progress?.Report(New ProgressInfo($"{progressPrefix}: {Path.GetFileName(opts.RawCopernicusLc100ClassTifPath)}{Environment.NewLine}{Environment.NewLine}Zeilen verarbeitet: {y:N0}/{height:N0}", pct))
                     End If
                 Next
 
@@ -295,7 +277,7 @@ Public Class CopernicusLc100Processor
 
             Dim sb As New StringBuilder()
             sb.AppendLine("=== Copernicus LC100 Cache Generation Report ===")
-            sb.AppendLine($"Source: {Path.GetFileName(opts.ClassTifPath)}")
+            sb.AppendLine($"Source: {Path.GetFileName(opts.RawCopernicusLc100ClassTifPath)}")
             sb.AppendLine($"Target: {latCount}x{lonCount} @ {opts.TargetCellSizeDeg}°")
             sb.AppendLine($"Confidence: {includeConf}")
             sb.AppendLine()
@@ -334,7 +316,7 @@ Public Class CopernicusLc100Processor
 
             progress?.Report(New ProgressInfo($"{progressPrefix}: Fertig.", 100))
 
-            Return New ProcessResult With {
+            Return New CopernicusLc100ProcessResult With {
                 .Classes = outClass,
                 .Confidence = outConf,
                 .Report = sb.ToString()

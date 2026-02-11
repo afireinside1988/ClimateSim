@@ -185,7 +185,7 @@ Public Class EarthSurfaceCacheStore
             progress?.Report(New ProgressInfo("Cache öffnen: Meta prüfen...", 0))
             ct.ThrowIfCancellationRequested()
 
-            Dim metaJson = File.ReadAllText(metaPath, Encoding.UTF8)
+            Dim metaJson As String = File.ReadAllText(metaPath, Encoding.UTF8)
             meta = JsonSerializer.Deserialize(Of EarthSurfaceCacheMeta)(metaJson, ConfigStore.JsonOptions)
 
         Catch ex As Exception
@@ -255,6 +255,64 @@ Public Class EarthSurfaceCacheStore
 
         End Try
 
+    End Function
+
+    Public Shared Function TryOpenMetaFromFile(metaPath As String, ByRef meta As EarthSurfaceCacheMeta, ByRef errorkind As CacheOpenErrorKind, ByRef errorMessage As String, Optional checkIfBinaryExists As Boolean = True) As Boolean
+
+        meta = Nothing
+        errorkind = CacheOpenErrorKind.None
+        errorMessage = Nothing
+
+        If String.IsNullOrWhiteSpace(metaPath) OrElse Not File.Exists(metaPath) Then
+            errorkind = CacheOpenErrorKind.NotFound
+            errorMessage = "Cache-Meta wurde nicht gefunden."
+        End If
+
+        Try
+
+            Dim metaJson As String = File.ReadAllText(metaPath, Encoding.UTF8)
+            meta = JsonSerializer.Deserialize(Of EarthSurfaceCacheMeta)(metaJson, ConfigStore.JsonOptions)
+
+        Catch ex As Exception
+
+            errorkind = CacheOpenErrorKind.MetaJsonInvalid
+            errorMessage = $"Meta-Datei ist beschädigt oder kein gültiges JSON: {ex.Message}"
+            Return False
+
+        End Try
+
+        If meta Is Nothing Then
+            errorkind = CacheOpenErrorKind.MetaJsonInvalid
+            errorMessage = "Meta-Datei konnte nicht interpretiert werden."
+            Return False
+        End If
+
+        'Version prüfen
+        If meta.CacheType <> CacheType.EarthSurface Then
+            errorkind = CacheOpenErrorKind.WrongCacheType
+            errorMessage = $"Meta-Datei ist keine EarthSurface-Meta: {meta.CacheType} (erwartet: {CacheType.EarthSurface})."
+            Return False
+        End If
+
+        If meta.CacheVersion <> EarthSurfaceCacheFormat.CurrentVersion Then
+            errorkind = CacheOpenErrorKind.IncompatibleSchema
+            errorMessage = $"Inkompatible Cache-Version: {meta.CacheVersion} (erwartet: {EarthSurfaceCacheFormat.CurrentVersion})."
+            Return False
+        End If
+
+
+        If checkIfBinaryExists Then
+
+            Dim binPath As String = Path.ChangeExtension(Path.ChangeExtension(metaPath, Nothing), "escf")
+            If Not File.Exists(binPath) Then
+                errorkind = CacheOpenErrorKind.NotFound
+                errorMessage = "Cache-Datei fehlt."
+                Return False
+            End If
+
+        End If
+
+        Return True
     End Function
 
     Public Shared Sub SaveCache(source As String, cellSizeDeg As Double, resampling As String, cache As EarthSurfaceCache,

@@ -1,7 +1,29 @@
 ﻿Imports System.IO
+Imports MaxRev.Gdal.Core
 Imports OSGeo.GDAL
+Imports OSGeo.OGR
 
 Module GdalHelpers
+
+    Private Const GdalMaxCacheMB As String = "256"
+
+    Public Sub InitGdal()
+
+
+
+        Dim baseDir As String = AppDomain.CurrentDomain.BaseDirectory
+
+        Dim projDir As String = Path.Combine(baseDir, "runtimes", "win-x64", "native", "maxrev.gdal.core.libshared")
+        GdalBase.ConfigureAll()
+        Gdal.SetConfigOption("GDAL_CACHEMAX", GdalMaxCacheMB)
+        Gdal.SetConfigOption("GDAL_DISABLE_READDIR_ON_OPEN", "YES")
+        Gdal.SetConfigOption("PROJ_LIB", projDir)
+        Gdal.SetConfigOption("GDAL_DATA", projDir)
+
+        Gdal.AllRegister()
+
+        Ogr.RegisterAll()
+    End Sub
 
     Public Function OpenDataset(path As String, purpose As String) As Dataset
 
@@ -56,6 +78,13 @@ Module GdalHelpers
         End If
 
         Return defaultValue
+    End Function
+
+    Public Function ToVsiZipPath(zipPath As String) As String
+
+        Dim p As String = Path.GetFullPath(zipPath).Replace("\", "/")
+        Return $"/vsizip/{p}"
+
     End Function
 
 End Module

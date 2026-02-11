@@ -19,6 +19,21 @@ Public Module ZipHelpers
         Return New CompositeReadStream(entryStream, za, fs)
     End Function
 
+    Public Function FindZipEntryEndingWith(zipPath As String, suffix As String) As String
+
+        Using fs As FileStream = File.OpenRead(zipPath)
+            Using za As New ZipArchive(fs, ZipArchiveMode.Read, leaveOpen:=False)
+                For Each e As ZipArchiveEntry In za.Entries
+                    If e.FullName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) Then
+                        Return e.FullName
+                    End If
+                Next
+            End Using
+        End Using
+
+        Return Nothing
+    End Function
+
     Public NotInheritable Class CompositeReadStream
         Inherits Stream
 

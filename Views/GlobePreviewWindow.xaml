@@ -293,6 +293,7 @@
                             <RowDefinition/>
                             <RowDefinition/>
                             <RowDefinition/>
+                            <RowDefinition/>
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition/>
@@ -313,7 +314,7 @@
                                   IsEnabled="{Binding IsShoreLinesOptionAvailable}"
                                   IsChecked="{Binding ShowOverlay, Mode=TwoWay}"/>
 
-                        <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Margin="0,8,0,0">
+                        <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Margin="0,8,0,0">
                             <CheckBox Content="Gitternetz"
                                       Margin="0,0,0,3"
                                   IsChecked="{Binding ShowGrid, Mode=TwoWay}"/>

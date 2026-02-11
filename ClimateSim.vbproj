@@ -101,5 +101,9 @@
       <LastGenOutput>Settings.Designer.vb</LastGenOutput>
     </None>
   </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Models\EarthModel\ToyEarth\" />
+  </ItemGroup>
 	
 </Project>
