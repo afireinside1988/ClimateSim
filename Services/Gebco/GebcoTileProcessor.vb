@@ -2,7 +2,6 @@
 Imports System.IO
 Imports System.Text
 Imports System.Threading
-Imports System.Windows.Media.Animation
 
 Public NotInheritable Class GebcoTileProcessor
 

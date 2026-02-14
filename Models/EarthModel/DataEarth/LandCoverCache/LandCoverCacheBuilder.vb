@@ -143,7 +143,7 @@ Public NotInheritable Class LandCoverCacheBuilder
         Dim copSlice = sliceMap("Copernicus")
         Dim copProg As IProgress(Of ProgressInfo) = New ProgressSlice(progress, copSlice.StartPct, copSlice.EndPct, "LandCoverCache: ")
 
-        copResult = CopernicusLc100Processor.ProcessCopernicusLc100(opts, copProg, ct, "COPERNICUS (LC100)")
+        copResult = CopernicusLc100Processor.Process(opts, copProg, ct, "COPERNICUS (LC100)")
 
         sw.Stop()
         timings("Copernicus") = sw.Elapsed

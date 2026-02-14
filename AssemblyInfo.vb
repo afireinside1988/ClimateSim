@@ -11,8 +11,8 @@ Imports System.Windows
 'app, and any theme specific resource dictionaries)
 <Assembly: ThemeInfo(ResourceDictionaryLocation.None, ResourceDictionaryLocation.SourceAssembly)>
 
-<Assembly: AssemblyTitle("SCOACH")>
-<Assembly: AssemblyProduct("SCOACH Climate Simulator")>
+<Assembly: AssemblyTitle("SIMESH")>
+<Assembly: AssemblyProduct("SIMESH Climate Simulator")>
 <Assembly: AssemblyDescription("Ein vereinfachtes gekoppeltes Ozean-Atmosphären-Zirkulations-Klimamodell für Heim-Anwender")>
 <Assembly: AssemblyCompany("Robin Harazim")>
 

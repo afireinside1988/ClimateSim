@@ -1030,29 +1030,13 @@ Public Class LandCoverViewModel
             End If
         End If
 
-        Dim opts As New LandCoverCacheBuilder.BuildOptions With {
-         .RawRgiRegionsZipPath = dlg.FileName
-     }
-
-        Dim result As RgiRegionProcessResult = Await BusyRunner.RunAsync(Of RgiRegionProcessResult)(
-                                                                            Me,
-                                                                            "RGI Region",
-                                                                            Function(progress, ct)
-
-                                                                                Return RgiRegionProcessor.Process(opts, progress, ct)
-
-                                                                            End Function)
-
-
-        LastReport = result.Report
-
     End Sub
 
     Private Sub ClearRgiRegionsFile()
         RawRgiRegionsFile = Nothing
     End Sub
 
-    Private Sub BrowseGlaThiDa()
+    Private Async Sub BrowseGlaThiDa()
 
         Dim dlg As New OpenFileDialog With {
             .Title = "GlaThiDa auswählen",
@@ -1070,6 +1054,35 @@ Public Class LandCoverViewModel
                 MessageBox.Show("Datei nicht gefunden.", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error)
             End If
         End If
+
+
+        Dim opts As New LandCoverCacheBuilder.BuildOptions With {
+              .RawRgiRegionsZipPath = RawRgiRegionsFile,
+              .RawGlaThiDaZipPath = RawGlaThiDaFile
+            }
+
+        Dim resultRgiRegion As RgiRegionProcessResult = Await BusyRunner.RunAsync(Of RgiRegionProcessResult)(
+                                                                            Me,
+                                                                            "RGI Region",
+                                                                            Function(progress, ct)
+
+                                                                                Return RgiRegionProcessor.Process(opts, progress, ct)
+
+                                                                            End Function)
+
+
+        LastReport = resultRgiRegion.Report
+
+        Dim resultGlathida As GlaThiDaProcessResult = Await BusyRunner.RunAsync(Of GlaThiDaProcessResult)(
+                                                                        Me,
+                                                                        "GlaThiDa",
+                                                                        Function(progress, ct)
+
+                                                                            Return GlaThiDaProcessor.Process(opts, resultRgiRegion.RegionMask, progress, ct)
+
+                                                                        End Function)
+
+        LastReport &= resultGlathida.Report
     End Sub
 
     Private Sub ClearGlaThiDaFile()

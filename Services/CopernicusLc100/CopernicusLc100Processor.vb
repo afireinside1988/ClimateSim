@@ -7,7 +7,7 @@ Public Class CopernicusLc100Processor
 
     Private Const ProgressThrottleRowInterval As Integer = 128
 
-    Public Shared Function ProcessCopernicusLc100(opts As LandCoverCacheBuilder.BuildOptions,
+    Public Shared Function Process(opts As LandCoverCacheBuilder.BuildOptions,
                                                  progress As IProgress(Of ProgressInfo), ct As CancellationToken,
                                                  Optional progressPrefix As String = "COPERNICUS (LC100)") As CopernicusLc100ProcessResult
 
