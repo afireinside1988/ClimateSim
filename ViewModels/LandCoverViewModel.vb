@@ -1011,7 +1011,7 @@ Public Class LandCoverViewModel
         RawRgiGlobalFile = Nothing
     End Sub
 
-    Private Async Sub BrowseRgiRegions()
+    Private Sub BrowseRgiRegions()
 
         Dim dlg As New OpenFileDialog With {
             .Title = "RGI Regionen-Produkt auswählen",
@@ -1061,28 +1061,28 @@ Public Class LandCoverViewModel
               .RawGlaThiDaZipPath = RawGlaThiDaFile
             }
 
-        Dim resultRgiRegion As RgiRegionProcessResult = Await BusyRunner.RunAsync(Of RgiRegionProcessResult)(
-                                                                            Me,
-                                                                            "RGI Region",
-                                                                            Function(progress, ct)
+        'Dim resultRgiRegion As RgiRegionProcessResult = Await BusyRunner.RunAsync(Of RgiRegionProcessResult)(
+        '                                                                    Me,
+        '                                                                    "RGI Region",
+        '                                                                    Function(progress, ct)
 
-                                                                                Return RgiRegionProcessor.Process(opts, progress, ct)
+        '                                                                        Return RgiRegionProcessor.Process(opts, progress, ct)
 
-                                                                            End Function)
+        '                                                                    End Function)
 
 
-        LastReport = resultRgiRegion.Report
+        'LastReport = resultRgiRegion.Report
 
         Dim resultGlathida As GlaThiDaProcessResult = Await BusyRunner.RunAsync(Of GlaThiDaProcessResult)(
                                                                         Me,
                                                                         "GlaThiDa",
                                                                         Function(progress, ct)
 
-                                                                            Return GlaThiDaProcessor.Process(opts, resultRgiRegion.RegionMask, progress, ct)
+                                                                            Return GlaThiDaProcessor.Process(opts, progress, ct)
 
                                                                         End Function)
 
-        LastReport &= resultGlathida.Report
+        LastReport = resultGlathida.Report
     End Sub
 
     Private Sub ClearGlaThiDaFile()

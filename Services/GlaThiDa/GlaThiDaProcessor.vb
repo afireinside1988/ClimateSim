@@ -1,8 +1,6 @@
 ﻿Imports System.Globalization
 Imports System.IO
 Imports System.IO.Compression
-Imports System.Reflection.Metadata
-Imports System.Runtime.CompilerServices
 Imports System.Text
 Imports System.Threading
 Imports Microsoft.VisualBasic.FileIO
@@ -12,17 +10,16 @@ Public NotInheritable Class GlaThiDaProcessor
     Private Const ProgressThrottleRowInterval As Integer = 128
 
     Public Shared Function Process(opts As LandCoverCacheBuilder.BuildOptions,
-                                   regionMask As RgiRegionMask,
                                    progress As IProgress(Of ProgressInfo),
                                    ct As CancellationToken,
+                                   Optional regionMask As RgiRegionMask = Nothing,
                                    Optional progressPrefix As String = "GlaThiDa") As GlaThiDaProcessResult
 
         ArgumentNullException.ThrowIfNull(opts, NameOf(opts))
-        ArgumentNullException.ThrowIfNull(regionMask, NameOf(regionMask))
 
         Dim zipPath As String = opts.RawGlaThiDaZipPath
         ArgumentNullException.ThrowIfNullOrWhiteSpace(zipPath, NameOf(zipPath))
-        If Not File.Exists(zipPath) Then Throw New FileNotFoundException("GlaThiDa-Zip nicht gefunden.")
+        If Not File.Exists(zipPath) Then Throw New FileNotFoundException("GlaThiDa-Zip nicht gefunden.", zipPath)
 
         progress?.Report(New ProgressInfo($"{progressPrefix}: Starte GlaThiDa-Verarbeitung...", 0))
         ct.ThrowIfCancellationRequested()
@@ -100,7 +97,7 @@ Public NotInheritable Class GlaThiDaProcessor
                 parser.HasFieldsEnclosedInQuotes = True
                 parser.TrimWhiteSpace = True
 
-                If parser.EndOfData Then Throw New InvalidDataException("T.csv is leer.")
+                If parser.EndOfData Then Throw New InvalidDataException("T.csv ist leer.")
 
                 Dim header As String() = parser.ReadFields()
                 If header Is Nothing OrElse header.Length = 0 Then Throw New InvalidDataException("CSV-Header konnte nicht gelesen werden.")
@@ -127,7 +124,7 @@ Public NotInheritable Class GlaThiDaProcessor
                     readRows += 1
                     If readRows Mod ProgressThrottleRowInterval = 0 Then
                         Dim pct As Integer = 2 + CInt((readRows / CDbl(totalRows)) * 96.0)
-                        Math.Min(98, pct)
+                        pct = Math.Min(98, pct)
                         progress?.Report(New ProgressInfo($"{progressPrefix}: Parse CSV...{Environment.NewLine}{Environment.NewLine}Zeile: {readRows}/{totalRows}", pct))
                     End If
 
@@ -169,11 +166,16 @@ Public NotInheritable Class GlaThiDaProcessor
                     usedRowsGlobal += 1
 
                     'Regional via RegionMask (wenn nicht global)
-                    Dim region As RGIRegion = regionMask.GetRegion(lat, lon)
-                    If region <> RGIRegion.Global_Region Then
-                        xsByRegion(region).Add(x)
-                        ysByRegion(region).Add(y)
+                    If regionMask IsNot Nothing Then
+
+                        Dim region As RGIRegion = regionMask.GetRegion(lat, lon)
+                        If region <> RGIRegion.Global_Region Then
+                            xsByRegion(region).Add(x)
+                            ysByRegion(region).Add(y)
+                        End If
+
                     End If
+
 
                 End While
             End Using
@@ -187,14 +189,19 @@ Public NotInheritable Class GlaThiDaProcessor
 
         fits(RGIRegion.Global_Region) = FitPowerLaw(xsByRegion(RGIRegion.Global_Region), ysByRegion(RGIRegion.Global_Region))
 
-        For Each r As RGIRegion In [Enum].GetValues(Of RGIRegion)
 
-            If r = RGIRegion.Global_Region Then Continue For
-            If xsByRegion(r).Count >= 2 Then
-                fits(r) = FitPowerLaw(xsByRegion(r), ysByRegion(r))
-            End If
+        If regionMask IsNot Nothing Then
 
-        Next
+            For Each r As RGIRegion In [Enum].GetValues(Of RGIRegion)
+
+                If r = RGIRegion.Global_Region Then Continue For
+                If xsByRegion(r).Count >= 2 Then
+                    fits(r) = FitPowerLaw(xsByRegion(r), ysByRegion(r))
+                End If
+
+            Next
+
+        End If
 
         '6) Report
         Dim sb As New StringBuilder()

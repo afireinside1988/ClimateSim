@@ -3,6 +3,7 @@ Imports System.IO
 Imports System.Text
 Imports System.Threading
 Imports System.Diagnostics
+Imports System.Runtime.InteropServices.Marshalling
 
 Public NotInheritable Class LandCoverCacheBuilder
 
@@ -155,10 +156,13 @@ Public NotInheritable Class LandCoverCacheBuilder
         '--------------------------------------------
 
         Dim globalIce As Single() = Nothing
+        Dim globalIceFrac As Single() = Nothing
         If includeBMAnt OrElse includeBMGrn Then
             globalIce = New Single(nCells - 1) {}
+            globalIceFrac = New Single(nCells - 1) {}
             For i As Integer = 0 To globalIce.Length - 1
                 globalIce(i) = Single.NaN
+                globalIceFrac(i) = 0.0F
             Next
         End If
 
@@ -258,59 +262,28 @@ Public NotInheritable Class LandCoverCacheBuilder
             sw.Stop()
             timings("Merge") = sw.Elapsed
 
-        End If
-
-        ct.ThrowIfCancellationRequested()
-
-        '-------------------------------------------------------
-        '8.1) SnowIce-Override auf Basis von LandIceThicknessM
-        '-------------------------------------------------------
-        Dim overridden As Integer = 0
-        Dim skippedWater As Integer = 0
-
-        If globalIce IsNot Nothing Then
+            'GlacierFraction bauen für BedMachine: wenn LandIceThickness > 1.0m -> GlacierFraction = 1
 
             sw = Stopwatch.StartNew()
+            Const fracEpsM As Single = 1.0F
 
-            Dim snowIceCls As Byte = CByte(LandCoverClass.SnowIce)
-            Dim openWaterCls As Byte = CByte(LandCoverClass.OpenWater)
-
-            'Tuning-Parameter
-            Const iceEps As Single = 0.5F                   'unter 0.5m ignorieren (nummerisches Rauschen)
-            Const waterOverrideMin As Single = 50.0F        'Wenn Copernicus Wasser sagt, erst ab 50m überschreiben
-
-            Dim lc As Byte() = copResult.Classes
-            If lc Is Nothing OrElse lc.Length <> nCells Then
-                Throw New InvalidDataException("LandCoverClass-Array ungültig oder falsche Länge.")
-            End If
-
-
+            Dim setCount As Integer = 0
             For i As Integer = 0 To nCells - 1
                 ct.ThrowIfCancellationRequested()
-
-                Dim ice As Single = globalIce(i)
-                If Single.IsNaN(ice) OrElse ice <= iceEps Then Continue For
-
-                Dim curCls As Byte = lc(i)
-
-                'Guard: Küsten/Wasser nur bei massivem Eis überschreiben
-                If curCls = openWaterCls AndAlso ice < waterOverrideMin Then
-                    skippedWater += 1
-                    Continue For
-                End If
-
-                If curCls <> snowIceCls Then
-                    lc(i) = snowIceCls
-                    overridden += 1
+                Dim t As Single = globalIce(i)
+                If Not Single.IsNaN(t) AndAlso t > fracEpsM Then
+                    globalIceFrac(i) = 1.0F : setCount += 1
+                Else
+                    globalIceFrac(i) = 0.0F
                 End If
             Next
 
-            'zurück ins Copernicus-Array kopieren
-            Array.Copy(lc, copResult.Classes, nCells)
-
             sw.Stop()
-            timings("SnowIceOverride") = sw.Elapsed
+            timings("GlacierFractionBM") = sw.Elapsed
+
         End If
+
+        ct.ThrowIfCancellationRequested()
 
         '-----------------------
         '9) Meta & Cache bauen
@@ -331,6 +304,7 @@ Public NotInheritable Class LandCoverCacheBuilder
             .LonCount = lonCount,
             .HasConfidence = includeConf,
             .HasLandIceThickness = (globalIce IsNot Nothing),
+            .HasGlacierFraction = (globalIceFrac IsNot Nothing),
             .EarthSurfaceRef = opts.EarthSurfaceReference,
             .EarthSurfaceCreateUtc = opts.EarthSurfaceCreateUTC,
             .RawCopernicusLC100ClassFile = opts.RawCopernicusLc100ClassTifPath,
@@ -338,7 +312,8 @@ Public NotInheritable Class LandCoverCacheBuilder
             .RawBedMachineGreenlandFile = If(includeBMGrn, opts.RawBedMachineGreenlandNcPath, Nothing),
             .RawBedMachineAntarcticaFile = If(includeBMAnt, opts.RawBedMachineAntarcticaNcPath, Nothing),
             .ImportNotes = "Copernicus LC100 Discrete-classification" &
-                            If(globalIce IsNot Nothing, " + BedMachine LandIceThickness (max-aggregation)", ""),
+                            If(globalIce IsNot Nothing, " + BedMachine LandIceThickness (max-aggregation)", "") &
+                            If(globalIceFrac IsNot Nothing, " + GlacierFraction (derived from BedMachine)", ""),
             .CreateUtc = DateTime.UtcNow
         }
 
@@ -346,7 +321,8 @@ Public NotInheritable Class LandCoverCacheBuilder
             .Meta = meta,
             .LandCoverClass = copResult.Classes,
             .Confidence = If(includeConf, copResult.Confidence, Nothing),
-            .LandIceThicknessM = globalIce
+            .LandIceThicknessM = globalIce,
+            .GlacierFraction = globalIceFrac
         }
 
         metaProg.Report(New ProgressInfo("Cache & Meta fertig.", 100))
@@ -410,11 +386,14 @@ Public NotInheritable Class LandCoverCacheBuilder
             sb.AppendLine(bmGrnRes.Report)
         End If
 
-        If globalIce IsNot Nothing Then
+        If globalIceFrac IsNot Nothing Then
+            Dim fracCells As Integer = 0
+            For i As Integer = 0 To nCells - 1
+                If globalIceFrac(i) >= 0.999F Then fracCells += 1
+            Next
             sb.AppendLine()
-            sb.AppendLine("--- SnowIce Override ---")
-            sb.AppendLine($"Zellen überschrieben: {overridden:N0}")
-            sb.AppendLine($"Wasser-Zellen übersprungen (Guard): {skippedWater:N0}")
+            sb.AppendLine("--- GlacierFraction (BedMachine derived) ---")
+            sb.AppendLine($"Cells with GlacierFraction=1: {fracCells:N0}")
         End If
 
         sb.AppendLine()

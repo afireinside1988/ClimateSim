@@ -5,7 +5,7 @@ Public Class LandCoverCacheMeta
     Public Property MetaSchemaVersion As Integer = 1
 
     'Binärformat-Version
-    Public Property CacheVersion As Integer = 1
+    Public Property CacheVersion As Integer = 2
 
     Public Property CacheType As CacheType = CacheType.LandCover
 
@@ -34,6 +34,7 @@ Public Class LandCoverCacheMeta
     'Optionale Felder
     Public Property HasConfidence As Boolean = False
     Public Property HasLandIceThickness As Boolean = False
+    Public Property HasGlacierFraction As Boolean = False
 
     'Importer-Infos
     Public Property RawCopernicusLC100ClassFile As String

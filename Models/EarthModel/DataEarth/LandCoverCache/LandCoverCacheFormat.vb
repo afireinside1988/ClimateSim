@@ -19,12 +19,14 @@ Imports System.Windows.Ink
 '''               Bit0 = HasLandCoverClass (immer gesetzt)
 '''               Bit1 = HasConfidence
 '''               Bit2 = HasLandIceThickness
+'''               Bit3 = HasGlacierFraction
 '''    28..31   : Inr32 Reserved (0)
 '''    
 ''' [PAYLOAD]
 '''     Wenn HasLandCoverClass  :   LandCoverClass      byte[LatCount * LonCount]
 '''     Wenn HasConfidence      :   Confidence          byte[LatCount * LonCount]
 '''     Wenn HasLandIceThickness:   LandIceThicknessM   Single[LatCount * LonCount]
+'''     Wenn HasGlacierFraction :   GlacierFraction     Single[LatCount * LonCount]
 ''' </summary>
 Public NotInheritable Class LandCoverCacheFormat
 
@@ -34,9 +36,10 @@ Public NotInheritable Class LandCoverCacheFormat
         HasLandCoverClass = 1
         HasConfidence = 2
         HasLandIceThickness = 4
+        HasGlacierFraction = 8
     End Enum
 
-    Public Const CurrentVersion As Integer = 1
+    Public Const CurrentVersion As Integer = 2
     Public Const Magic As String = "LCCF"
 
     Public Shared Sub WriteCache(lccfPath As String, cache As LandCoverCache,
@@ -73,10 +76,22 @@ Public NotInheritable Class LandCoverCacheFormat
             'wenn Meta sagt, dass kein LandIceThickness enthalten ist, ignorieren wir ein eventuelles Array
         End If
 
+        'Optional: LandIceThickness
+        If meta.HasGlacierFraction Then
+            If cache.GlacierFraction Is Nothing OrElse cache.GlacierFraction.Length <> n Then
+                Throw New InvalidDataException("GlacierFraction ist laut Meta enthalten, Array fehlt oder hat falsche Länge.")
+            End If
+        Else
+            'wenn Meta sagt, dass kein GlacierFraction enthalten ist, ignorieren wir ein eventuelles Array
+        End If
+
+
+
         'Flags aus Meta ableiten
         Dim flags As LandCoverCacheFlags = LandCoverCacheFlags.HasLandCoverClass
         If meta.HasConfidence Then flags = flags Or LandCoverCacheFlags.HasConfidence
         If meta.HasLandIceThickness Then flags = flags Or LandCoverCacheFlags.HasLandIceThickness
+        If meta.HasGlacierFraction Then flags = flags Or LandCoverCacheFlags.HasGlacierFraction
 
         Dim dir As String = Path.GetDirectoryName(lccfPath)
         If Not String.IsNullOrWhiteSpace(dir) Then Directory.CreateDirectory(dir)
@@ -90,6 +105,7 @@ Public NotInheritable Class LandCoverCacheFormat
         Dim totalValues As Integer = n  'LandCoverClass
         If meta.HasConfidence Then totalValues += n
         If meta.HasLandIceThickness Then totalValues += n
+        If meta.HasGlacierFraction Then totalValues += n
 
         Dim reportEvery As Integer = Math.Max(4096, totalValues \ 200)
         Dim processed As Integer = 0
@@ -148,6 +164,20 @@ Public NotInheritable Class LandCoverCacheFormat
                     Next
                 End If
 
+                'Payload: GlacierFraction (optional)
+                If meta.HasGlacierFraction Then
+                    progress?.Report(New ProgressInfo("LandCoverCache speichern: GlacierFraction...", 85))
+                    For i As Integer = 0 To n - 1
+                        ct.ThrowIfCancellationRequested()
+                        bw.Write(cache.GlacierFraction(i))    'Single
+                        processed += 1
+                        If (processed Mod reportEvery) = 0 Then
+                            Dim pct As Integer = 2 + CInt((processed / Math.Max(1, totalValues)) * 96)
+                            progress?.Report(New ProgressInfo($"LandCoverCache speichern: GlacierFraction... ({i + 1:N0}/{n:N0})", pct))
+                        End If
+                    Next
+                End If
+
             End Using
         End Using
 
@@ -166,7 +196,7 @@ Public NotInheritable Class LandCoverCacheFormat
     Public Shared Function ReadCache(lccfPath As String,
                                      Optional progress As IProgress(Of ProgressInfo) = Nothing,
                                      Optional ct As CancellationToken = Nothing) As _
-                                     (latCount As Integer, lonCount As Integer, cellSizeDeg As Double, flags As LandCoverCacheFlags, classes As Byte(), confidence As Byte(), landIceThickness As Single())
+                                     (latCount As Integer, lonCount As Integer, cellSizeDeg As Double, flags As LandCoverCacheFlags, classes As Byte(), confidence As Byte(), landIceThickness As Single(), glacierFraction As Single())
 
         If Not File.Exists(lccfPath) Then
             Throw New FileNotFoundException("LandCoverCache-Datei nicht gefunden.", lccfPath)
@@ -212,10 +242,12 @@ Public NotInheritable Class LandCoverCacheFormat
                 Dim classes As Byte() = New Byte(n - 1) {}
                 Dim confidence As Byte() = Nothing
                 Dim landIceThickness As Single() = Nothing
+                Dim glacierFraction As Single() = Nothing
 
                 Dim totalValues As Integer = n
                 If flags.HasFlag(LandCoverCacheFlags.HasConfidence) Then totalValues += n
                 If flags.HasFlag(LandCoverCacheFlags.HasLandIceThickness) Then totalValues += n
+                If flags.HasFlag(LandCoverCacheFlags.HasGlacierFraction) Then totalValues += n
 
                 Dim reportEvery As Integer = Math.Max(4096, totalValues \ 200)
                 Dim processed As Integer = 0
@@ -262,8 +294,23 @@ Public NotInheritable Class LandCoverCacheFormat
                     Next
                 End If
 
+                'GlacierFraction lesen (optional)
+                If flags.HasFlag(LandCoverCacheFlags.HasGlacierFraction) Then
+                    glacierFraction = New Single(n - 1) {}
+                    progress?.Report(New ProgressInfo("LandCoverCache laden: GlacierFraction...", 85))
+                    For i As Integer = 0 To n - 1
+                        ct.ThrowIfCancellationRequested()
+                        glacierFraction(i) = br.ReadSingle()
+                        processed += 1
+                        If (processed Mod reportEvery) = 0 Then
+                            Dim pct As Integer = 2 + CInt((processed / Math.Max(1, totalValues)) * 96)
+                            progress?.Report(New ProgressInfo($"LandCoverCache laden: GlacierFraction... ({i + 1:N0}/{n:N0})", pct))
+                        End If
+                    Next
+                End If
+
                 progress?.Report(New ProgressInfo("LandCoverCache geladen.", 100))
-                Return (latCount, lonCount, cellSize, flags, classes, confidence, landIceThickness)
+                Return (latCount, lonCount, cellSize, flags, classes, confidence, landIceThickness, glacierFraction)
             End Using
         End Using
 

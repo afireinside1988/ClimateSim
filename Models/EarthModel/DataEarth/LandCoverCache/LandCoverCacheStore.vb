@@ -116,6 +116,7 @@ Public Class LandCoverCacheStore
             Dim hasClassBin As Boolean = r.flags.HasFlag(LandCoverCacheFormat.LandCoverCacheFlags.HasLandCoverClass)
             Dim hasConfBin As Boolean = r.flags.HasFlag(LandCoverCacheFormat.LandCoverCacheFlags.HasConfidence)
             Dim hasIceBin As Boolean = r.flags.HasFlag(LandCoverCacheFormat.LandCoverCacheFlags.HasLandIceThickness)
+            Dim hasFracBin As Boolean = r.flags.HasFlag(LandCoverCacheFormat.LandCoverCacheFlags.HasGLacierFraction)
 
             If Not hasClassBin Then
                 errorKind = CacheOpenErrorKind.BinaryInvalid
@@ -123,7 +124,7 @@ Public Class LandCoverCacheStore
                 Return False
             End If
 
-            If hasConfBin <> meta.HasConfidence OrElse hasIceBin <> meta.HasLandIceThickness Then
+            If hasConfBin <> meta.HasConfidence OrElse hasIceBin <> meta.HasLandIceThickness OrElse hasFracBin <> meta.HasGlacierFraction Then
                 errorKind = CacheOpenErrorKind.BinaryInvalid
                 errorMessage = "Binärdatei passt nicht zu Meta (Layer-Flags stimmen nicht)."
                 Return False
@@ -133,7 +134,8 @@ Public Class LandCoverCacheStore
                 .Meta = meta,
                 .LandCoverClass = r.classes,
                 .Confidence = r.confidence,
-                .LandIceThicknessM = r.landIceThickness
+                .LandIceThicknessM = r.landIceThickness,
+                .GlacierFraction = r.glacierFraction
             }
             Return True
 
